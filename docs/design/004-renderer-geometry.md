@@ -124,6 +124,20 @@ already parse, so we keep it rather than beautify.
 3. Instance ids dropped from SVG ids (§Body paint).
 4. All float accidents (string-split rounding, `(x−x)²` distance) gone
    per note 001 §2.
+5. Tension `|| 1` guard dropped: TOG's JS definedness fallback turned
+   tension 0 into 1; the typed phenotype has no undefined tensions and
+   the decoder's range legitimately includes 0.
+6. Tension-walk seam skip pinned at segment `(2N−1)/2` = N−1 — the same
+   seam segment TOG skips on its even ring; for our odd ring the JS
+   expression would never have skipped. Verified against TOG spline.ts
+   via harness: max path-coordinate divergence 0.34 milliunits.
+7. Stroke-width pinned to canvas/255. TOG disagrees with itself
+   (bodylayer.tsx strokes at width/500, index.tsx margins at
+   width/255); one value serves both roles here.
+8. Circler pattern per-point pull jitter came from dna1 bytes in TOG —
+   renderer-side DNA reads are forbidden, so v1 uses uniform pull from
+   the pattern block; a per-point jitter field can join the PATTERN
+   region under a future genome carve if the uniformity reads flat.
 
 ## Open for the face note (005)
 
