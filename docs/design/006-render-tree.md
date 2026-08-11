@@ -1,100 +1,119 @@
-# Design note 006 — Render tree: geometry-primary API v1
+# Design note 006 — Render tree: geometry-primary API v1 (rev 2)
 
-Status: DRAFT, sketch circulated to CKIOS (the first geometry consumer)
-before the Swift part-2 implementation. Shape agreed in the integration
-thread: iOS has no native SVG renderer, so the port's PRIMARY API is a
-typed, PRE-FLATTENED primitive list SwiftUI can draw in a straight loop;
-SVG becomes one serializer over the same list. The byte-parity gate
-stays on the SVG serializer output.
+Status: rev 2 after CKIOS's corpus-first review. Rev 1 was written from
+the generator's intent and the corpus proved it wrong in four places;
+this revision was derived by inventorying every attribute the 30 golden
+SVGs actually emit. Rule zero for future revisions: **the corpus is the
+spec of record for what the tree must express — diff against it, not
+against the renderer source.**
+
+The API shape: a typed, flat primitive list the consumer draws in a
+straight loop; SVG is one serializer over the same list; the byte-parity
+gate stays on the serializer output.
+
+## Corpus inventory (what the tree must express)
+
+From the 30 committed SVGs: paths/circles/ellipses/rects; solid fills,
+one radial-gradient form, stroke color+width with **per-element
+linecap/linejoin (212 round caps, 30 round joins — mixed within one
+creature)**; **per-element opacity** (240 uses); **per-group transforms**
+in four syntactic forms (translate / rotate(a,cx,cy) / translate+rotate /
+translate+scale) — the face pass emits per-eye and per-brow transforms,
+so rev 1's "single root transform" was FALSE; `<use href>` body reuse
+(3–4 per creature); eye **clip-paths** (2 per creature); the lighting
+filter group; the iris turbulence-displacement filter; semantic `class`
+labels and `data-family` on mouths.
 
 ## Shape
 
 ```
 RenderTree {
-  canvas: u32,                 // 10_000 centi-units (viewBox side)
-  background: Rgb | None,      // full-canvas rect
-  transform: Transform2D,      // THE one resolved transform (centering
-                               // translate + uniform scale) — shared by
-                               // every primitive below; identity when the
-                               // body fits. No nesting exists to flatten:
-                               // this is the tree's entire transform state.
-  primitives: [Primitive],     // draw in list order, painter's algorithm
+  canvas: u32,                       // 10_000 centi-units
+  background: Rgb | None,
+  primitives: [Primitive],           // flat, painter's order
 }
-
-Transform2D { tx: i64, ty: i64, scale: Q32 }   // milliunits + Q32.32
 
 Primitive {
   shape: Shape,
+  transform: Transform | None,       // RESOLVED per primitive (composed
+                                     //   chain from the SVG group stack);
+                                     //   None = identity
   paint: Paint,
   stroke: Stroke | None,
-  effects: [Effect],           // consumer-optional annotations, see below
+  opacity: Q32 | None,               // None = 1.0
+  clip: Shape | None,                // structural: consumers MUST honour
+                                     //   (an unclipped iris bleeds outside
+                                     //   the eye) — maps to .clipShape
+  effects: [Effect],                 // ignorable annotations
+  label: str,                        // semantic class ("av-pupil", ...);
+                                     //   serializer emits it, consumers
+                                     //   may use it for accessibility/test
 }
+
+Transform {                          // typed as the serializer emits it —
+  ops: [TransformOp],                //   order preserved for byte parity
+}
+TransformOp =
+  | Translate { tx: i64, ty: i64 }
+  | Rotate { angle: Bam16, cx: i64, cy: i64 }
+  | Scale { sx: Q32, sy: Q32 }
+// Consumers: fold ops into one affine matrix (helper provided:
+// Transform.affine() -> (a,b,c,d,tx,ty) in milliunit space).
 
 Shape =
-  | Path { segments: [Segment], closed: bool }   // milliunit coordinates
-  | Circle { cx, cy, r }                         // milliunits
-  | Ellipse { cx, cy, rx, ry }
-  | Rect { x, y, w, h }
+  | Path { segments: [Segment], closed: bool, fill_rule: NonZero|EvenOdd }
+  | Circle { cx, cy, r } | Ellipse { cx, cy, rx, ry } | Rect { x, y, w, h }
+Segment = MoveTo | CubicTo | LineTo   // milliunit fields as rev 1
 
-Segment =
-  | MoveTo { x, y }
-  | CubicTo { c1x, c1y, c2x, c2y, x, y }
-  | LineTo { x, y }
+Paint = Solid { color: Rgb }
+      | RadialGradient { stops: [(offset_q32, Rgb)] }
+      | None
 
-Paint =
-  | Solid { color: Rgb }
-  | RadialGradient { stops: [(offset_q32, Rgb)] }   // centered on shape
-                                                    // bounds, r = 50% —
-                                                    // the only radial
-                                                    // form the generator
-                                                    // emits
-  | None                                            // stroke-only shapes
-
-Stroke { color: Rgb, width: i64 }                   // milliunits
+Stroke {
+  color: Rgb, width: i64,
+  cap: Butt | Round | Square,        // 1:1 CGLineCap
+  join: Miter | Round | Bevel,       // 1:1 CGLineJoin
+}
 
 Effect =
-  | Lit          // member of the body's lighting group (SVG:
-                 // feDiffuseLighting+feComposite). iOS fallback:
-                 // ignore — at 28–44pt the lighting is subtle; the
-                 // SVG serializer reproduces the exact filter.
-  | Masked { mask: [Primitive] }  // pattern mask; SwiftUI: .mask with
-                                  // the mask primitives; SVG: <mask>.
-}
+  | Lit                              // body lighting filter group
+  | Masked { mask: [Primitive] }     // pattern mask
+  | Turbulence { seed: u8, freq_h: Q32, freq_v: Q32,
+                 octaves: u8, scale: Q32 }   // iris shade displacement
 ```
 
 ## Rules
 
-1. **Pre-flattened**: the list is depth-first paint order; no groups, no
-   inherited state. `transform` is the single resolved transform (the
-   generator has exactly one — the centering group), carried once at the
-   tree root; consumers apply it per-shape or once around the loop,
-   equivalently. If a future generator version ever introduces a second
-   transform scope, primitives gain a per-primitive `transform` field
-   and the root one is deprecated in the same version — flatness is the
-   contract, not the current luck.
-2. **Coordinates are pre-transform milliunits**, identical to the values
-   the SVG serializer formats. Byte parity forces this: SVG emits
-   untransformed coordinates inside a transformed group, so a tree that
-   baked the transform in could not reproduce the bytes.
-3. **Effects are annotations, not structure.** A consumer that ignores
-   every effect still draws a correct creature (lighting is subtle;
-   an ignored mask means the pattern overlay is skipped entirely rather
-   than drawn unmasked — the Masked primitive's paint is only correct
-   under its mask).
-4. **The SVG serializer is a pure function of the tree** and reproduces
-   today's byte-exact output: element order = list order, defs emitted
-   for the effects present, attribute formatting per note 001 §2.5.
-5. Fixed-point out the door: i64 milliunits and Q32.32 exactly as the
-   phenotype carries them. Scaling to points/pixels is the consumer's
-   one division, in its own coordinate space.
+1. **Flat list, resolved transforms.** Each primitive carries its full
+   composed transform chain (the SVG group nesting is flattened at tree
+   build). Consumers never traverse. `fill_rule` today is always
+   NonZero (the corpus emits no fill-rule attribute); the field exists
+   so a future hole-cutting shape cannot silently diverge on renderer
+   defaults — "agreeing by accident" is not a contract.
+2. **Body reuse is inlined.** The SVG's `<use href="#av-bp">` instances
+   appear in the tree as separate primitives sharing one Path value
+   (same segments, different paint/effects). The SERIALIZER re-collapses
+   identical body paths into one def + uses to reproduce the bytes —
+   dedup is a serialization concern; the primitive list is one-to-one
+   with DRAWN shapes, which is what a renderer loop wants. (Reader
+   warning: list length ≠ SVG element count for exactly this reason.)
+3. **Coordinates are pre-transform milliunits** — byte parity requires
+   serializing untransformed coordinates inside transformed groups.
+4. **clip is structural; effects are ignorable.** Skipping Lit loses
+   subtle lighting; skipping Masked skips the overlay entirely;
+   skipping Turbulence renders the iris shade flat. All acceptable at
+   28–44pt. Skipping clip is NOT acceptable (geometry bleeds), hence
+   its position outside effects.
+5. **The SVG serializer is a pure function of the tree**, reproducing
+   all 30 corpus files byte-exactly — that gate is what proves the tree
+   expresses everything (any inexpressible attribute fails parity).
+6. Fixed-point out the door: i64 milliunits, Q32.32, BAM16. The
+   consumer's scale-to-points is one division in its own space.
 
 ## Implementation order
 
-1. Swift part 2 implements the tree and its SVG serializer, gated by
-   boundary-2 byte parity (the serializer must reproduce all 30 corpus
-   SVGs from the tree).
-2. Rust follows in the same shape when the GPUI desktop consumer
-   materializes (render_svg becomes serialize(build_tree(...));
-   corpus unchanged, pure refactor gated by the existing vectors).
-3. TS stays string-first until a TS consumer wants geometry (web draws
-   SVG natively; no forced work).
+1. Swift part 2: build_tree + SVG serializer, gated by boundary-2 parity
+   from the tree (all 30 corpus files).
+2. Rust: same reshape when the GPUI consumer materializes (pure
+   refactor, corpus unchanged).
+3. TS: stays string-first until a geometry consumer exists.
