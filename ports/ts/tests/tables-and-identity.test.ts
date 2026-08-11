@@ -35,12 +35,12 @@ test("imported table hashes equal the Rust pins", () => {
 test("identity prefixes are compatibility pins", () => {
   // Vectors copied verbatim from crates/avatar-genome/src/identity.rs.
   expect(
-    deriveGenome({ kind: "registered", seatName: "mason", projectId: "project-42" }).toHex().slice(0, 64),
-  ).toBe("6d4604f3c6319289abbcb60a9ad68bc1d9e49746176c58a65528612de3ceb26b");
+    deriveGenome("project-42").toHex().slice(0, 64),
+  ).toBe("497c376676efcfbabd57a41123143dbb72df26ad5f2b09c6d7331410ea13c289");
   expect(
-    deriveGenome({ kind: "path-fallback", seatName: "mason", canonicalPath: "project-42" }).toHex().slice(0, 64),
-  ).toBe("79dcf9c284a2022285915902e2c85f1b61bbdc992fecdb3f30d88a1d216f54ea");
+    deriveGenome({ kind: "path-fallback", canonicalPath: "project-42" }).toHex().slice(0, 64),
+  ).toBe("70e579fc8f565c4563aeccb739a43eb9867e2264e6cb2a658adc8621edb63cd3");
   expect(
-    deriveGenome({ kind: "registered", seatName: "", projectId: "" }).toHex().slice(0, 64),
-  ).toBe("266c4534796028fb23cbff26a90574f18adbfba9f17361a40d167babdc87cb63");
+    deriveGenome("").toHex().slice(0, 64),
+  ).toBe("ac844c9c9582832925ef89a4b581d9f31d23d5b69702fd408f5e1a2167d5bfcb");
 });

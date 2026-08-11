@@ -27,7 +27,7 @@ import { divRoundHalfAway, EASE_EXPO, EASE_IN_CIRC, EASE_LINEAR } from "./tables
 
 const GENOME_BYTES = 1024;
 const GENOME_BITS = GENOME_BYTES * 8;
-const IDENTITY_DOMAIN = "cortexkit-avatar/identity-core/v1";
+const IDENTITY_DOMAIN = "cortexkit-avatar/identity-core/v2";
 const encoder = new TextEncoder();
 
 const BODY_START = 0;
@@ -104,9 +104,7 @@ export class Genome {
   }
 }
 
-export type SeatIdentity =
-  | { kind: "registered"; seatName: string; projectId: string }
-  | { kind: "path-fallback"; seatName: string; canonicalPath: string };
+export type SeatIdentity = string | { kind: "path-fallback"; canonicalPath: string };
 
 function joinedBytes(parts: readonly Uint8Array[]): Uint8Array {
   const length = parts.reduce((total, part) => total + part.length, 0);
@@ -121,23 +119,20 @@ function joinedBytes(parts: readonly Uint8Array[]): Uint8Array {
 
 /**
  * Derives the initial 1 KiB genome from stable identity data using BLAKE3 XOF.
- * The explicit prefixes and zero separators preserve Rust's domain separation;
- * a path fallback can never collide with registered identity bytes by accident.
+ * Live-fleet measurements found name sources user-editable, non-unique, or
+ * session-derived, so names are presentation only: hashing one would let a
+ * rename re-roll a creature or a collision merge creatures. The explicit
+ * prefixes and zero separators preserve Rust's domain separation; a path
+ * fallback can never collide with registered identity bytes by accident.
  */
 export function deriveGenome(identity: SeatIdentity): Genome {
   const zero = Uint8Array.of(0);
   const domain = encoder.encode(IDENTITY_DOMAIN);
   const parts: Uint8Array[] = [domain, zero];
-  if (identity.kind === "registered") {
-    parts.push(encoder.encode(identity.seatName), zero, encoder.encode(identity.projectId));
+  if (typeof identity === "string") {
+    parts.push(encoder.encode(identity));
   } else {
-    parts.push(
-      encoder.encode("path-fallback"),
-      zero,
-      encoder.encode(identity.seatName),
-      zero,
-      encoder.encode(identity.canonicalPath),
-    );
+    parts.push(encoder.encode("path-fallback"), zero, encoder.encode(identity.canonicalPath));
   }
   return Genome.fromBytes(blake3(joinedBytes(parts), { dkLen: GENOME_BYTES }));
 }

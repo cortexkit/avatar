@@ -9,7 +9,6 @@ fn main() {
         "AVA", "SUBC", "ALF", "ENGRAM", "CKIOS", "BROCA", "FUSI", "MC",
     ] {
         let genome = derive_genome(&SeatIdentity::Registered {
-            seat_name: seat.to_owned(),
             project_id: format!("pj-sample-{seat}"),
         });
         let phenotype = decode(&genome);

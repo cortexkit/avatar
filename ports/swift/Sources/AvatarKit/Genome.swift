@@ -98,12 +98,18 @@ func hexNibble(_ byte: UInt8, at index: Int) throws -> UInt8 {
 // MARK: Identity derivation
 
 /// The durable source used to derive a seat's initial genome.
+///
+/// Live-fleet measurement found every candidate name source user-editable,
+/// non-unique, or session-derived. Hashing a name would make a rename re-roll
+/// a creature and let a collision merge creatures, so names remain presentation
+/// only. Identity is the registry's one opaque, stable value; adding a name to
+/// this enum or its derivation would reintroduce those failures.
 public enum SeatIdentity: Equatable {
-    case registered(seatName: String, projectId: String)
-    case pathFallback(seatName: String, canonicalPath: String)
+    case registered(projectId: String)
+    case pathFallback(canonicalPath: String)
 }
 
-let IDENTITY_DOMAIN = "cortexkit-avatar/identity-core/v1"
+let IDENTITY_DOMAIN = "cortexkit-avatar/identity-core/v2"
 
 /// Derives a complete initial genome from a seat identity.
 ///
@@ -115,14 +121,10 @@ public func deriveGenome(_ identity: SeatIdentity) -> Genome {
     var input = Array(IDENTITY_DOMAIN.utf8)
     input.append(0)
     switch identity {
-    case let .registered(seatName, projectId):
-        input.append(contentsOf: seatName.utf8)
-        input.append(0)
+    case let .registered(projectId):
         input.append(contentsOf: projectId.utf8)
-    case let .pathFallback(seatName, canonicalPath):
+    case let .pathFallback(canonicalPath):
         input.append(contentsOf: Array("path-fallback".utf8))
-        input.append(0)
-        input.append(contentsOf: seatName.utf8)
         input.append(0)
         input.append(contentsOf: canonicalPath.utf8)
     }
