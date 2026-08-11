@@ -129,3 +129,25 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: ports/ts
         run: bun test
+
+  # Swift port conformance. One Linux leg is sufficient even though this
+  # package's consumers are Apple platforms: AvatarKit is pure computation
+  # with no platform APIs, and its BLAKE3 dependency is the portable-only C
+  # reference build (no SIMD), so every byte it produces is identical by
+  # construction on any host. The golden corpus IS the cross-platform
+  # assertion — this leg exercises the same committed vectors the Rust and
+  # TypeScript legs use. If the container route ever hits a runner
+  # limitation, fall back to installing Swift in the job via swiftly or a
+  # toolchain tarball instead.
+  #
+  # `swift test` runs from the repository root: the manifest lives there (not
+  # under ports/swift/) so the package is consumable by git URL.
+  swift-port:
+    name: Swift port (ubuntu)
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Test Swift port conformance
+        run: swift test
