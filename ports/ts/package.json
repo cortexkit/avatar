@@ -1,0 +1,12 @@
+{
+  "name": "@cortexkit/avatar-ts-port",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "import-tables": "bun scripts/import-tables.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0"
+  }
+}
