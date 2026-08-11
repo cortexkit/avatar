@@ -86,7 +86,7 @@ final class RenderConformanceTests: XCTestCase {
                 roundJoins += svg.nonOverlappingCount(of: "stroke-linejoin=\"round\"")
             }
         }
-        XCTAssertEqual(roundCaps, 212)
+        XCTAssertEqual(roundCaps, 274)
         XCTAssertEqual(roundJoins, 30)
 
         let pattern = try loadPhenotype("pattern_0", root: root)

@@ -1,18 +1,18 @@
 use crate::Genome;
 
-const IDENTITY_DOMAIN: &[u8] = b"cortexkit-avatar/identity-core/v1";
+const IDENTITY_DOMAIN: &[u8] = b"cortexkit-avatar/identity-core/v2";
 
 /// The durable source used to derive a seat's initial genome.
+///
+/// Live-fleet measurement found every candidate name source user-editable,
+/// non-unique, or session-derived. Hashing a name would make a rename re-roll
+/// a creature and let a collision merge creatures, so names remain presentation
+/// only. Identity is the registry's one opaque, stable value; adding a name to
+/// this enum or its derivation would reintroduce those failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SeatIdentity {
-    Registered {
-        seat_name: String,
-        project_id: String,
-    },
-    PathFallback {
-        seat_name: String,
-        canonical_path: String,
-    },
+    Registered { project_id: String },
+    PathFallback { canonical_path: String },
 }
 
 /// Derives a complete initial genome from a seat identity.
@@ -26,21 +26,11 @@ pub fn derive_genome(identity: &SeatIdentity) -> Genome {
     hasher.update(&[0]);
 
     match identity {
-        SeatIdentity::Registered {
-            seat_name,
-            project_id,
-        } => {
-            hasher.update(seat_name.as_bytes());
-            hasher.update(&[0]);
+        SeatIdentity::Registered { project_id } => {
             hasher.update(project_id.as_bytes());
         }
-        SeatIdentity::PathFallback {
-            seat_name,
-            canonical_path,
-        } => {
+        SeatIdentity::PathFallback { canonical_path } => {
             hasher.update(b"path-fallback");
-            hasher.update(&[0]);
-            hasher.update(seat_name.as_bytes());
             hasher.update(&[0]);
             hasher.update(canonical_path.as_bytes());
         }
@@ -58,40 +48,35 @@ mod tests {
     #[test]
     fn identity_prefixes_are_compatibility_pins() {
         let registered = derive_genome(&SeatIdentity::Registered {
-            seat_name: "mason".to_owned(),
             project_id: "project-42".to_owned(),
         });
         let fallback = derive_genome(&SeatIdentity::PathFallback {
-            seat_name: "mason".to_owned(),
             canonical_path: "project-42".to_owned(),
         });
         let empty = derive_genome(&SeatIdentity::Registered {
-            seat_name: String::new(),
             project_id: String::new(),
         });
 
         assert_eq!(
             &registered.to_hex()[..64],
-            "6d4604f3c6319289abbcb60a9ad68bc1d9e49746176c58a65528612de3ceb26b"
+            "497c376676efcfbabd57a41123143dbb72df26ad5f2b09c6d7331410ea13c289"
         );
         assert_eq!(
             &fallback.to_hex()[..64],
-            "79dcf9c284a2022285915902e2c85f1b61bbdc992fecdb3f30d88a1d216f54ea"
+            "70e579fc8f565c4563aeccb739a43eb9867e2264e6cb2a658adc8621edb63cd3"
         );
         assert_eq!(
             &empty.to_hex()[..64],
-            "266c4534796028fb23cbff26a90574f18adbfba9f17361a40d167babdc87cb63"
+            "ac844c9c9582832925ef89a4b581d9f31d23d5b69702fd408f5e1a2167d5bfcb"
         );
     }
 
     #[test]
     fn fallback_and_registered_are_domain_separated() {
         let registered = derive_genome(&SeatIdentity::Registered {
-            seat_name: "same".to_owned(),
             project_id: "value".to_owned(),
         });
         let fallback = derive_genome(&SeatIdentity::PathFallback {
-            seat_name: "same".to_owned(),
             canonical_path: "value".to_owned(),
         });
 
@@ -99,14 +84,12 @@ mod tests {
     }
 
     #[test]
-    fn changing_the_seat_name_changes_every_stream() {
+    fn different_ids_derive_different_genomes() {
         let first = derive_genome(&SeatIdentity::Registered {
-            seat_name: "first".to_owned(),
-            project_id: "project".to_owned(),
+            project_id: "first".to_owned(),
         });
         let second = derive_genome(&SeatIdentity::Registered {
-            seat_name: "second".to_owned(),
-            project_id: "project".to_owned(),
+            project_id: "second".to_owned(),
         });
 
         assert_ne!(first, second);

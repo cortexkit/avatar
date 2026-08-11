@@ -136,21 +136,19 @@ final class GoldenConformanceTests: XCTestCase {
         // crates/avatar-genome/src/identity.rs. They pin the domain-separated
         // blake3 XOF derivation shared by every port: any drift in the prefix
         // strings, the zero separators, or the XOF fill fails here.
-        let registered = deriveGenome(
-            .registered(seatName: "mason", projectId: "project-42"))
-        let fallback = deriveGenome(
-            .pathFallback(seatName: "mason", canonicalPath: "project-42"))
-        let empty = deriveGenome(.registered(seatName: "", projectId: ""))
+        let registered = deriveGenome(.registered(projectId: "project-42"))
+        let fallback = deriveGenome(.pathFallback(canonicalPath: "project-42"))
+        let empty = deriveGenome(.registered(projectId: ""))
 
         XCTAssertEqual(
             String(registered.toHex().prefix(64)),
-            "6d4604f3c6319289abbcb60a9ad68bc1d9e49746176c58a65528612de3ceb26b")
+            "497c376676efcfbabd57a41123143dbb72df26ad5f2b09c6d7331410ea13c289")
         XCTAssertEqual(
             String(fallback.toHex().prefix(64)),
-            "79dcf9c284a2022285915902e2c85f1b61bbdc992fecdb3f30d88a1d216f54ea")
+            "70e579fc8f565c4563aeccb739a43eb9867e2264e6cb2a658adc8621edb63cd3")
         XCTAssertEqual(
             String(empty.toHex().prefix(64)),
-            "266c4534796028fb23cbff26a90574f18adbfba9f17361a40d167babdc87cb63")
+            "ac844c9c9582832925ef89a4b581d9f31d23d5b69702fd408f5e1a2167d5bfcb")
     }
 
     // MARK: Table hash pins

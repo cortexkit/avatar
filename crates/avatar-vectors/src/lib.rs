@@ -373,12 +373,12 @@ mod tests {
                 genome: pattern_genome(5),
                 moods: NEUTRAL,
             },
-            seat_vector("seat_ava", "AVA", ALL_MOODS),
-            seat_vector("seat_subc", "SUBC", NEUTRAL),
-            seat_vector("seat_alf", "ALF", NEUTRAL),
-            seat_vector("seat_engram", "ENGRAM", NEUTRAL),
-            seat_vector("seat_ckios", "CKIOS", NEUTRAL),
-            seat_vector("seat_fusi", "FUSI", NEUTRAL),
+            seat_vector("seat_ava", "pj-golden-ava", ALL_MOODS),
+            seat_vector("seat_subc", "pj-golden-subc", NEUTRAL),
+            seat_vector("seat_alf", "pj-golden-alf", NEUTRAL),
+            seat_vector("seat_engram", "pj-golden-engram", NEUTRAL),
+            seat_vector("seat_ckios", "pj-golden-ckios", NEUTRAL),
+            seat_vector("seat_fusi", "pj-golden-fusi", NEUTRAL),
             VectorSpec {
                 name: "sliver",
                 genome: Genome::from_bytes(sliver),
@@ -400,12 +400,11 @@ mod tests {
         Genome::from_bytes(bytes)
     }
 
-    fn seat_vector(name: &'static str, seat_name: &str, moods: &'static [Mood]) -> VectorSpec {
+    fn seat_vector(name: &'static str, project_id: &str, moods: &'static [Mood]) -> VectorSpec {
         VectorSpec {
             name,
             genome: derive_genome(&SeatIdentity::Registered {
-                seat_name: seat_name.to_owned(),
-                project_id: format!("pj-golden-{}", seat_name.to_ascii_lowercase()),
+                project_id: project_id.to_owned(),
             }),
             moods,
         }
