@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10000 10000">
+<rect width="10000" height="10000" fill="#240600"/>
+<g transform="translate(0,-135.58) scale(1, 1)">
+<defs>
+  <radialGradient id="av-gradox" cx="50%" cy="50%" r="50%" fx="50%" fy="50%" spreadMethod="pad">
+    <stop offset="89%" stop-color="#009134"/><stop offset="100%" stop-color="#007d20"/>
+  </radialGradient>
+  <filter id="av-light">
+    <feDiffuseLighting in="SourceGraphic" result="light" lighting-color="white">
+      <fePointLight x="5000" y="5135.58" z="476.19"/>
+    </feDiffuseLighting>
+    <feComposite in="SourceGraphic" in2="light" operator="arithmetic" k1="0.9" k2="1.1" k3="0" k4="0"/>
+  </filter>
+  <path id="av-bp" d="M5168.06,5152.78C5100.3 5153.95, 4899.7 5153.95, 4831.94 5152.78C4467.06 5146.49, 3030.93 5128.51, 3395.81 5122.22C3760.69 5115.93, 6239.31 5115.93, 6604.19 5122.22C6969.07 5128.51, 5532.94 5146.49, 5168.06 5152.78"/>
+</defs>
+<use href="#av-bp" stroke-width="39.22" stroke="#050000" fill="#009134"/>
+<g filter="url(#av-light)">
+  <use href="#av-bp" fill="#009134"/>
+  <use href="#av-bp" fill="url(#av-gradox)"/>
+</g>
+<g id="av-face">
+  <defs>
+    <clipPath id="av-eye-left-clip"><path d="M3923.42 4921.18 C4323.13 4617.51,4726.49 4617.51,4854.25 4923.7 C4726.49 5617.51,4323.13 5617.51,3923.42 4921.18 Z"/></clipPath>
+    <clipPath id="av-eye-right-clip"><path d="M6076.58 4921.18 C5676.87 4617.51,5273.51 4617.51,5145.75 4923.7 C5273.51 5617.51,5676.87 5617.51,6076.58 4921.18 Z"/></clipPath>
+    <filter id="av-eye-noise"><feTurbulence type="fractalNoise" stitchTiles="stitch" baseFrequency="0.024823 0.083411" numOctaves="5" seed="250" result="warp"/><feDisplacementMap xChannelSelector="R" yChannelSelector="G" scale="33.69" in="SourceGraphic" in2="warp"/></filter>
+  </defs>
+  <g id="av-mouth" data-family="7"><path d="M4560.76 5845.33 C4780.38 5746.52,4780.38 5746.52,5000 5758.04 C5219.62 5746.52,5219.62 5746.52,5439.24 5889.69 C5219.62 5971.97,5219.62 5971.97,5000 5983.49 C4780.38 5971.97,4780.38 5971.97,4560.76 5845.33 Z" fill="#bccfff" stroke="#000000" stroke-width="1.96" stroke-linejoin="round"/></g>
+  <g id="av-eye-left" transform="rotate(0,4388.84,5117.51)">
+    <path class="av-eyeball" d="M3923.42 4921.18 C4323.13 4617.51,4726.49 4617.51,4854.25 4923.7 C4726.49 5617.51,4323.13 5617.51,3923.42 4921.18 Z" fill="#ffffff" stroke="#050000" stroke-width="1.96"/>
+    <g clip-path="url(#av-eye-left-clip)">
+      <circle class="av-iris" cx="4388.84" cy="5117.51" r="231.96" fill="#543741" stroke="#050000" stroke-width="0.8"/>
+      <ellipse class="av-iris-shade" cx="4388.84" cy="5117.51" rx="231.23" ry="192.69" fill="#004100" opacity="0.247058" filter="url(#av-eye-noise)"/>
+      <circle class="av-pupil" cx="4388.84" cy="5117.51" r="47.52" fill="#050000"/>
+      <circle class="av-highlight" cx="4342.45" cy="5071.12" r="19.33" fill="#ffffff" opacity="0.899999"/>
+      <circle class="av-highlight" cx="4427.5" cy="5156.17" r="12.21" fill="#ff56c9" opacity="0.3"/>
+      <circle class="av-highlight" cx="4435.23" cy="5163.9" r="8.28" fill="#ffffff" opacity="0.8"/>
+    </g>
+    <path class="av-upper-lid" d="M3923.42 4921.18 C4323.13 4617.51,4726.49 4617.51,4854.25 4923.7 C4726.49 4681.15,4323.13 4681.15,3923.42 4921.18 Z" fill="#009134" stroke="#050000" stroke-width="1.96"/>
+    <path class="av-lower-lid" d="M3923.42 4921.18 C4323.13 5617.51,4726.49 5617.51,4854.25 4923.7 C4726.49 5421.61,4323.13 5421.61,3923.42 4921.18 Z" fill="#009134" stroke="#050000" stroke-width="1.96"/>
+    <path class="av-lash" d="M3923.42 4921.18 C3642.23 4827.45, 3777.11 4764.13, 3683.38 4670.4" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4072.93 4842.43 C3791.74 4748.7, 3934.19 4679.8, 3840.46 4586.07" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4219.53 4786.2 C3938.34 4692.47, 4089.65 4618.54, 3995.92 4524.81" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4359.91 4752.54 C4078.72 4658.81, 4240.66 4580.57, 4146.93 4486.84" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4490.82 4741.47 C4209.63 4647.74, 4384.76 4566.37, 4291.03 4472.64" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4608.97 4753.02 C4327.78 4659.29, 4519.47 4577.1, 4425.74 4483.37" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4711.12 4787.22 C4429.93 4693.49, 4641.94 4614.94, 4548.21 4521.21" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4793.96 4844.11 C4512.77 4750.38, 4747.08 4682.71, 4653.35 4588.98" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M4854.25 4923.7 C4573.06 4829.97, 4826.68 4781.02, 4732.95 4687.29" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+  </g>
+  <g id="av-eye-right" transform="rotate(0,5611.16,5117.51)">
+    <path class="av-eyeball" d="M6076.58 4921.18 C5676.87 4617.51,5273.51 4617.51,5145.75 4923.7 C5273.51 5617.51,5676.87 5617.51,6076.58 4921.18 Z" fill="#ffffff" stroke="#050000" stroke-width="1.96"/>
+    <g clip-path="url(#av-eye-right-clip)">
+      <circle class="av-iris" cx="5611.16" cy="5117.51" r="231.96" fill="#543741" stroke="#050000" stroke-width="0.8"/>
+      <ellipse class="av-iris-shade" cx="5611.16" cy="5117.51" rx="231.23" ry="192.69" fill="#004100" opacity="0.247058" filter="url(#av-eye-noise)"/>
+      <circle class="av-pupil" cx="5611.16" cy="5117.51" r="47.52" fill="#050000"/>
+      <circle class="av-highlight" cx="5564.77" cy="5071.12" r="19.33" fill="#ffffff" opacity="0.899999"/>
+      <circle class="av-highlight" cx="5649.82" cy="5156.17" r="12.21" fill="#ff56c9" opacity="0.3"/>
+      <circle class="av-highlight" cx="5657.55" cy="5163.9" r="8.28" fill="#ffffff" opacity="0.8"/>
+    </g>
+    <path class="av-upper-lid" d="M6076.58 4921.18 C5676.87 4617.51,5273.51 4617.51,5145.75 4923.7 C5273.51 4681.15,5676.87 4681.15,6076.58 4921.18 Z" fill="#009134" stroke="#050000" stroke-width="1.96"/>
+    <path class="av-lower-lid" d="M6076.58 4921.18 C5676.87 5617.51,5273.51 5617.51,5145.75 4923.7 C5273.51 5421.61,5676.87 5421.61,6076.58 4921.18 Z" fill="#009134" stroke="#050000" stroke-width="1.96"/>
+    <path class="av-lash" d="M6076.58 4921.18 C6357.77 4827.45, 6222.86 4764.11, 6316.59 4670.38" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5927.07 4842.43 C6208.26 4748.7, 6065.79 4679.78, 6159.52 4586.05" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5780.47 4786.2 C6061.66 4692.47, 5910.33 4618.52, 6004.06 4524.79" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5640.09 4752.54 C5921.28 4658.81, 5759.31 4580.56, 5853.04 4486.83" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5509.18 4741.47 C5790.37 4647.74, 5615.2 4566.36, 5708.93 4472.63" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5391.03 4753.02 C5672.22 4659.29, 5480.5 4577.1, 5574.23 4483.37" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5288.88 4787.22 C5570.07 4693.49, 5358.03 4614.95, 5451.76 4521.22" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5206.04 4844.11 C5487.23 4750.38, 5252.9 4682.73, 5346.63 4589" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+    <path class="av-lash" d="M5145.75 4923.7 C5426.94 4829.97, 5173.3 4781.05, 5267.03 4687.32" stroke="#050000" stroke-width="93.73" stroke-linecap="round" fill="#050000"/>
+  </g>
+  <path id="av-brow-left" d="M4505.29,4439.9C4460.95 4456.15, 4110.91 4417.94, 4086.23 4394.15C4070.85 4379.33, 4312.42 4290.77, 4355.42 4295.46C4398.42 4300.15, 4532.91 4429.77, 4505.29 4439.9" transform="translate(0,0) rotate(0,4295.76,4367.68)" fill="#000000"/>
+  <path id="av-brow-right" d="M5494.71,4439.9C5539.05 4456.15, 5889.09 4417.94, 5913.77 4394.15C5929.15 4379.33, 5687.58 4290.77, 5644.58 4295.46C5601.58 4300.15, 5467.09 4429.77, 5494.71 4439.9" transform="translate(0,0) rotate(0,5704.24,4367.68)" fill="#000000"/>
+</g>
+</g>
+</svg>

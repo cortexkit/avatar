@@ -85,6 +85,12 @@ jobs:
           cargo run --locked -p avatar-tables --bin mint
           git diff --exit-code
 
+      # The workspace test leg already covers this, but the corpus deserves its
+      # own named gate so byte drift is legible at a glance in the CI run list.
+      - name: Golden corpus is current
+        if: ${{ !cancelled() }}
+        run: cargo test --locked -p avatar-vectors
+
       # A generated file edited by hand is invisible to every test above.
       # Compares against the snapshot rather than requiring an empty tree,
       # so the delta is attributable to the build.

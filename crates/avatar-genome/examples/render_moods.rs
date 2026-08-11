@@ -20,7 +20,11 @@ fn main() {
     ] {
         let svg = render_svg(
             &phenotype,
-            &RenderParams { mood, growth: Q32::ONE, canvas: 10_000 },
+            &RenderParams {
+                mood,
+                growth: Q32::ONE,
+                canvas: 10_000,
+            },
         )
         .expect("render");
         std::fs::write(format!("/tmp/ava-samples/mood-{name}.svg"), svg).expect("write");
