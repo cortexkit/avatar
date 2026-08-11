@@ -1,13 +1,15 @@
 //! Paired eye geometry and SVG assembly.
 
-use avatar_phenotype::{Eyes, Face, Palette};
+use avatar_phenotype::{Eyes, Face, Palette, Rgb, Q32};
 use avatar_tables::div_round_half_away;
 
 use crate::face::{face_width, FaceRect};
-use crate::fixed::{bam_degrees_q32, div_i64, opposite_bam, q32_mul, ratio_q32, Q32_ONE};
-use crate::format::{format_milli, format_q32_decimal};
+use crate::fixed::{div_i64, opposite_bam, q32_mul, ratio_q32, Q32_ONE};
 use crate::lashes::{self, Cubic, EyeSide};
 use crate::mood::MoodDeltas;
+use crate::tree::{
+    Effect, FillRule, Paint, Primitive, Segment, Shape, Stroke, Transform, TransformOp,
+};
 
 const Q32_ONE_POINT_TWO: i64 = 5_153_960_755;
 const Q32_TWO_POINT_EIGHT: i64 = 12_025_908_429;
@@ -176,100 +178,173 @@ impl EyePair {
     }
 }
 
-pub(crate) fn render_defs(pair: &EyePair, eyes: &Eyes) -> String {
-    let left_path = outline_path(pair.left);
-    let right_path = outline_path(pair.right);
-    let freq_h = 42_949_673 + q32_mul(386_547_057, eyes.noise_freq_h.0); // 0.01..0.10.
-    let freq_v = 42_949_673 + q32_mul(386_547_057, eyes.noise_freq_v.0);
-    let displacement = 3_000 + q32_mul(47_000, eyes.iris_shade_reduce.0);
-    format!(
-        "  <defs>\n    <clipPath id=\"av-eye-left-clip\"><path d=\"{left_path}\"/></clipPath>\n    <clipPath id=\"av-eye-right-clip\"><path d=\"{right_path}\"/></clipPath>\n    <filter id=\"av-eye-noise\"><feTurbulence type=\"fractalNoise\" stitchTiles=\"stitch\" baseFrequency=\"{} {}\" numOctaves=\"5\" seed=\"{}\" result=\"warp\"/><feDisplacementMap xChannelSelector=\"R\" yChannelSelector=\"G\" scale=\"{}\" in=\"SourceGraphic\" in2=\"warp\"/></filter>\n  </defs>\n",
-        format_q32_decimal(freq_h),
-        format_q32_decimal(freq_v),
-        eyes.noise_seed,
-        format_milli(displacement),
-    )
-}
-
-pub(crate) fn render_eye(eye: EyeGeometry, genes: &Face, palette: &Palette) -> String {
-    let side_name = match eye.side {
-        EyeSide::Left => "left",
-        EyeSide::Right => "right",
-    };
+pub(crate) fn eye_primitives(
+    eye: EyeGeometry,
+    genes: &Face,
+    palette: &Palette,
+    root_ops: &[TransformOp],
+) -> Vec<Primitive> {
+    let mut ops = root_ops.to_vec();
+    ops.push(TransformOp::Rotate {
+        angle: eye.rotation,
+        cx: eye.center_x,
+        cy: eye.center_y,
+    });
+    let transform = Transform { ops };
+    let clip = outline_shape(eye);
     let (iris, lid) = colors(eye.side, &genes.eyes, palette);
-    let shade_radius = eye.iris_radius
+    let shade_radius = (eye.iris_radius
         - q32_mul(
             div_i64(eye.iris_radius * 2, 5),
             genes.eyes.iris_shade_reduce.0,
-        );
-    let rotation = format_q32_decimal(bam_degrees_q32(eye.rotation));
-    let mut output = format!(
-        "  <g id=\"av-eye-{side_name}\" transform=\"rotate({rotation},{},{})\">\n",
-        format_milli(eye.center_x),
-        format_milli(eye.center_y),
-    );
-    output.push_str(&format!(
-        "    <path class=\"av-eyeball\" d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>\n",
-        outline_path(eye),
-        hex(palette.white),
-        hex(palette.dark),
-        format_milli(196),
+        ))
+    .max(1);
+    let freq_h = Q32(42_949_673 + q32_mul(386_547_057, genes.eyes.noise_freq_h.0));
+    let freq_v = Q32(42_949_673 + q32_mul(386_547_057, genes.eyes.noise_freq_v.0));
+    let displacement_milli = 3_000 + q32_mul(47_000, genes.eyes.iris_shade_reduce.0);
+    let displacement =
+        Q32(div_round_half_away(i128::from(displacement_milli) * i128::from(Q32_ONE), 100) as i64);
+
+    let mut result = vec![
+        Primitive {
+            shape: clip.clone(),
+            transform: Some(transform.clone()),
+            paint: Paint::Solid {
+                color: palette.white,
+            },
+            stroke: Some(Stroke::new(palette.dark, 196)),
+            opacity: None,
+            clip: None,
+            effects: Vec::new(),
+            label: "av-eyeball".to_owned(),
+        },
+        Primitive {
+            shape: Shape::Circle {
+                cx: eye.center_x,
+                cy: eye.center_y,
+                r: eye.iris_radius,
+            },
+            transform: Some(transform.clone()),
+            paint: Paint::Solid { color: iris },
+            stroke: Some(Stroke::new(palette.dark, 80)),
+            opacity: None,
+            clip: Some(clip.clone()),
+            effects: Vec::new(),
+            label: "av-iris".to_owned(),
+        },
+        Primitive {
+            shape: Shape::Ellipse {
+                cx: eye.center_x,
+                cy: eye.center_y,
+                rx: shade_radius,
+                ry: div_i64(shade_radius * 5, 6),
+            },
+            transform: Some(transform.clone()),
+            paint: Paint::Solid {
+                color: palette.primary_darkest,
+            },
+            stroke: None,
+            opacity: Some(genes.eyes.iris_shade_opacity),
+            clip: Some(clip.clone()),
+            effects: vec![Effect::Turbulence {
+                seed: genes.eyes.noise_seed,
+                freq_h,
+                freq_v,
+                octaves: 5,
+                scale: displacement,
+            }],
+            label: "av-iris-shade".to_owned(),
+        },
+        Primitive {
+            shape: Shape::Circle {
+                cx: eye.center_x,
+                cy: eye.center_y,
+                r: eye.pupil_radius,
+            },
+            transform: Some(transform.clone()),
+            paint: Paint::Solid {
+                color: palette.dark,
+            },
+            stroke: None,
+            opacity: None,
+            clip: Some(clip.clone()),
+            effects: Vec::new(),
+            label: "av-pupil".to_owned(),
+        },
+    ];
+    result.push(highlight_primitive(
+        eye,
+        HighlightSpec {
+            x_divisor: -5,
+            y_divisor: -5,
+            radius_divisor: 12,
+            color: palette.white,
+            opacity: 3_865_470_566,
+        },
+        &transform,
+        &clip,
     ));
-    output.push_str(&format!(
-        "    <g clip-path=\"url(#av-eye-{side_name}-clip)\">\n"
+    result.push(highlight_primitive(
+        eye,
+        HighlightSpec {
+            x_divisor: 6,
+            y_divisor: 6,
+            radius_divisor: 19,
+            color: palette.harmonic1,
+            opacity: 1_288_490_189,
+        },
+        &transform,
+        &clip,
     ));
-    output.push_str(&format!(
-        "      <circle class=\"av-iris\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>\n",
-        format_milli(eye.center_x),
-        format_milli(eye.center_y),
-        format_milli(eye.iris_radius),
-        hex(iris),
-        hex(palette.dark),
-        format_milli(80),
+    result.push(highlight_primitive(
+        eye,
+        HighlightSpec {
+            x_divisor: 5,
+            y_divisor: 5,
+            radius_divisor: 28,
+            color: palette.white,
+            opacity: 3_435_973_837,
+        },
+        &transform,
+        &clip,
     ));
-    output.push_str(&format!(
-        "      <ellipse class=\"av-iris-shade\" cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{}\" opacity=\"{}\" filter=\"url(#av-eye-noise)\"/>\n",
-        format_milli(eye.center_x),
-        format_milli(eye.center_y),
-        format_milli(shade_radius.max(1)),
-        format_milli(div_i64(shade_radius.max(1) * 5, 6)),
-        hex(palette.primary_darkest),
-        format_q32_decimal(genes.eyes.iris_shade_opacity.0),
-    ));
-    output.push_str(&format!(
-        "      <circle class=\"av-pupil\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>\n",
-        format_milli(eye.center_x),
-        format_milli(eye.center_y),
-        format_milli(eye.pupil_radius),
-        hex(palette.dark),
-    ));
-    highlight(&mut output, eye, -5, -5, 12, palette.white, 3_865_470_566);
-    highlight(&mut output, eye, 6, 6, 19, palette.harmonic1, 1_288_490_189);
-    highlight(&mut output, eye, 5, 5, 28, palette.white, 3_435_973_837);
-    output.push_str("    </g>\n");
-    output.push_str(&format!(
-        "    <path class=\"av-upper-lid\" d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>\n",
-        upper_lid_path(eye, genes.eyes.lid_extension_gate, genes.eyes.lid_extension_side),
-        hex(lid),
-        hex(palette.dark),
-        format_milli(196),
-    ));
-    output.push_str(&format!(
-        "    <path class=\"av-lower-lid\" d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>\n",
-        lower_lid_path(eye, genes.eyes.lid_extension_gate, genes.eyes.lid_extension_side),
-        hex(lid),
-        hex(palette.dark),
-        format_milli(196),
-    ));
-    output.push_str(&lashes::render(
+    result.push(Primitive {
+        shape: upper_lid_shape(
+            eye,
+            genes.eyes.lid_extension_gate,
+            genes.eyes.lid_extension_side,
+        ),
+        transform: Some(transform.clone()),
+        paint: Paint::Solid { color: lid },
+        stroke: Some(Stroke::new(palette.dark, 196)),
+        opacity: None,
+        clip: None,
+        effects: Vec::new(),
+        label: "av-upper-lid".to_owned(),
+    });
+    result.push(Primitive {
+        shape: lower_lid_shape(
+            eye,
+            genes.eyes.lid_extension_gate,
+            genes.eyes.lid_extension_side,
+        ),
+        transform: Some(transform.clone()),
+        paint: Paint::Solid { color: lid },
+        stroke: Some(Stroke::new(palette.dark, 196)),
+        opacity: None,
+        clip: None,
+        effects: Vec::new(),
+        label: "av-lower-lid".to_owned(),
+    });
+    result.extend(lashes::lash_primitives(
         &genes.lashes,
         eye.upper_lash_curve,
         eye.outline_bottom.cp1y - eye.outline_top.cp1y,
         eye.side,
         palette.dark,
+        &transform,
     ));
-    output.push_str("  </g>\n");
-    output
+    result
 }
 
 fn mirror_eye(left: EyeGeometry) -> EyeGeometry {
@@ -294,78 +369,105 @@ fn mirror_curve(curve: Cubic) -> Cubic {
     }
 }
 
-fn outline_path(eye: EyeGeometry) -> String {
+pub(crate) fn outline_shape(eye: EyeGeometry) -> Shape {
     let top = eye.outline_top;
     let bottom = eye.outline_bottom;
-    format!(
-        "M{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} Z",
-        format_milli(top.x0),
-        format_milli(top.y0),
-        format_milli(top.cp1x),
-        format_milli(top.cp1y),
-        format_milli(top.cp2x),
-        format_milli(top.cp2y),
-        format_milli(top.x3),
-        format_milli(top.y3),
-        format_milli(bottom.cp2x),
-        format_milli(bottom.cp2y),
-        format_milli(bottom.cp1x),
-        format_milli(bottom.cp1y),
-        format_milli(bottom.x0),
-        format_milli(bottom.y0),
-    )
+    Shape::Path {
+        segments: vec![
+            Segment::MoveTo {
+                x: top.x0,
+                y: top.y0,
+            },
+            Segment::CubicTo {
+                cp1x: top.cp1x,
+                cp1y: top.cp1y,
+                cp2x: top.cp2x,
+                cp2y: top.cp2y,
+                x: top.x3,
+                y: top.y3,
+            },
+            Segment::CubicTo {
+                cp1x: bottom.cp2x,
+                cp1y: bottom.cp2y,
+                cp2x: bottom.cp1x,
+                cp2y: bottom.cp1y,
+                x: bottom.x0,
+                y: bottom.y0,
+            },
+        ],
+        closed: true,
+        fill_rule: FillRule::NonZero,
+    }
 }
 
-fn upper_lid_path(eye: EyeGeometry, gate: u8, side_gene: u8) -> String {
+fn upper_lid_shape(eye: EyeGeometry, gate: u8, side_gene: u8) -> Shape {
     let curve = eye.outline_top;
     let (top_extension, _) = lid_extensions(curve, gate, side_gene);
     let signed_extension = match eye.side {
         EyeSide::Left => -top_extension,
         EyeSide::Right => top_extension,
     };
-    format!(
-        "M{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} Z",
-        format_milli(curve.x0 + signed_extension),
-        format_milli(curve.y0),
-        format_milli(curve.cp1x + signed_extension),
-        format_milli(curve.cp1y),
-        format_milli(curve.cp2x),
-        format_milli(curve.cp2y),
-        format_milli(curve.x3),
-        format_milli(curve.y3),
-        format_milli(curve.cp2x),
-        format_milli(curve.cp2y + eye.upper_close),
-        format_milli(curve.cp1x),
-        format_milli(curve.cp1y + eye.upper_close),
-        format_milli(curve.x0),
-        format_milli(curve.y0),
-    )
+    Shape::Path {
+        segments: vec![
+            Segment::MoveTo {
+                x: curve.x0 + signed_extension,
+                y: curve.y0,
+            },
+            Segment::CubicTo {
+                cp1x: curve.cp1x + signed_extension,
+                cp1y: curve.cp1y,
+                cp2x: curve.cp2x,
+                cp2y: curve.cp2y,
+                x: curve.x3,
+                y: curve.y3,
+            },
+            Segment::CubicTo {
+                cp1x: curve.cp2x,
+                cp1y: curve.cp2y + eye.upper_close,
+                cp2x: curve.cp1x,
+                cp2y: curve.cp1y + eye.upper_close,
+                x: curve.x0,
+                y: curve.y0,
+            },
+        ],
+        closed: true,
+        fill_rule: FillRule::NonZero,
+    }
 }
 
-fn lower_lid_path(eye: EyeGeometry, gate: u8, side_gene: u8) -> String {
+fn lower_lid_shape(eye: EyeGeometry, gate: u8, side_gene: u8) -> Shape {
     let curve = eye.outline_bottom;
     let (_, lower_extension) = lid_extensions(curve, gate, side_gene);
     let signed_extension = match eye.side {
         EyeSide::Left => -lower_extension,
         EyeSide::Right => lower_extension,
     };
-    format!(
-        "M{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} Z",
-        format_milli(curve.x0 + signed_extension),
-        format_milli(curve.y0),
-        format_milli(curve.cp1x + signed_extension),
-        format_milli(curve.cp1y),
-        format_milli(curve.cp2x),
-        format_milli(curve.cp2y),
-        format_milli(curve.x3),
-        format_milli(curve.y3),
-        format_milli(curve.cp2x),
-        format_milli(curve.cp2y - eye.lower_close),
-        format_milli(curve.cp1x),
-        format_milli(curve.cp1y - eye.lower_close),
-        format_milli(curve.x0),
-        format_milli(curve.y0),
-    )
+    Shape::Path {
+        segments: vec![
+            Segment::MoveTo {
+                x: curve.x0 + signed_extension,
+                y: curve.y0,
+            },
+            Segment::CubicTo {
+                cp1x: curve.cp1x + signed_extension,
+                cp1y: curve.cp1y,
+                cp2x: curve.cp2x,
+                cp2y: curve.cp2y,
+                x: curve.x3,
+                y: curve.y3,
+            },
+            Segment::CubicTo {
+                cp1x: curve.cp2x,
+                cp1y: curve.cp2y - eye.lower_close,
+                cp2x: curve.cp1x,
+                cp2y: curve.cp1y - eye.lower_close,
+                x: curve.x0,
+                y: curve.y0,
+            },
+        ],
+        closed: true,
+        fill_rule: FillRule::NonZero,
+    }
 }
 
 fn lid_extensions(curve: Cubic, gate: u8, side: u8) -> (i64, i64) {
@@ -381,23 +483,35 @@ fn lid_extensions(curve: Cubic, gate: u8, side: u8) -> (i64, i64) {
     }
 }
 
-fn highlight(
-    output: &mut String,
-    eye: EyeGeometry,
+#[derive(Clone, Copy)]
+struct HighlightSpec {
     x_divisor: i64,
     y_divisor: i64,
     radius_divisor: i64,
-    color: avatar_phenotype::Rgb,
+    color: Rgb,
     opacity: i64,
-) {
-    output.push_str(&format!(
-        "      <circle class=\"av-highlight\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" opacity=\"{}\"/>\n",
-        format_milli(eye.center_x + div_i64(eye.iris_radius, x_divisor)),
-        format_milli(eye.center_y + div_i64(eye.iris_radius, y_divisor)),
-        format_milli(div_i64(eye.iris_radius, radius_divisor).max(1)),
-        hex(color),
-        format_q32_decimal(opacity),
-    ));
+}
+
+fn highlight_primitive(
+    eye: EyeGeometry,
+    spec: HighlightSpec,
+    transform: &Transform,
+    clip: &Shape,
+) -> Primitive {
+    Primitive {
+        shape: Shape::Circle {
+            cx: eye.center_x + div_i64(eye.iris_radius, spec.x_divisor),
+            cy: eye.center_y + div_i64(eye.iris_radius, spec.y_divisor),
+            r: div_i64(eye.iris_radius, spec.radius_divisor).max(1),
+        },
+        transform: Some(transform.clone()),
+        paint: Paint::Solid { color: spec.color },
+        stroke: None,
+        opacity: Some(Q32(spec.opacity)),
+        clip: Some(clip.clone()),
+        effects: Vec::new(),
+        label: "av-highlight".to_owned(),
+    }
 }
 
 fn colors(
@@ -464,8 +578,4 @@ fn divide_by_q32(value: i64, divisor: i64) -> i64 {
 
 fn clamp_q32(value: i64) -> i64 {
     value.clamp(0, Q32_ONE)
-}
-
-fn hex(color: avatar_phenotype::Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
 }

@@ -4,7 +4,9 @@ use avatar_phenotype::{Lashes, Rgb};
 use avatar_tables::{cos_q30, div_round_half_away, sin_q30};
 
 use crate::fixed::{q32_mul, Q32_ONE};
-use crate::format::format_milli;
+use crate::tree::{
+    FillRule, Paint, Primitive, Segment, Shape, Stroke, StrokeCap, StrokeJoin, Transform,
+};
 
 /// One cubic curve in canonical milliunits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,22 +37,23 @@ pub(crate) fn sample_count(count: u8, removed: u8) -> usize {
 }
 
 /// Produces lashes after mood closure has shifted the upper-lid curve.
-pub(crate) fn render(
+pub(crate) fn lash_primitives(
     genes: &Lashes,
     curve: Cubic,
     eye_height: i64,
     side: EyeSide,
     color: Rgb,
-) -> String {
+    transform: &Transform,
+) -> Vec<Primitive> {
     let samples = sample_count(genes.count, genes.removed);
     if samples == 0 {
-        return String::new();
+        return Vec::new();
     }
 
     let length = q32_mul(eye_height, genes.length_scale.0).max(0);
     let stroke = q32_mul(eye_height, genes.stroke_scale.0).max(1);
     let angular_offset = lash_angle_offset(genes.direction);
-    let mut output = String::new();
+    let mut primitives = Vec::with_capacity(samples);
 
     // face.tsx 707–759 derives a tangent angle and then adds or subtracts
     // π/direction. The BAM lookup keeps the construction deterministic.
@@ -68,22 +71,40 @@ pub(crate) fn render(
             EyeSide::Left => -1,
             EyeSide::Right => 1,
         };
-        output.push_str(&format!(
-            "    <path class=\"av-lash\" d=\"M{} {} C{} {}, {} {}, {} {}\" stroke=\"{}\" stroke-width=\"{}\" stroke-linecap=\"round\" fill=\"{}\"/>\n",
-            format_milli(point.0),
-            format_milli(point.1),
-            format_milli(point.0 + sign * stroke * 3),
-            format_milli(point.1 - stroke),
-            format_milli(end_x + sign * stroke),
-            format_milli(end_y - stroke),
-            format_milli(end_x + sign * stroke * 2),
-            format_milli(end_y - stroke * 2),
-            hex(color),
-            format_milli(stroke),
-            hex(color),
-        ));
+        primitives.push(Primitive {
+            shape: Shape::Path {
+                segments: vec![
+                    Segment::MoveTo {
+                        x: point.0,
+                        y: point.1,
+                    },
+                    Segment::CubicTo {
+                        cp1x: point.0 + sign * stroke * 3,
+                        cp1y: point.1 - stroke,
+                        cp2x: end_x + sign * stroke,
+                        cp2y: end_y - stroke,
+                        x: end_x + sign * stroke * 2,
+                        y: end_y - stroke * 2,
+                    },
+                ],
+                closed: false,
+                fill_rule: FillRule::NonZero,
+            },
+            transform: Some(transform.clone()),
+            paint: Paint::Solid { color },
+            stroke: Some(Stroke {
+                color,
+                width: stroke,
+                cap: StrokeCap::Round,
+                join: StrokeJoin::Miter,
+            }),
+            opacity: None,
+            clip: None,
+            effects: Vec::new(),
+            label: "av-lash".to_owned(),
+        });
     }
-    output
+    primitives
 }
 
 fn lash_angle_offset(direction: u8) -> u16 {
@@ -167,10 +188,6 @@ fn atan2_bam(y: i64, x: i64) -> u16 {
 
 fn trig_length(length: i64, trig_q30: i32) -> i64 {
     div_round_half_away(i128::from(length) * i128::from(trig_q30), 1_i128 << 30) as i64
-}
-
-fn hex(color: Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
 }
 
 #[cfg(test)]

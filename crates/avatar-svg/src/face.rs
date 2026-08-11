@@ -1,13 +1,11 @@
 //! Face placement and the bounded mouth-rectangle search.
 
-use avatar_phenotype::{Face, Phenotype};
+use avatar_phenotype::Face;
 use avatar_tables::div_round_half_away;
 
+use crate::eyes;
 use crate::fixed::{q32_mul, CANVAS_MILLI, CENTER};
 use crate::geometry::BodyGeometry;
-use crate::mood;
-use crate::svg::Mood;
-use crate::{brows, eyes, mouth};
 
 const MOUTH_SEARCH_MAX: u32 = 3_000;
 
@@ -115,48 +113,7 @@ pub(crate) fn resolve_face_rect(body: &BodyGeometry, face: &Face, eyes_height: i
     }
 }
 
-/// Assembles the visible z-order: mouth, left and right eyes with lashes, then brows.
-pub(crate) fn render_face_group(
-    phenotype: &Phenotype,
-    body: &BodyGeometry,
-    selected_mood: Mood,
-) -> String {
-    let scaled_mood = mood::deltas(selected_mood).scaled(&phenotype.mood_response);
-    let dimensions = eyes::preliminary_dimensions(&phenotype.face, body.body_width);
-    let rect = resolve_face_rect(body, &phenotype.face, dimensions.upper + dimensions.lower);
-    let eye_pair = eyes::EyePair::new(&phenotype.face, rect, dimensions, scaled_mood);
-    let mouth_rect = render_mouth_rect(body, rect, &eye_pair, &phenotype.face);
-
-    let mut output = String::from("<g id=\"av-face\">\n");
-    output.push_str(&eyes::render_defs(&eye_pair, &phenotype.face.eyes));
-    output.push_str(&mouth::render(
-        &phenotype.face.mouth,
-        mouth_rect,
-        scaled_mood,
-        &phenotype.palette,
-    ));
-    output.push_str(&eyes::render_eye(
-        eye_pair.left,
-        &phenotype.face,
-        &phenotype.palette,
-    ));
-    output.push_str(&eyes::render_eye(
-        eye_pair.right,
-        &phenotype.face,
-        &phenotype.palette,
-    ));
-    output.push_str(&brows::render(
-        &phenotype.face,
-        rect,
-        &eye_pair,
-        scaled_mood,
-        &phenotype.palette,
-    ));
-    output.push_str("</g>\n");
-    output
-}
-
-fn render_mouth_rect(
+pub(crate) fn render_mouth_rect(
     body: &BodyGeometry,
     face_rect: FaceRect,
     eyes: &eyes::EyePair,
@@ -296,9 +253,15 @@ mod tests {
     use super::*;
     use avatar_phenotype::{Brows, Eyes, FacePlacement, Lashes, Mouth, Q32};
 
+    use crate::tree::{FillRule, Shape};
+
     fn geometry() -> BodyGeometry {
         BodyGeometry {
-            path: String::new(),
+            shape: Shape::Path {
+                segments: Vec::new(),
+                closed: false,
+                fill_rule: FillRule::NonZero,
+            },
             body_width: 600_000,
             body_height: 600_000,
             top: 100_000,
