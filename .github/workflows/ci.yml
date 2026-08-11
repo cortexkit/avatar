@@ -119,6 +119,13 @@ jobs:
         working-directory: ports/ts
         run: bun install --frozen-lockfile
 
+      # bun test executes TypeScript without typechecking, so tsc is its own
+      # gate — without it, type errors accumulate silently while tests pass.
+      - name: Typecheck
+        working-directory: ports/ts
+        run: bunx tsc --noEmit
+
       - name: Test TypeScript port conformance
+        if: ${{ !cancelled() }}
         working-directory: ports/ts
         run: bun test
