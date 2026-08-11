@@ -230,7 +230,9 @@ export class PhenotypeParseError extends Error {
 }
 
 type JsonValue = bigint | boolean | null | string | JsonObject | JsonValue[];
-type JsonObject = Record<string, JsonValue>;
+interface JsonObject {
+  [key: string]: JsonValue;
+}
 
 class IntegerJsonParser {
   private position = 0;
@@ -508,7 +510,9 @@ function parseEyes(value: JsonValue): Eyes {
   const byteKeys = ["position_mode", "lid_extension_gate", "lid_extension_side", "noise_seed", "rotation_seed", "lid_color_gene", "iris_color_gene"] as const;
   const gateKeys = ["height_bias_gate", "vertical_pull_gate"] as const;
   exactKeys(record, [...q32Keys, ...byteKeys, ...gateKeys], "eyes");
-  const parsed = Object.fromEntries(q32Keys.map((key) => [key, q32(field(record, key, "eyes"), `eyes.${key}`)]));
+  const parsed: Record<string, bigint | boolean | number> = Object.fromEntries(
+    q32Keys.map((key) => [key, q32(field(record, key, "eyes"), `eyes.${key}`)]),
+  );
   for (const key of byteKeys) parsed[key] = u8(field(record, key, "eyes"), `eyes.${key}`);
   for (const key of gateKeys) parsed[key] = gate(field(record, key, "eyes"), `eyes.${key}`);
   return parsed as unknown as Eyes;

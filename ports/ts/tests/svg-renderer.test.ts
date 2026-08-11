@@ -1039,7 +1039,7 @@ function assertWellFormedXml(xml: string): void {
     if (tag.startsWith("/")) {
       const expected = stack.pop();
       expect(expected).toBeDefined();
-      expect(tag.slice(1).trim()).toBe(expected);
+      expect(tag.slice(1).trim()).toBe(expected ?? "");
     } else {
       let nameLength = 0;
       while (
