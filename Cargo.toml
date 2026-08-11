@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/avatar-phenotype", "crates/avatar-tables"]
+members = [
+    "crates/avatar-genome",
+    "crates/avatar-phenotype",
+    "crates/avatar-tables",
+]
 resolver = "2"
 
 [workspace.package]
