@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  # Reusable so a future release workflow gates on the exact same matrix.
+  workflow_call:
+
+concurrency:
+  # Rapid pushes to the same ref cancel earlier runs; only the tip is
+  # verified. Per-commit evidence (bisects, release tags) must not rely on
+  # this workflow's run history.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Linux only for now: this repo is pure computation (no I/O, no platform
+  # paths, no networking), and its whole design goal is that outputs are
+  # byte-identical across platforms — a property enforced by pinned integer
+  # math and golden vectors rather than by a CI matrix. macOS is the
+  # continuously-exercised development platform. A Windows leg becomes
+  # worthwhile the moment any consumer builds this crate on Windows;
+  # revisit then.
+  #
+  # Runner is Blacksmith, not GitHub-hosted: free-plan org, private repo —
+  # GitHub bills private-repo Actions minutes and blocks jobs at the zero
+  # spending limit. Blacksmith runners do not consume GitHub minutes.
+  # Revert to ubuntu-latest if the repo becomes public.
+  test:
+    name: Test (ubuntu)
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # Paired with the post-build check at the end of this job: the property
+      # tested is "the build rewrote a tracked file", not "the tree is clean".
+      - name: Snapshot tree state
+        run: git status --porcelain | sort > "$RUNNER_TEMP/tree-before.txt"
+        shell: bash
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      # Later checks run even when an earlier check failed: a lint failure
+      # must not suppress the test signal (a red job meaning "lint failed,
+      # tests unknown" is indistinguishable from "lint failed, tests passed").
+      # The format check itself stays unguarded: everything before it is
+      # setup, so its failure means the toolchain is absent, not a policy skip.
+      - name: Clippy
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # --all-targets lints the dev profile only; lint release too so
+      # release-only dead code and cfg(not(debug_assertions)) warnings surface.
+      - name: Clippy (release profile)
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace --release --locked -- -D warnings
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --all-targets --locked
+
+      # --all-targets does not include doctests (it expands to
+      # --lib --bins --tests --benches --examples), so doc examples need
+      # their own leg or they arrive unchecked.
+      - name: Doc tests
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --doc --locked
+
+      # Regenerate all pinned spec tables and require byte-identical output.
+      # This is this repo's load-bearing determinism gate: a hand-edited
+      # generated file, or a minting script whose output drifted from the
+      # committed bytes, fails here and nowhere else.
+      - name: Minted tables are reproducible
+        if: ${{ !cancelled() }}
+        run: |
+          cargo run --locked -p avatar-tables --bin mint
+          git diff --exit-code
+
+      # A generated file edited by hand is invisible to every test above.
+      # Compares against the snapshot rather than requiring an empty tree,
+      # so the delta is attributable to the build.
+      - name: Build did not modify tracked files
+        if: ${{ !cancelled() }}
+        run: |
+          git status --porcelain | sort > "$RUNNER_TEMP/tree-after.txt"
+          if ! diff -q "$RUNNER_TEMP/tree-before.txt" "$RUNNER_TEMP/tree-after.txt" >/dev/null; then
+            echo "the build rewrote tracked files:" >&2
+            diff "$RUNNER_TEMP/tree-before.txt" "$RUNNER_TEMP/tree-after.txt" >&2 || true
+            git diff >&2
+            exit 1
+          fi
