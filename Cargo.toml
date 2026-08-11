@@ -2,6 +2,7 @@
 members = [
     "crates/avatar-genome",
     "crates/avatar-phenotype",
+    "crates/avatar-svg",
     "crates/avatar-tables",
 ]
 resolver = "2"
