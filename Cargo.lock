@@ -31,6 +31,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "avatar-svg"
+version = "0.1.0"
+dependencies = [
+ "avatar-phenotype",
+ "avatar-tables",
+ "blake3",
+]
+
+[[package]]
 name = "avatar-tables"
 version = "0.1.0"
 dependencies = [

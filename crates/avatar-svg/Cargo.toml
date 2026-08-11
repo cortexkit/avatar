@@ -1,0 +1,11 @@
+[package]
+name = "avatar-svg"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+avatar-phenotype = { path = "../avatar-phenotype" }
+avatar-tables = { path = "../avatar-tables" }
+
+[dev-dependencies]
+blake3 = "1.5"

@@ -22,6 +22,11 @@ impl From<i64> for Milli {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Q32(pub i64);
 
+impl Q32 {
+    /// The fixed-point value 1.0 (32 fraction bits).
+    pub const ONE: Self = Self(1 << 32);
+}
+
 impl From<i64> for Q32 {
     fn from(value: i64) -> Self {
         Self(value)
