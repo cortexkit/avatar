@@ -118,10 +118,13 @@ Effect =
 6. Fixed-point out the door: i64 milliunits, Q32.32, BAM16. The
    consumer's scale-to-points is one division in its own space.
 
-## Implementation order
+## Implementation status
 
-1. Swift part 2: build_tree + SVG serializer, gated by boundary-2 parity
-   from the tree (all 30 corpus files).
-2. Rust: same reshape when the GPUI consumer materializes (pure
-   refactor, corpus unchanged).
-3. TS: stays string-first until a geometry consumer exists.
+1. Swift: DONE — build_tree + SVG serializer, boundary-2 parity from
+   the tree (all 30 corpus files).
+2. Rust: DONE — same reshape as a corpus-gated zero-diff refactor
+   (`build_render_tree` / `serialize_svg` public; `render_svg` is the
+   composition). Both tree implementations share the structural shape,
+   so generator changes land once per language in the same seam.
+3. TS: stays string-first until a geometry consumer exists (web draws
+   SVG natively; no forced work).
