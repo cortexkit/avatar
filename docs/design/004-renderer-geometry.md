@@ -30,16 +30,16 @@ already value-mapped by the decoder):
 2. Left side, i in 0..N:
    `x = center − points[i].x / 2` (pinned div), `y = points[i].y +
    center − max_y / 2`.
-3. Right side mirrors indices N−1..=1... [TOG mirrors 1..=N of the
-   reversed list]: for i in 1..=N−1 append
-   `x = center + points[N−i].x / 2`, same y formula, same tension.
-   (TOG iterates `i in 1..=numPoints` but slot N is the loop's own
-   guard case; net effect is 2N−1... — v1 pins **2N points** with the
-   duplicate-endpoint quirk dropped: the mirror emits exactly
-   `left N + right N−1` points ONLY when TOG's `points[numPoints−i]`
-   guard fires; we specify the unconditional 2N−1-point closed ring.
-   The visual difference is nil — the spline closes the ring either
-   way — and the count rule becomes stateable in one sentence.)
+3. Right side: for i in 1..=N append `x = center + points[N−i].x / 2`
+   (mirror indices N−1 down to 0), same y formula, same tension. The
+   ring is exactly **2N points**; the two seam points (index 0 and
+   N−1) each appear once per side at mirrored x. This preserves the
+   defining property: the closed shape is horizontally symmetric.
+   (An earlier draft of this note misread TOG's mirror-loop guard
+   (`.x != null`, which never fails for numeric x) as dropping one
+   point and specified a 2N−1 ring — which breaks symmetry: one point
+   goes unpaired. Caught by visual review of first renders; the 2N
+   rule below is verified against TOG output.)
 4. Growth morph (`growth < 1`): deferred to the animation note — v1
    goldens pin `growth = 1` and the renderer rejects other values
    until the morph is specced (fail-closed, not silently wrong).
@@ -47,7 +47,7 @@ already value-mapped by the decoder):
 ## Stage 2 — closed spline (TOG `spline()`)
 
 Catmull-Rom-style, tension-weighted, cubic Bézier output. For the
-closed ring of M points (M = 2N−1), starting cursor at index M−2
+closed ring of M points (M = 2N), starting cursor at index M−2
 (TOG's `points.length − 2` — preserved so curve/tension phase matches
 the reference visually):
 
@@ -57,7 +57,7 @@ cp1 = p1 + (p2 − p0) · t_k / 6
 cp2 = p2 − (p3 − p1) · t_k / 6
 ```
 where `t_k` is the tension of TOG's `tensionIter` walk (advances every
-segment EXCEPT when segment index == M/2 with pinned integer division —
+segment EXCEPT when segment index == M/2 = N, exact for the even ring —
 the reference's skip is kept: it phase-locks tensions to the mirrored
 side). All products Q32.32 × milliunits via i128, one pinned narrow.
 
@@ -118,7 +118,8 @@ already parse, so we keep it rather than beautify.
 
 ## Deviations from TOG (running list)
 
-1. Mirror count rule: unconditional 2N−1 ring (§Stage 1).
+1. (retired — was "2N−1 ring", a spec misreading that broke horizontal
+   symmetry; the ring is TOG's own 2N. See §Stage 1.)
 2. Fetus-blend nearest-assignment bug not ported; growth morph respecced
    in the animation note.
 3. Instance ids dropped from SVG ids (§Body paint).
@@ -127,10 +128,8 @@ already parse, so we keep it rather than beautify.
 5. Tension `|| 1` guard dropped: TOG's JS definedness fallback turned
    tension 0 into 1; the typed phenotype has no undefined tensions and
    the decoder's range legitimately includes 0.
-6. Tension-walk seam skip pinned at segment `(2N−1)/2` = N−1 — the same
-   seam segment TOG skips on its even ring; for our odd ring the JS
-   expression would never have skipped. Verified against TOG spline.ts
-   via harness: max path-coordinate divergence 0.34 milliunits.
+6. (retired with #1 — on the even 2N ring the seam skip at segment N
+   is TOG's exact expression, no re-specification needed.)
 7. Stroke-width pinned to canvas/255. TOG disagrees with itself
    (bodylayer.tsx strokes at width/500, index.tsx margins at
    width/255); one value serves both roles here.

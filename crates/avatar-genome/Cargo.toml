@@ -7,3 +7,8 @@ edition.workspace = true
 avatar-phenotype = { path = "../avatar-phenotype" }
 avatar-tables = { path = "../avatar-tables" }
 blake3 = "1.5"
+
+[dev-dependencies]
+# Dev-only: lets the sample-render example exercise the full DNA -> SVG
+# pipeline. The library dependency direction stays genome-free in avatar-svg.
+avatar-svg = { path = "../avatar-svg" }

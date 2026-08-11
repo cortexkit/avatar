@@ -64,11 +64,13 @@ pub(crate) struct RingPoint {
 
 /// Stage 1 — mirrors the half-side control points into a closed ring.
 ///
-/// `count` half-side points become a `2·count − 1` ring: the left side walks
-/// points `0..count`, the right side mirrors points `count−1..=1` (index 0 is
-/// the ring's closing seam and is not duplicated). TOG's mirror in `type1.ts`
-/// emitted a duplicated seam endpoint; the ring closes identically without
-/// it, so the count rule is the unconditional `2N − 1`.
+/// `count` half-side points become a `2·count` ring: the left side walks
+/// points `0..count` at `center − x/2`, the right side walks the same points
+/// in reverse (`count−1` down to `0`) at `center + x/2`, matching the mirror
+/// loop in TOG's `type1.ts`. Every half-side point appears exactly once per
+/// side, which is what makes the closed shape horizontally symmetric — a
+/// ring that dropped the reversed index 0 would leave that point unpaired
+/// and skew the whole body.
 pub(crate) fn mirror_ring(body: &Body) -> Vec<RingPoint> {
     // The decoder contract is 2..=16 half-side points; clamping keeps the
     // renderer total for hand-built phenotypes outside that range.
@@ -77,7 +79,7 @@ pub(crate) fn mirror_ring(body: &Body) -> Vec<RingPoint> {
     let max_y = points.iter().map(|point| point.y.0).max().unwrap_or(0);
     let vertical_shift = CENTER - div2(max_y);
 
-    let mut ring = Vec::with_capacity(2 * count - 1);
+    let mut ring = Vec::with_capacity(2 * count);
     for point in points {
         ring.push(RingPoint {
             x: CENTER - div2(point.x.0),
@@ -85,7 +87,7 @@ pub(crate) fn mirror_ring(body: &Body) -> Vec<RingPoint> {
             tension: point.tension.0,
         });
     }
-    for index in 1..count {
+    for index in 1..=count {
         let point = points[count - index];
         ring.push(RingPoint {
             x: CENTER + div2(point.x.0),
@@ -441,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn mirror_of_three_points_is_a_five_point_ring() {
+    fn mirror_of_three_points_is_a_six_point_ring() {
         // max_y = 400_000 → vertical shift = 500_000 − 200_000 = 300_000.
         let ring = mirror_ring(&body_with(&[
             point(100_000, 200_000, Q32_ONE),
@@ -467,7 +469,8 @@ mod tests {
                     y: 400_000,
                     tension: Q32_ONE / 2
                 },
-                // Right side mirrors points[2], then points[1].
+                // Right side mirrors points[2], points[1], then points[0]:
+                // every half-side point appears once per side.
                 RingPoint {
                     x: 750_000,
                     y: 400_000,
@@ -477,6 +480,11 @@ mod tests {
                     x: 650_000,
                     y: 700_000,
                     tension: 2 * Q32_ONE
+                },
+                RingPoint {
+                    x: 550_000,
+                    y: 500_000,
+                    tension: Q32_ONE
                 },
             ]
         );
@@ -506,7 +514,10 @@ mod tests {
         let last = *spline.curves.last().unwrap();
         assert_eq!((last.x2, last.y2), (spline.start_x, spline.start_y));
         // The first segment starts at the ring's last point (cursor len−2).
-        assert_eq!((spline.start_x, spline.start_y), (ring[4].x, ring[4].y));
+        assert_eq!(
+            (spline.start_x, spline.start_y),
+            (ring[ring.len() - 1].x, ring[ring.len() - 1].y)
+        );
     }
 
     #[test]

@@ -19,6 +19,7 @@ name = "avatar-genome"
 version = "0.1.0"
 dependencies = [
  "avatar-phenotype",
+ "avatar-svg",
  "avatar-tables",
  "blake3",
 ]
