@@ -76,7 +76,15 @@ Stroke {
 }
 
 Effect =
-  | Lit                              // body lighting filter group
+  | Lit { light_y: i64 }             // body lighting filter group; carries
+                                     //   the RESOLVED point-light y — the
+                                     //   generator computes it from rescaled
+                                     //   body geometry, and re-deriving it
+                                     //   from the final shape can round one
+                                     //   milliunit differently (found as a
+                                     //   byte-parity break on a degenerate
+                                     //   body; resolved values ride the tree,
+                                     //   consumers never re-derive)
   | Masked { mask: [Primitive] }     // pattern mask
   | Turbulence { seed: u8, freq_h: Q32, freq_v: Q32,
                  octaves: u8, scale: Q32 }   // iris shade displacement

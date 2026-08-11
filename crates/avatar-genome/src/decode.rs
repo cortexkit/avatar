@@ -134,7 +134,10 @@ fn mapping(field: MappedField, body_size: i64) -> Mapping {
 /// or future-reserved bits remain DNA rather than invalid input, so no genome
 /// needs an error path during rendering.
 pub fn decode(genome: &Genome) -> Phenotype {
-    let point_count = 2 + (genome.read_bits(BODY_START, 4) as u8 % 15);
+    // Floor of 4: 2- and 3-point bodies render as near-flat slivers that
+    // cannot carry a recognizable face (reviewed against sample renders).
+    // Mapping change history: 2 + (v % 15) in generator_version 1.
+    let point_count = 4 + (genome.read_bits(BODY_START, 4) as u8 % 13);
     let body_size = map(
         MappedField::BodySize,
         byte_at_bits(genome, BODY_START + 4),
@@ -469,7 +472,7 @@ mod tests {
     #[test]
     fn body_fields_follow_the_pinned_bit_map_and_mapping_formula() {
         let mut bytes = [0; 1_024];
-        set_bits(&mut bytes, BODY_START, 4, 14);
+        set_bits(&mut bytes, BODY_START, 4, 12);
         set_bits(&mut bytes, BODY_START + 4, 8, 0x9a);
         set_bits(&mut bytes, BODY_START + 12, 8, 0x12);
         set_bits(&mut bytes, BODY_START + 20, 8, 0x34);

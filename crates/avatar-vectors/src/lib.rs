@@ -64,7 +64,10 @@ mod tests {
     use avatar_svg::{render_svg, Mood, RenderParams};
     use serde::Deserialize;
 
-    const GENERATOR_VERSION: u16 = 1;
+    // v2: body point-count floor raised 4..=16 (2- and 3-point bodies were
+    // unrecognizable slivers). Decoder mapping change, so every vector's
+    // observable output potentially moves.
+    const GENERATOR_VERSION: u16 = 2;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
 
@@ -335,7 +338,7 @@ mod tests {
             },
             VectorSpec {
                 name: "point_max",
-                genome: point_count_genome(b"cortexkit-avatar/vectors/point-max/v1", 14),
+                genome: point_count_genome(b"cortexkit-avatar/vectors/point-max/v1", 12),
                 moods: NEUTRAL,
             },
             VectorSpec {

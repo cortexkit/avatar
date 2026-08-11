@@ -14,7 +14,7 @@ evolve under `generator_version` bumps without touching this layout.
   within the bit string; multi-bit fields read big-endian.
 - `byte k` inside a region = bits `[region_start + 8k, region_start + 8k + 8)`.
 - Selector fields with fewer valid values than their width decode
-  modulo the value count (e.g. 4-bit point count → `2 + (v mod 15)`),
+  modulo the value count (e.g. 4-bit point count → `4 + (v mod 13)`),
   so every bit pattern is valid DNA — there is no invalid genome.
 - Flag bits: 1 bit per gate, packed into named flag bytes; unassigned
   flag bits are reserved-zero.
@@ -23,7 +23,7 @@ evolve under `generator_version` bumps without touching this layout.
 
 | Rel. bits | Field |
 | --- | --- |
-| 0–3 | `body.point_count` (→ 2–16, mod-15 rule) |
+| 0–3 | `body.point_count` (→ 4–16 since generator_version 2: `4 + (v mod 13)`; gv1 was `2 + (v mod 15)` — 2/3-point bodies were unrecognizable slivers) |
 | 4–11 | `body.size` seed |
 | 12–395 | 16 point slots × 24 bits: x 8, y 8, tension 8 |
 | 396–511 | reserved |

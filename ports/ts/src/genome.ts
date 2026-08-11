@@ -353,7 +353,9 @@ function decodeMoodResponse(genome: Genome): MoodResponse {
  * than errors, preserving future genome space without renderer error paths.
  */
 export function decode(genome: Genome): Phenotype {
-  const pointCount = 2n + (genome.readBits(BODY_START, 4) % 15n);
+  // Floor of 4 (generator_version 2): flatter bodies cannot carry a face.
+  // Transcribed from crates/avatar-genome/src/decode.rs.
+  const pointCount = 4n + (genome.readBits(BODY_START, 4) % 13n);
   const bodySize = map("body-size", genome.readBits(BODY_START + 4, 8));
   const points: BodyPoint[] = Array.from({ length: 16 }, (_, index) => {
     if (BigInt(index) >= pointCount) return { x: 0n, y: 0n, tension: 0n };

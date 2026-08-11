@@ -28,7 +28,14 @@ public func serializeSvg(_ tree: RenderTree) -> [UInt8] {
         output += "    <stop offset=\"89%\" stop-color=\"\(hex(stops[0].color))\"/><stop offset=\"100%\" stop-color=\"\(hex(stops[1].color))\"/>\n"
         output += "  </radialGradient>\n"
     }
-    let lightY = bodyLightY(base.shape)
+    // The resolved light y rides the lit effect; falling back to the shape
+    // re-derivation only for trees built without one (hand-built tests).
+    let lightY = body.compactMap { primitive -> Int64? in
+        for effect in primitive.effects {
+            if case .lit(let y) = effect { return y }
+        }
+        return nil
+    }.first ?? bodyLightY(base.shape)
     output += "  <filter id=\"av-light\">\n"
     output += "    <feDiffuseLighting in=\"SourceGraphic\" result=\"light\" lighting-color=\"white\">\n"
     output += "      <fePointLight x=\"\(formatMilli(CENTER))\" y=\"\(formatMilli(lightY))\" z=\"\(formatMilli(divI64(CANVAS_MILLI, 21)))\"/>\n"

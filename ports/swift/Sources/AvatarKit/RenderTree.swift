@@ -108,7 +108,12 @@ public struct Stroke: Equatable {
 }
 
 public indirect enum Effect: Equatable {
-    case lit
+    /// Membership in the body's lighting-filter group. Carries the resolved
+    /// point-light y so the serializer never re-derives it from the shape:
+    /// the generator computes it from body geometry that passed through
+    /// rescale's per-value rounding, and a re-flattening of the final shape
+    /// can land one milliunit away — a byte-parity break, not a visual one.
+    case lit(lightY: Int64)
     case masked(mask: [Primitive])
     case turbulence(seed: UInt8, freq_h: Q32, freq_v: Q32, octaves: UInt8, scale: Q32)
 }

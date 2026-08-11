@@ -223,7 +223,9 @@ func mapping(_ field: MappedField, bodySize: Int64) -> Mapping {
 /// unassigned or future-reserved bits remain DNA rather than invalid input,
 /// so no genome needs an error path during rendering.
 public func decode(_ genome: Genome) -> Phenotype {
-    let pointCount = UInt8(2 + genome.readBits(offset: BODY_START, width: 4) % 15)
+    // Floor of 4 (generator_version 2): flatter bodies cannot carry a face.
+    // Transcribed from crates/avatar-genome/src/decode.rs.
+    let pointCount = UInt8(4 + genome.readBits(offset: BODY_START, width: 4) % 13)
     let bodySize = map(.bodySize, byteAtBits(genome, BODY_START + 4))
     let points: [BodyPoint] = (0..<16).map { index in
         guard index < Int(pointCount) else {

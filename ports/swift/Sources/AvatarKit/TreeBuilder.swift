@@ -10,6 +10,10 @@ func buildTree(_ phenotype: Phenotype, _ params: RenderParams, includeFace: Bool
     ]
     let rootTransform = Transform(ops: rootOps)
     let bodyStroke = Stroke(color: phenotype.palette.dark, width: bodyStrokeWidth())
+    // Resolved here, not in the serializer: light placement derives from the
+    // rescaled body geometry, and re-deriving it from the final shape can
+    // round one milliunit differently.
+    let lightY = geometry.top + divI64(geometry.body_height, 2)
     let bodyShape = geometry.shape
     var primitives: [Primitive] = [
         Primitive(
@@ -18,14 +22,14 @@ func buildTree(_ phenotype: Phenotype, _ params: RenderParams, includeFace: Bool
             label: "av-body-base"),
         Primitive(
             shape: bodyShape, transform: rootTransform,
-            paint: .solid(color: phenotype.palette.primary), effects: [.lit],
+            paint: .solid(color: phenotype.palette.primary), effects: [.lit(lightY: lightY)],
             label: "av-body-lit-primary"),
         Primitive(
             shape: bodyShape, transform: rootTransform,
             paint: .radialGradient(stops: [
                 GradientStop(offset_q32: Q32(3_822_520_893), color: phenotype.palette.primary),
                 GradientStop(offset_q32: .one, color: phenotype.palette.primary_darkish),
-            ]), effects: [.lit], label: "av-body-gradient"),
+            ]), effects: [.lit(lightY: lightY)], label: "av-body-gradient"),
     ]
     if let mask = patternMaskPrimitives(
         phenotype.pattern, geometry.body_width, geometry.body_height, geometry.top, rootOps)
@@ -33,7 +37,7 @@ func buildTree(_ phenotype: Phenotype, _ params: RenderParams, includeFace: Bool
         primitives.append(Primitive(
             shape: bodyShape, transform: rootTransform,
             paint: .solid(color: phenotype.palette.harmonic3),
-            effects: [.lit, .masked(mask: mask)], label: "av-body-pattern"))
+            effects: [.lit(lightY: lightY), .masked(mask: mask)], label: "av-body-pattern"))
     }
     if includeFace {
         primitives.append(contentsOf: facePrimitives(phenotype, geometry, params.mood, rootOps))
