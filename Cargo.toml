@@ -4,6 +4,7 @@ members = [
     "crates/avatar-phenotype",
     "crates/avatar-svg",
     "crates/avatar-tables",
+    "crates/avatar-vectors",
 ]
 resolver = "2"
 
