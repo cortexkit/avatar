@@ -104,3 +104,21 @@ jobs:
             git diff >&2
             exit 1
           fi
+
+  # Keep port conformance separate from the canonical Rust gate so a byte drift
+  # identifies the affected implementation directly in the CI job list.
+  ts-port:
+    name: TypeScript port (ubuntu)
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install TypeScript port dependencies
+        working-directory: ports/ts
+        run: bun install --frozen-lockfile
+
+      - name: Test TypeScript port conformance
+        working-directory: ports/ts
+        run: bun test
