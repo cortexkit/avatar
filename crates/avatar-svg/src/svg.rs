@@ -30,9 +30,8 @@ pub struct RenderParams {
     pub canvas: u32,
 }
 
-/// The closed mood vocabulary (design note 001 §5). The body pass accepts
-/// every mood and applies none — the field exists so the render signature is
-/// final before the face pass lands.
+/// The closed mood vocabulary (design note 001 §5). The full renderer applies
+/// its pinned face deltas; the body-only renderer deliberately ignores mood.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mood {
     Neutral,
@@ -73,19 +72,34 @@ impl std::fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
-/// Renders the body SVG (background + body, no face) for a phenotype.
+/// Renders the complete body and mood-reactive face.
 pub fn render_svg(phenotype: &Phenotype, params: &RenderParams) -> Result<Vec<u8>, RenderError> {
+    validate(params)?;
+    let geometry = body_geometry(phenotype);
+    Ok(document(phenotype, &geometry, Some(params.mood)))
+}
+
+/// Renders only the background and body for faceless or tiny-size variants.
+pub fn render_body_svg(
+    phenotype: &Phenotype,
+    params: &RenderParams,
+) -> Result<Vec<u8>, RenderError> {
+    validate(params)?;
+    let geometry = body_geometry(phenotype);
+    Ok(document(phenotype, &geometry, None))
+}
+
+fn validate(params: &RenderParams) -> Result<(), RenderError> {
     if params.growth != Q32::ONE {
         return Err(RenderError::UnsupportedGrowth(params.growth));
     }
     if params.canvas != CANVAS_UNITS {
         return Err(RenderError::UnsupportedCanvas(params.canvas));
     }
-    let geometry = body_geometry(phenotype);
-    Ok(document(phenotype, &geometry))
+    Ok(())
 }
 
-fn document(phenotype: &Phenotype, geometry: &BodyGeometry) -> Vec<u8> {
+fn document(phenotype: &Phenotype, geometry: &BodyGeometry, mood: Option<Mood>) -> Vec<u8> {
     let palette = &phenotype.palette;
     let placement = placement(geometry);
     let mask = mask_content(
@@ -159,7 +173,11 @@ fn document(phenotype: &Phenotype, geometry: &BodyGeometry) -> Vec<u8> {
             hex(palette.harmonic3)
         ));
     }
-    svg.push_str("</g>\n</g>\n</svg>\n");
+    svg.push_str("</g>\n");
+    if let Some(mood) = mood {
+        svg.push_str(&crate::face::render_face_group(phenotype, geometry, mood));
+    }
+    svg.push_str("</g>\n</svg>\n");
     svg.into_bytes()
 }
 

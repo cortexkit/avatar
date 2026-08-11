@@ -7,15 +7,19 @@
 //! single pinned narrowing primitive — so every port produces byte-identical
 //! output.
 //!
-//! This crate currently covers the body pass (design note 004): mirrored
-//! spline geometry, flattening, bounds, rescale, path serialization, and
-//! body paint (background, base fill/stroke, radial gradient, lighting
-//! filter, pattern mask). The face pass builds on the public
-//! [`BodyGeometry`] in a later note.
+//! The body pass (design note 004) supplies deterministic spline geometry and
+//! paint. The face pass (design note 005) appends mood-reactive eyes, brows,
+//! lashes, and one of eight mouth families inside the same centering transform.
 
+mod brows;
+mod eyes;
+mod face;
 mod fixed;
 mod format;
 mod geometry;
+mod lashes;
+mod mood;
+mod mouth;
 mod pattern;
 mod svg;
 
@@ -27,7 +31,7 @@ mod voronoi {
 pub use avatar_phenotype::Q32;
 
 pub use geometry::{body_geometry, BodyGeometry};
-pub use svg::{render_svg, Mood, RenderError, RenderParams};
+pub use svg::{render_body_svg, render_svg, Mood, RenderError, RenderParams};
 
 #[cfg(test)]
 mod tests {
@@ -208,11 +212,15 @@ mod tests {
     }
 
     #[test]
-    fn render_is_byte_identical_across_repeats() {
+    fn every_mood_is_byte_identical_across_repeats() {
         let phenotype = phenotype_with(sample_body(), 42, 0);
-        let first = render_svg(&phenotype, &default_params()).unwrap();
-        let second = render_svg(&phenotype, &default_params()).unwrap();
-        assert_eq!(first, second);
+        for mood in all_moods() {
+            let mut params = default_params();
+            params.mood = mood;
+            let first = render_svg(&phenotype, &params).unwrap();
+            let second = render_svg(&phenotype, &params).unwrap();
+            assert_eq!(first, second, "mood {mood:?}");
+        }
     }
 
     #[test]
@@ -264,21 +272,43 @@ mod tests {
     }
 
     #[test]
-    fn mood_is_accepted_without_changing_the_body_bytes() {
+    fn body_only_render_remains_mood_independent() {
         let phenotype = phenotype_with(sample_body(), 42, 0);
-        let neutral = render_svg(&phenotype, &default_params()).unwrap();
-        for mood in [
-            Mood::Working,
-            Mood::Happy,
-            Mood::Waiting,
-            Mood::Blocked,
-            Mood::Sad,
-            Mood::Sleepy,
-        ] {
+        let neutral = render_body_svg(&phenotype, &default_params()).unwrap();
+        for mood in all_moods() {
             let mut params = default_params();
             params.mood = mood;
-            assert_eq!(render_svg(&phenotype, &params).unwrap(), neutral);
+            assert_eq!(render_body_svg(&phenotype, &params).unwrap(), neutral);
         }
+    }
+
+    #[test]
+    fn neutral_is_an_identity_but_happy_changes_the_face() {
+        let mut phenotype = phenotype_with(sample_body(), 42, 0);
+        phenotype.mood_response = MoodResponse {
+            lid_reactivity: Q32::ONE,
+            brow_reactivity: Q32::ONE,
+            eye_rotation_reactivity: Q32::ONE,
+            mouth_reactivity: Q32::ONE,
+        };
+        let neutral = render_svg(&phenotype, &default_params()).unwrap();
+        assert_eq!(neutral, render_svg(&phenotype, &default_params()).unwrap());
+
+        let mut zero_response = phenotype.clone();
+        zero_response.mood_response = MoodResponse {
+            lid_reactivity: Q32(0),
+            brow_reactivity: Q32(0),
+            eye_rotation_reactivity: Q32(0),
+            mouth_reactivity: Q32(0),
+        };
+        assert_eq!(
+            neutral,
+            render_svg(&zero_response, &default_params()).unwrap()
+        );
+
+        let mut happy = default_params();
+        happy.mood = Mood::Happy;
+        assert_ne!(neutral, render_svg(&phenotype, &happy).unwrap());
     }
 
     #[test]
@@ -288,9 +318,13 @@ mod tests {
         assert_well_formed_xml(&svg);
         assert!(svg
             .starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10000 10000\">"));
-        // Pattern class 0 emits exactly one path definition.
-        assert_eq!(svg.matches("<path").count(), 1);
         assert!(svg.contains("<path id=\"av-bp\" d=\"M"));
+        assert!(svg.contains("<g id=\"av-face\">"));
+        let mouth = svg.find("id=\"av-mouth\"").unwrap();
+        let left_eye = svg.find("id=\"av-eye-left\"").unwrap();
+        let right_eye = svg.find("id=\"av-eye-right\"").unwrap();
+        let brows = svg.find("id=\"av-brow-left\"").unwrap();
+        assert!(mouth < left_eye && left_eye < right_eye && right_eye < brows);
         // Gradient stops appear in offset order.
         let first = svg.find("offset=\"89%\"").unwrap();
         let second = svg.find("offset=\"100%\"").unwrap();
@@ -301,7 +335,8 @@ mod tests {
     #[test]
     fn patterned_output_adds_mask_and_pattern_use() {
         let phenotype = phenotype_with(sample_body(), 42, 4);
-        let svg = String::from_utf8(render_svg(&phenotype, &default_params()).unwrap()).unwrap();
+        let svg =
+            String::from_utf8(render_body_svg(&phenotype, &default_params()).unwrap()).unwrap();
         assert_well_formed_xml(&svg);
         assert_eq!(svg.matches("<path").count(), 2);
         assert!(svg.contains("<mask id=\"av-pattern\">"));
@@ -309,13 +344,34 @@ mod tests {
     }
 
     #[test]
-    fn every_pattern_class_renders_well_formed_svg() {
-        for class in 0..=5u8 {
-            let phenotype = phenotype_with(sample_body(), 42, class);
-            let svg =
-                String::from_utf8(render_svg(&phenotype, &default_params()).unwrap()).unwrap();
+    fn full_render_is_well_formed_at_every_mood() {
+        for mood in all_moods() {
+            let phenotype = phenotype_with(sample_body(), 42, mood as u8 % 6);
+            let mut params = default_params();
+            params.mood = mood;
+            let svg = String::from_utf8(render_svg(&phenotype, &params).unwrap()).unwrap();
             assert_well_formed_xml(&svg);
         }
+    }
+
+    #[test]
+    fn two_point_sliver_face_search_is_total() {
+        let phenotype = phenotype_with(
+            body_with(&[point(2, 100_000, Q32::ONE.0), point(2, 700_000, Q32::ONE.0)]),
+            42,
+            0,
+        );
+        let svg = String::from_utf8(render_svg(&phenotype, &default_params()).unwrap()).unwrap();
+        assert_well_formed_xml(&svg);
+        assert!(svg.contains("id=\"av-mouth\""));
+    }
+
+    /// Float tripwire: source geometry must stay on the shared integer path.
+    #[test]
+    fn source_has_no_binary_float_type() {
+        let needle = ["f", "64"].concat();
+        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        scan_rust_sources(&source, &needle);
     }
 
     #[test]
@@ -346,6 +402,80 @@ mod tests {
             assert!(geometry.body_height > 0);
             assert_eq!(geometry.body_height, geometry.bottom - geometry.top);
         }
+    }
+
+    fn all_moods() -> [Mood; 7] {
+        [
+            Mood::Neutral,
+            Mood::Working,
+            Mood::Happy,
+            Mood::Waiting,
+            Mood::Blocked,
+            Mood::Sad,
+            Mood::Sleepy,
+        ]
+    }
+
+    fn scan_rust_sources(directory: &std::path::Path, needle: &str) {
+        for entry in std::fs::read_dir(directory).expect("read source directory") {
+            let path = entry.expect("read source entry").path();
+            if path.is_dir() {
+                scan_rust_sources(&path, needle);
+                continue;
+            }
+            if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("read Rust source");
+            let mut in_block_comment = false;
+            for (line_number, line) in source.lines().enumerate() {
+                let code = uncommented_code(line, &mut in_block_comment);
+                assert!(
+                    !code.contains(needle),
+                    "binary float type in {}:{}",
+                    path.display(),
+                    line_number + 1,
+                );
+            }
+        }
+    }
+
+    fn uncommented_code(line: &str, in_block_comment: &mut bool) -> String {
+        let mut rest = line;
+        let mut code = String::new();
+        loop {
+            if *in_block_comment {
+                let Some(end) = rest.find("*/") else {
+                    break;
+                };
+                rest = &rest[end + 2..];
+                *in_block_comment = false;
+                continue;
+            }
+            let line_comment = rest.find("//");
+            let block_comment = rest.find("/*");
+            match (line_comment, block_comment) {
+                (Some(line_start), Some(block_start)) if block_start < line_start => {
+                    code.push_str(&rest[..block_start]);
+                    rest = &rest[block_start + 2..];
+                    *in_block_comment = true;
+                }
+                (Some(line_start), _) => {
+                    code.push_str(&rest[..line_start]);
+                    break;
+                }
+                (None, Some(block_start)) => {
+                    code.push_str(&rest[..block_start]);
+                    rest = &rest[block_start + 2..];
+                    *in_block_comment = true;
+                }
+                (None, None) => {
+                    code.push_str(rest);
+                    break;
+                }
+            }
+        }
+        code
     }
 
     #[test]
