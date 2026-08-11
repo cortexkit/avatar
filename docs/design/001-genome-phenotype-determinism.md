@@ -119,12 +119,23 @@ Rules:
 Charter constraint #4. The partition is **by region**:
 
 - **Identity core** = `BODY` + `PALETTE`. Derivation (settling charter
-  open question #1, revised in review): hash of durable seat identity —
-  `blake3("cortexkit-avatar/identity-core/v1" || 0x00 || canonical_seat_name || 0x00 || entorhinal_registration_id)`
-  — expanded via `blake3` XOF to fill exactly the core regions. The
-  identity input is the **entorhinal registration ID** (the registry's
-  minted stable project ID, which survives workspace moves and path
-  renames via the journal), NOT the canonical path: a path is mutable
+  open question #1; revised twice, see §10): hash of the durable stable
+  ID alone —
+  `blake3("cortexkit-avatar/identity-core/v2" || 0x00 || entorhinal_registration_id)`
+  — expanded via `blake3` XOF to fill exactly the core regions.
+  **No name is ever hashed** (v2 change): names — configured agent
+  names, display labels, room titles — are presentation strings:
+  user-editable, non-unique (two live projects configure the same agent
+  name today), and renameable. A name in the hash means a rename
+  re-rolls a creature and a collision merges two. Identity is one
+  opaque value from one registry authority; every string renders
+  BESIDE the creature, never inside it. The derivation contract
+  versions through its domain string (v1→v2), independently of
+  `generator_version`: a derivation change alters which DNA a seat
+  gets, not what any DNA renders as.
+  The identity input is the **entorhinal registration ID** (the
+  registry's minted stable project ID, which survives workspace moves
+  and path renames via the journal), NOT the canonical path: a path is mutable
   and aliasable, and deriving a durable key from it means a routine
   folder rename re-rolls the seat's face — the exact failure the
   identity core exists to prevent (and the exact class that stranded 24
@@ -144,6 +155,15 @@ Charter constraint #4. The partition is **by region**:
   carries `noop`), so register-if-implicit bootstrap is safe to repeat.
   Immutable for the life of the seat; survives restarts and machine
   moves; differs per project.
+  **Identity is host-authored, only.** Consumers (iOS, desktop, web)
+  never construct identity from strings they hold; they render from the
+  identity value the wire delivers, and where the wire carries none
+  they render a deliberate placeholder — never a guessed creature. A
+  client-derived identity means the same agent wears different faces on
+  different surfaces with no error anywhere; this rule deletes that
+  class. It is also the v1 of the eventual contract: once mutation
+  ships, the cosmetic region is stateful and the wire carries genome
+  data outright — clients are pure renderers from day one.
 - **Cosmetic region** = everything else. Initially seeded from the same
   XOF stream (so a fresh seat is fully determined by identity), then
   mutable via the governed mutation interface.
@@ -268,3 +288,14 @@ vectors/             # golden corpus (see §6)
   unregistered projects, named canonical-JSON spec with its no-floats
   dependency stated. Identity/genome crate was held on the derivation
   fix (folded above); tables, phenotype, and renderer cleared to start.
+- 2026-08-11 identity-core v2 (CKIOS integration review): the seat NAME
+  is removed from the derivation — identity is the stable ID alone.
+  Trigger: every candidate name source measured on the live fleet
+  failed as an identity input (room titles: 100% session-derived;
+  configured agent names: user-editable and already colliding — two
+  projects share one name). The v1 shape (name ‖ id) made the hash's
+  distinguishing power come entirely from the id while exposing the
+  name as a re-roll hazard; v2 removes the hazard structurally. Method
+  note for future revisions: each name source LOOKED durable in
+  documentation and failed only when measured — measure fields, don't
+  read about them.
