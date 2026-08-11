@@ -1,5 +1,5 @@
 //! Throwaway visual smoke check: derive genomes for fleet seat names,
-//! decode, render the body pass, and write SVGs for eyeballing.
+//! decode, render complete avatars, and write SVGs for eyeballing.
 use avatar_genome::{decode, derive_genome, SeatIdentity};
 use avatar_phenotype::Q32;
 use avatar_svg::{render_svg, Mood, RenderParams};

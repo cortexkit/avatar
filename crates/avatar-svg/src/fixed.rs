@@ -6,7 +6,7 @@
 //! `avatar_tables::div_round_half_away`, the single pinned division primitive
 //! shared by every port.
 
-use avatar_phenotype::Q32;
+use avatar_phenotype::{Bam16, Q32};
 use avatar_tables::div_round_half_away;
 
 /// The canvas edge length in milliunits (10_000 viewBox units × 100).
@@ -37,6 +37,39 @@ pub(crate) fn q32_ratio(dimension: i64) -> i64 {
         i128::from(dimension) * i128::from(Q32_ONE),
         i128::from(CANVAS_MILLI),
     ) as i64
+}
+
+/// Divides signed milliunits with the renderer's one rounding rule.
+pub(crate) fn div_i64(value: i64, divisor: i64) -> i64 {
+    assert_ne!(divisor, 0, "div_i64 requires a nonzero denominator");
+    let sign = if divisor < 0 { -1 } else { 1 };
+    div_round_half_away(
+        i128::from(value) * i128::from(sign),
+        i128::from(divisor.abs()),
+    ) as i64
+}
+
+/// Expresses `numerator / denominator` as Q32.32.
+pub(crate) fn ratio_q32(numerator: i64, denominator: i64) -> i64 {
+    if denominator == 0 {
+        return 0;
+    }
+    let sign = if denominator < 0 { -1 } else { 1 };
+    div_round_half_away(
+        i128::from(numerator) * i128::from(Q32_ONE) * i128::from(sign),
+        i128::from(denominator.abs()),
+    ) as i64
+}
+
+/// Converts wrapped signed BAM16 into Q32.32 SVG degrees.
+pub(crate) fn bam_degrees_q32(angle: Bam16) -> i64 {
+    let signed = i64::from(angle.0 as i16);
+    div_round_half_away(i128::from(signed) * 360 * i128::from(Q32_ONE), 65_536) as i64
+}
+
+/// Reverses a signed BAM16 rotation without changing its wrapped encoding.
+pub(crate) fn opposite_bam(angle: Bam16) -> Bam16 {
+    Bam16((-i32::from(angle.0 as i16)) as u16)
 }
 
 #[cfg(test)]
