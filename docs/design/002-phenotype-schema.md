@@ -92,7 +92,9 @@ Face {
 }
 Eyes {
   position_mode: u8,          // 0..=4: which body landmark anchors eye line
-  size_h: i64, ipd: i64,      // horizontal eye size, inter-pupil distance
+  size_h: Q32.32, ipd: Q32.32, // eye-size and inter-pupil coefficients;
+                              // absolute geometry derives from body width
+                              // at render time (TOG coupling preserved)
   height_upper: Q32.32, height_lower: Q32.32,
   height_bias_gate: bool, height_bias: Q32.32,
   vertical_pull_gate: bool, vertical_pull: Q32.32,
@@ -112,7 +114,9 @@ Brows {
   tensions: [Q32.32; 3], width_coupling: Q32.32, clearance: Q32.32,
 }
 Lashes {
-  count: u8, removed: u8, length: i64, stroke: i64, direction: u8,
+  count: u8, removed: u8, direction: u8,
+  length_scale: Q32.32, stroke_scale: Q32.32,  // relative to eye height,
+                                               // resolved at render time
 }
 Mouth {
   family: u8,                 // v1 families re-keyed 0..N from TOG's sparse ids (1,3..7,70,71,23,232,...)

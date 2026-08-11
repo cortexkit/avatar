@@ -104,8 +104,11 @@ pub struct Face {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Eyes {
     pub position_mode: u8,
-    pub size_h: Milli,
-    pub ipd: Milli,
+    // Coefficients, not absolute lengths: eye size and inter-pupil distance
+    // scale off body geometry that only exists after render-time spline
+    // flattening, so the phenotype cannot carry them as milliunits.
+    pub size_h: Q32,
+    pub ipd: Q32,
     pub height_upper: Q32,
     pub height_lower: Q32,
     pub height_bias_gate: bool,
@@ -145,8 +148,10 @@ pub struct Brows {
 pub struct Lashes {
     pub count: u8,
     pub removed: u8,
-    pub length: Milli,
-    pub stroke: Milli,
+    // Scales relative to eye height, resolved at render time (see Eyes:
+    // absolute lash geometry depends on flattened body dimensions).
+    pub length_scale: Q32,
+    pub stroke_scale: Q32,
     pub direction: u8,
 }
 
@@ -560,16 +565,16 @@ fn write_lashes(writer: &mut Writer, lashes: &Lashes) {
     let Lashes {
         count,
         removed,
-        length,
-        stroke,
+        length_scale,
+        stroke_scale,
         direction,
     } = lashes;
     writer.object(|object| {
         object.field("count", |writer| writer.integer(*count));
         object.field("direction", |writer| writer.integer(*direction));
-        object.field("length", |writer| writer.integer(length.0));
+        object.field("length_scale", |writer| writer.integer(length_scale.0));
         object.field("removed", |writer| writer.integer(*removed));
-        object.field("stroke", |writer| writer.integer(stroke.0));
+        object.field("stroke_scale", |writer| writer.integer(stroke_scale.0));
     });
 }
 
@@ -889,8 +894,8 @@ fn parse_eyes(value: &Value) -> Result<Eyes, ParseError> {
             required(object, "position_mode", "eyes")?,
             "eyes.position_mode",
         )?,
-        size_h: milli_value(required(object, "size_h", "eyes")?, "eyes.size_h")?,
-        ipd: milli_value(required(object, "ipd", "eyes")?, "eyes.ipd")?,
+        size_h: q32_value(required(object, "size_h", "eyes")?, "eyes.size_h")?,
+        ipd: q32_value(required(object, "ipd", "eyes")?, "eyes.ipd")?,
         height_upper: q32_value(
             required(object, "height_upper", "eyes")?,
             "eyes.height_upper",
@@ -1018,14 +1023,26 @@ fn parse_lashes(value: &Value) -> Result<Lashes, ParseError> {
     let object = object(value, "lashes")?;
     check_keys(
         object,
-        &["count", "removed", "length", "stroke", "direction"],
+        &[
+            "count",
+            "removed",
+            "length_scale",
+            "stroke_scale",
+            "direction",
+        ],
         "lashes",
     )?;
     Ok(Lashes {
         count: u8_value(required(object, "count", "lashes")?, "lashes.count")?,
         removed: u8_value(required(object, "removed", "lashes")?, "lashes.removed")?,
-        length: milli_value(required(object, "length", "lashes")?, "lashes.length")?,
-        stroke: milli_value(required(object, "stroke", "lashes")?, "lashes.stroke")?,
+        length_scale: q32_value(
+            required(object, "length_scale", "lashes")?,
+            "lashes.length_scale",
+        )?,
+        stroke_scale: q32_value(
+            required(object, "stroke_scale", "lashes")?,
+            "lashes.stroke_scale",
+        )?,
         direction: u8_value(required(object, "direction", "lashes")?, "lashes.direction")?,
     })
 }
@@ -1518,8 +1535,8 @@ mod tests {
             "clearance",
             "count",
             "removed",
-            "length",
-            "stroke",
+            "length_scale",
+            "stroke_scale",
             "direction",
             "family",
             "width_scale_gate",
@@ -1590,8 +1607,8 @@ mod tests {
             face: Face {
                 eyes: Eyes {
                     position_mode: 4,
-                    size_h: Milli(1200),
-                    ipd: Milli(2400),
+                    size_h: Q32(1200),
+                    ipd: Q32(2400),
                     height_upper: Q32(1),
                     height_lower: Q32(2),
                     height_bias_gate: true,
@@ -1627,8 +1644,8 @@ mod tests {
                 lashes: Lashes {
                     count: 30,
                     removed: 31,
-                    length: Milli(3200),
-                    stroke: Milli(3300),
+                    length_scale: Q32(3200),
+                    stroke_scale: Q32(3300),
                     direction: 32,
                 },
                 mouth: Mouth {
@@ -1717,8 +1734,8 @@ mod tests {
             face: Face {
                 eyes: Eyes {
                     position_mode: 0,
-                    size_h: Milli(0),
-                    ipd: Milli(0),
+                    size_h: Q32(0),
+                    ipd: Q32(0),
                     height_upper: Q32(0),
                     height_lower: Q32(0),
                     height_bias_gate: false,
@@ -1754,8 +1771,8 @@ mod tests {
                 lashes: Lashes {
                     count: 0,
                     removed: 0,
-                    length: Milli(0),
-                    stroke: Milli(0),
+                    length_scale: Q32(0),
+                    stroke_scale: Q32(0),
                     direction: 0,
                 },
                 mouth: Mouth {
