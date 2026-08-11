@@ -120,6 +120,8 @@ mod tests {
             return;
         }
 
+        assert_current(&contact_sheet_path(), &contact_sheet_bytes());
+
         for vector in vector_specs() {
             assert_current(&dna_path(vector.name), vector.genome.to_hex().as_bytes());
 
@@ -156,6 +158,7 @@ mod tests {
         );
 
         let expected_root = BTreeSet::from([
+            "contact-sheet.html".to_owned(),
             "dna".to_owned(),
             "manifest.json".to_owned(),
             "phenotype".to_owned(),
@@ -254,6 +257,37 @@ mod tests {
 
         let producer_sha = producer_sha(&root);
         write_corpus_file(&manifest_path(), &manifest_bytes(&producer_sha));
+        write_corpus_file(&contact_sheet_path(), &contact_sheet_bytes());
+    }
+
+    /// Renders the visual-review contact sheet the minting flow emits.
+    ///
+    /// Byte-parity makes every port exactly as right as this corpus, so the
+    /// corpus itself must be LOOKED AT before it is committed: a shared
+    /// misreading between design note and canonical code produces vectors that
+    /// every conformance leg then certifies. Emitting the sheet from the mint
+    /// itself keeps that review step visible instead of relying on habit —
+    /// open vectors/contact-sheet.html after every re-mint and eyeball each
+    /// cell before committing the regeneration.
+    fn contact_sheet_bytes() -> Vec<u8> {
+        let mut html = String::from(
+            "<!doctype html>\n<meta charset=\"utf-8\">\n<title>avatar golden corpus — visual review sheet</title>\n<style>body{font-family:monospace;background:#222;color:#ddd}figure{display:inline-block;margin:6px;text-align:center}img{width:160px;height:160px;background:#fff}figcaption{font-size:11px;margin-top:2px}</style>\n<h1>Golden corpus — review every cell before committing a re-mint</h1>\n",
+        );
+        for vector in vector_specs() {
+            for &mood in vector.moods {
+                let file = format!("svg/{}__{}.svg", vector.name, mood_name(mood));
+                html.push_str(&format!(
+                    "<figure><img src=\"{file}\" alt=\"{file}\"><figcaption>{}<br>{}</figcaption></figure>\n",
+                    vector.name,
+                    mood_name(mood),
+                ));
+            }
+        }
+        html.into_bytes()
+    }
+
+    fn contact_sheet_path() -> PathBuf {
+        corpus_root().join("contact-sheet.html")
     }
 
     fn vector_specs() -> Vec<VectorSpec> {
