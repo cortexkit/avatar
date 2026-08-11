@@ -191,8 +191,11 @@ Layers { count: u8, params: [Q32.32; 16] }  // v1: count always decodes, rendere
 1. `Mouth.params: [Q32.32; 8]` is a placeholder width — the exact
    per-family parameter count gets fixed when the mouth families port
    (the array stays 8 wide; families document which slots they read).
-2. The 2048-slot palette table: TOG's `svgConfig.json` colors blob is
-   the source; needs one-time conversion + pinning with its own hash.
+2. ~~The 2048-slot palette table~~ RESOLVED: vendored into
+   `avatar-genome` as generated pinned data (`PALETTE_BASE`, blake3-
+   pinned) minted from TOG's `svgConfig.json`; role derivation is
+   integer `shade()` (per-channel add + clamp) mirroring `getColors`.
+   The 3-bit background-variant field decodes but is dormant in v1.
 3. Eye noise (`feTurbulence` filter params in TOG) must be checked for
    cross-renderer byte-stability — filters are SVG-spec'd but the
    *rendered* result is rasterizer-dependent. Byte-identity of SVG text
