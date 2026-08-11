@@ -1,19 +1,19 @@
 //! Eight dense mouth-shape families transcribed from the legacy TOG renderer's
 //! sparsely numbered mouth variants.
 
-use avatar_phenotype::{Mouth, Palette};
+use avatar_phenotype::{Mouth, Palette, Rgb};
 
 use crate::face::MouthRect;
 use crate::fixed::{div_i64, q32_mul, Q32_ONE};
-use crate::format::format_milli;
 use crate::mood::MoodDeltas;
+use crate::tree::{FillRule, Paint, Primitive, Segment, Shape, Stroke, StrokeJoin, Transform};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MouthShape {
-    path: String,
+    shape: Shape,
     points: Vec<(i64, i64)>,
-    fill: String,
-    stroke: String,
+    fill: Paint,
+    stroke: Rgb,
 }
 
 #[derive(Clone, Copy)]
@@ -25,21 +25,29 @@ struct Metrics {
     center_y: i64,
 }
 
-pub(crate) fn render(
+pub(crate) fn mouth_primitive(
     mouth: &Mouth,
     rect: MouthRect,
     mood: MoodDeltas,
     palette: &Palette,
-) -> String {
+    transform: Transform,
+) -> Primitive {
     let shape = shape(mouth, rect, mood, palette);
-    format!(
-        "  <g id=\"av-mouth\" data-family=\"{}\"><path d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-linejoin=\"round\"/></g>\n",
-        mouth.family % 8,
-        shape.path,
-        shape.fill,
-        shape.stroke,
-        format_milli(196),
-    )
+    Primitive {
+        shape: shape.shape,
+        transform: Some(transform),
+        paint: shape.fill,
+        stroke: Some(Stroke {
+            color: shape.stroke,
+            width: 196,
+            cap: crate::tree::StrokeCap::Butt,
+            join: StrokeJoin::Round,
+        }),
+        opacity: None,
+        clip: None,
+        effects: Vec::new(),
+        label: format!("av-mouth-{}", mouth.family % 8),
+    }
 }
 
 fn shape(mouth: &Mouth, rect: MouthRect, mood: MoodDeltas, palette: &Palette) -> MouthShape {
@@ -102,7 +110,7 @@ fn mouth1(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mou
         ),
         (m.rect.x2, baseline),
     ];
-    open_shape(points, "none".to_owned(), hex(palette.dark))
+    open_shape(points, Paint::None, palette.dark)
 }
 
 /// TOG Mouth3: params[0] vertical placement, [1] DNA curvature, [2] left/right
@@ -126,7 +134,7 @@ fn mouth3(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mou
         ),
         (m.rect.x2, baseline),
     ];
-    open_shape(points, "none".to_owned(), hex(palette.primary_darker))
+    open_shape(points, Paint::None, palette.primary_darker)
 }
 
 /// TOG Mouth4: params[0]/[1] top and bottom thickness, [2] slant, [3]
@@ -155,8 +163,10 @@ fn mouth4(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mou
             m.clamp((m.x(Q32_ONE - inset), bottom - curve)),
             m.clamp((m.x(inset), bottom + curve)),
         ],
-        hex(palette.primary_darker),
-        hex(palette.dark),
+        Paint::Solid {
+            color: palette.primary_darker,
+        },
+        palette.dark,
     )
 }
 
@@ -190,8 +200,10 @@ fn mouth5(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mou
                 m.center_y + opening + lower_crown + curve,
             )),
         ],
-        hex(palette.white),
-        hex(palette.dark),
+        Paint::Solid {
+            color: palette.white,
+        },
+        palette.dark,
     )
 }
 
@@ -215,8 +227,10 @@ fn mouth6(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mou
             m.clamp((m.x(Q32_ONE - inset), bottom + bottom_bulge - asymmetry)),
             m.clamp((m.x(inset), bottom + bottom_bulge + asymmetry)),
         ],
-        hex(palette.harmonic1),
-        hex(palette.dark),
+        Paint::Solid {
+            color: palette.harmonic1,
+        },
+        palette.dark,
     )
 }
 
@@ -238,8 +252,10 @@ fn mouth7(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mou
             m.clamp((m.x(2_863_311_531), bottom + curve)),
             m.clamp((m.x(1_431_655_765), bottom + curve)),
         ],
-        hex(palette.primary_darkest),
-        hex(palette.dark),
+        Paint::Solid {
+            color: palette.primary_darkest,
+        },
+        palette.dark,
     )
 }
 
@@ -261,8 +277,10 @@ fn mouth23(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> Mo
             m.clamp((m.x(3_221_225_472), center + opening + pull + curve)),
             m.clamp((m.x(1_073_741_824), center + opening + pull + curve)),
         ],
-        hex(palette.primary_darkest),
-        hex(palette.primary_darker),
+        Paint::Solid {
+            color: palette.primary_darkest,
+        },
+        palette.primary_darker,
     )
 }
 
@@ -287,89 +305,120 @@ fn mouth233(mouth: &Mouth, m: Metrics, mood: MoodDeltas, palette: &Palette) -> M
     ];
     multi_lip_shape(
         points,
-        hex(palette.harmonic3),
-        hex(palette.secondary_darker),
+        Paint::Solid {
+            color: palette.harmonic3,
+        },
+        palette.secondary_darker,
     )
 }
 
-fn open_shape(points: Vec<(i64, i64)>, fill: String, stroke: String) -> MouthShape {
-    let path = format!(
-        "M{} {} C{} {},{} {},{} {}",
-        format_milli(points[0].0),
-        format_milli(points[0].1),
-        format_milli(points[1].0),
-        format_milli(points[1].1),
-        format_milli(points[2].0),
-        format_milli(points[2].1),
-        format_milli(points[3].0),
-        format_milli(points[3].1),
-    );
+fn open_shape(points: Vec<(i64, i64)>, fill: Paint, stroke: Rgb) -> MouthShape {
+    let shape = Shape::Path {
+        segments: vec![
+            Segment::MoveTo {
+                x: points[0].0,
+                y: points[0].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[1].0,
+                cp1y: points[1].1,
+                cp2x: points[2].0,
+                cp2y: points[2].1,
+                x: points[3].0,
+                y: points[3].1,
+            },
+        ],
+        closed: false,
+        fill_rule: FillRule::NonZero,
+    };
     MouthShape {
-        path,
+        shape,
         points,
         fill,
         stroke,
     }
 }
 
-fn closed_shape(points: Vec<(i64, i64)>, fill: String, stroke: String) -> MouthShape {
-    let path = format!(
-        "M{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} Z",
-        format_milli(points[0].0),
-        format_milli(points[0].1),
-        format_milli(points[1].0),
-        format_milli(points[1].1),
-        format_milli(points[2].0),
-        format_milli(points[2].1),
-        format_milli(points[3].0),
-        format_milli(points[3].1),
-        format_milli(points[4].0),
-        format_milli(points[4].1),
-        format_milli(points[5].0),
-        format_milli(points[5].1),
-        format_milli(points[0].0),
-        format_milli(points[0].1),
-    );
+fn closed_shape(points: Vec<(i64, i64)>, fill: Paint, stroke: Rgb) -> MouthShape {
+    let shape = Shape::Path {
+        segments: vec![
+            Segment::MoveTo {
+                x: points[0].0,
+                y: points[0].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[1].0,
+                cp1y: points[1].1,
+                cp2x: points[2].0,
+                cp2y: points[2].1,
+                x: points[3].0,
+                y: points[3].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[4].0,
+                cp1y: points[4].1,
+                cp2x: points[5].0,
+                cp2y: points[5].1,
+                x: points[0].0,
+                y: points[0].1,
+            },
+        ],
+        closed: true,
+        fill_rule: FillRule::NonZero,
+    };
     MouthShape {
-        path,
+        shape,
         points,
         fill,
         stroke,
     }
 }
 
-fn multi_lip_shape(points: Vec<(i64, i64)>, fill: String, stroke: String) -> MouthShape {
-    let path = format!(
-        "M{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} C{} {},{} {},{} {} Z",
-        format_milli(points[0].0),
-        format_milli(points[0].1),
-        format_milli(points[1].0),
-        format_milli(points[1].1),
-        format_milli(points[1].0),
-        format_milli(points[1].1),
-        format_milli(points[2].0),
-        format_milli(points[2].1),
-        format_milli(points[3].0),
-        format_milli(points[3].1),
-        format_milli(points[3].0),
-        format_milli(points[3].1),
-        format_milli(points[4].0),
-        format_milli(points[4].1),
-        format_milli(points[5].0),
-        format_milli(points[5].1),
-        format_milli(points[5].0),
-        format_milli(points[5].1),
-        format_milli(points[6].0),
-        format_milli(points[6].1),
-        format_milli(points[7].0),
-        format_milli(points[7].1),
-        format_milli(points[7].0),
-        format_milli(points[7].1),
-        format_milli(points[0].0),
-        format_milli(points[0].1),
-    );
+fn multi_lip_shape(points: Vec<(i64, i64)>, fill: Paint, stroke: Rgb) -> MouthShape {
+    let shape = Shape::Path {
+        segments: vec![
+            Segment::MoveTo {
+                x: points[0].0,
+                y: points[0].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[1].0,
+                cp1y: points[1].1,
+                cp2x: points[1].0,
+                cp2y: points[1].1,
+                x: points[2].0,
+                y: points[2].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[3].0,
+                cp1y: points[3].1,
+                cp2x: points[3].0,
+                cp2y: points[3].1,
+                x: points[4].0,
+                y: points[4].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[5].0,
+                cp1y: points[5].1,
+                cp2x: points[5].0,
+                cp2y: points[5].1,
+                x: points[6].0,
+                y: points[6].1,
+            },
+            Segment::CubicTo {
+                cp1x: points[7].0,
+                cp1y: points[7].1,
+                cp2x: points[7].0,
+                cp2y: points[7].1,
+                x: points[0].0,
+                y: points[0].1,
+            },
+        ],
+        closed: true,
+        fill_rule: FillRule::NonZero,
+    };
     MouthShape {
-        path,
+        shape,
         points,
         fill,
         stroke,
@@ -378,10 +427,6 @@ fn multi_lip_shape(points: Vec<(i64, i64)>, fill: String, stroke: String) -> Mou
 
 fn p(mouth: &Mouth, index: usize) -> i64 {
     mouth.params[index].0.clamp(0, Q32_ONE)
-}
-
-fn hex(color: avatar_phenotype::Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
 }
 
 #[cfg(test)]
@@ -415,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn every_family_emits_one_group_and_one_bounded_path() {
+    fn every_family_builds_one_bounded_path() {
         let rect = MouthRect {
             x1: 300_000,
             y1: 500_000,
@@ -435,9 +480,15 @@ mod tests {
                 .points
                 .iter()
                 .all(|&(x, y)| { x >= rect.x1 && x <= rect.x2 && y >= rect.y1 && y <= rect.y2 }));
-            let svg = render(&mouth, rect, MoodDeltas::ZERO, &palette());
-            assert_eq!(svg.matches("<g ").count(), 1, "family {family}");
-            assert_eq!(svg.matches("<path ").count(), 1, "family {family}");
+            let primitive = mouth_primitive(
+                &mouth,
+                rect,
+                MoodDeltas::ZERO,
+                &palette(),
+                Transform { ops: Vec::new() },
+            );
+            assert_eq!(primitive.label, format!("av-mouth-{family}"));
+            assert!(matches!(primitive.shape, Shape::Path { .. }));
         }
     }
 }

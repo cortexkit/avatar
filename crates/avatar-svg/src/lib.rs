@@ -1,4 +1,4 @@
-//! Avatar SVG rendering: `(Phenotype, RenderParams) -> SVG bytes`.
+//! Geometry-primary avatar rendering with SVG as one serializer.
 //!
 //! The renderer is the third layer of the determinism contract (design note
 //! 001): it consumes the typed phenotype and render-time inputs, never DNA.
@@ -7,11 +7,12 @@
 //! single pinned narrowing primitive — so every port produces byte-identical
 //! output.
 //!
-//! The body pass (design note 004) supplies deterministic spline geometry and
-//! paint. The face pass (design note 005) appends mood-reactive eyes, brows,
-//! lashes, and one of eight mouth families inside the same centering transform.
+//! The body and face passes assemble the flat render contract from design note
+//! 006. Native consumers draw that tree directly; SVG preserves the established
+//! byte representation as a pure projection of the same geometry.
 
 mod brows;
+mod build;
 mod eyes;
 mod face;
 mod fixed;
@@ -21,17 +22,25 @@ mod lashes;
 mod mood;
 mod mouth;
 mod pattern;
+mod serialize;
 mod svg;
+mod tree;
 
 /// The vendored Voronoi pattern table (spec data, hash-pinned in tests).
 mod voronoi {
     include!("generated/voronoi.rs");
 }
 
-pub use avatar_phenotype::Q32;
+pub use avatar_phenotype::{Bam16, Rgb, Q32};
 
+pub use build::build_render_tree;
 pub use geometry::{body_geometry, BodyGeometry};
+pub use serialize::serialize_svg;
 pub use svg::{render_body_svg, render_svg, Mood, RenderError, RenderParams};
+pub use tree::{
+    Affine, Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Segment, Shape, Stroke,
+    StrokeCap, StrokeJoin, Transform, TransformOp,
+};
 
 #[cfg(test)]
 mod tests {

@@ -26,12 +26,12 @@
 //!   already applied the easing tables for these Q32 fields, so the renderer
 //!   only lerps them into `pattern.tsx`'s target ranges.
 
-use avatar_phenotype::{Circler, Cut, Pattern, Voronoi};
+use avatar_phenotype::{Bam16, Circler, Cut, Pattern, Rgb, Voronoi, Q32};
 use avatar_tables::{cos_q30, div_round_half_away, sin_q30, EASE_IN_QUINT};
 
 use crate::fixed::{lerp_q32_milli, q32_mul, q32_ratio, CANVAS_MILLI, CENTER, Q32_ONE};
-use crate::format::{format_milli, format_q32_decimal};
-use crate::geometry::{build_spline, path_string, RingPoint};
+use crate::geometry::{build_spline, RingPoint};
+use crate::tree::{FillRule, Paint, Primitive, Segment, Shape, Transform, TransformOp};
 use crate::voronoi::VORONOI_PATTERNS;
 
 /// Q32.32 constants for `pattern.tsx`'s range endpoints, half-away rounded.
@@ -39,81 +39,107 @@ const Q32_POINT_ONE: i64 = 429_496_730; // 0.1
 const Q32_POINT_EIGHTY_FIVE: i64 = 3_650_722_202; // 0.85
 const Q32_TWO_POINT_FIVE: i64 = 10_737_418_240; // 2.5 (exact)
 
-/// Builds the mask content for a pattern, or `None` when the class selects
-/// no pattern (class 0, or a value outside the decoded 0..=5 range).
-///
-/// The returned fragment keeps the nesting `bodylayer.tsx` and `pattern.tsx`
-/// emit: the body layer's mask `<g>`, then the pattern's translate group,
-/// then the scale/rotate group holding the `#efefef` path.
-pub(crate) fn mask_content(
+/// Builds the drawable geometry inside a body-pattern mask.
+pub(crate) fn pattern_mask_primitives(
     pattern: &Pattern,
     body_width: i64,
     body_height: i64,
     top: i64,
-) -> Option<String> {
-    let (path, tx, ty, scale, rotate, rotate_center) = match pattern.r#class {
+    root_ops: &[TransformOp],
+) -> Option<Vec<Primitive>> {
+    let (shape, tx, ty, scale, angle, center, label) = match pattern.r#class {
         1 => (
-            circler_path(&pattern.circler, true, body_height, top),
+            circler_shape(&pattern.circler, true, body_height, top),
             0,
             0,
             Q32_ONE,
-            0,
+            Bam16(0),
             CENTER,
+            "av-pattern-circler".to_owned(),
         ),
         2 => (
-            circler_path(&pattern.circler, false, body_height, top),
+            circler_shape(&pattern.circler, false, body_height, top),
             0,
             0,
             Q32_ONE,
-            0,
+            Bam16(0),
             CENTER,
+            "av-pattern-circler".to_owned(),
         ),
-        3 => voronoi_placement(&pattern.voronoi, body_width, body_height),
+        3 => {
+            let placement = voronoi_placement(&pattern.voronoi, body_width, body_height);
+            (
+                parse_voronoi_path(VORONOI_PATTERNS[placement.index]),
+                placement.tx,
+                placement.ty,
+                placement.scale,
+                pattern.voronoi.rotation,
+                placement.center,
+                format!("av-pattern-voronoi-{}", placement.index),
+            )
+        }
         4 => (
-            cutting_bezier_path(&pattern.cut, body_height, top),
+            cutting_bezier_shape(&pattern.cut, body_height, top),
             0,
             0,
             Q32_ONE,
-            0,
+            Bam16(0),
             CENTER,
+            "av-pattern-cut".to_owned(),
         ),
         5 => (
-            cutting_bezier_path(&pattern.cut, body_height, top),
+            cutting_bezier_shape(&pattern.cut, body_height, top),
             0,
             0,
             Q32_ONE,
-            180,
+            Bam16(32_768),
             CENTER,
+            "av-pattern-cut-flipped".to_owned(),
         ),
         _ => return None,
     };
-    Some(format!(
-        "<g><g transform=\"translate({}, {})\"><g transform=\"scale({} {}) rotate({} {} {})\"><path d=\"{}\" fill=\"#efefef\"/></g></g></g>",
-        format_milli(tx),
-        format_milli(ty),
-        format_q32_decimal(scale),
-        format_q32_decimal(scale),
-        rotate,
-        format_milli(rotate_center),
-        format_milli(rotate_center),
-        path,
-    ))
+
+    let mut ops = root_ops.to_vec();
+    ops.extend([
+        TransformOp::Translate { tx, ty },
+        TransformOp::Scale {
+            sx: Q32(scale),
+            sy: Q32(scale),
+        },
+        TransformOp::Rotate {
+            angle,
+            cx: center,
+            cy: center,
+        },
+    ]);
+    Some(vec![Primitive {
+        shape,
+        transform: Some(Transform { ops }),
+        paint: Paint::Solid {
+            color: Rgb {
+                r: 0xef,
+                g: 0xef,
+                b: 0xef,
+            },
+        },
+        stroke: None,
+        opacity: None,
+        clip: None,
+        effects: Vec::new(),
+        label,
+    }])
 }
 
-/// Circler classes 1/2: a ring of `2·numPoints` bumps above (class 1) or
-/// below (class 2) the body, splined into a closed path without flattening
-/// or rescale (`pattern.tsx` calls `spline` in its `simpleSpline` mode).
-fn circler_path(circler: &Circler, above_body: bool, body_height: i64, top: i64) -> String {
+/// Circler classes 1/2: a ring of `2·numPoints` bumps above or below the body.
+fn circler_shape(circler: &Circler, above_body: bool, body_height: i64, top: i64) -> Shape {
     let reduction = div_round_half_away(
         8 * i128::from(EASE_IN_QUINT[usize::from(circler.point_reduce)]),
         i128::from(Q32_ONE),
     ) as i64;
     let num_points = 16 - reduction;
 
-    // size = lerp(1.2·h, 2·h, size); 1.2 = 6/5 via one pinned division.
     let size_lo = div_round_half_away(6 * i128::from(body_height), 5) as i64;
     let size = lerp_q32_milli(size_lo, 2 * body_height, circler.size.0);
-
     let divisor = lerp_q32_milli(2 * Q32_ONE, 3 * Q32_ONE, circler.y_offset_div.0);
     let y_offset = div_round_half_away(
         i128::from(body_height) * i128::from(Q32_ONE),
@@ -127,16 +153,9 @@ fn circler_path(circler: &Circler, above_body: bool, body_height: i64, top: i64)
 
     let tension = Q32_ONE - div_round_half_away(i128::from(circler.tension.0), 2) as i64;
     let pull = lerp_q32_milli(Q32_POINT_EIGHTY_FIVE, Q32_ONE, circler.pull_min.0);
-    // The radius is shared by x and y exactly as `pattern.tsx` shares its
-    // `size * pull` product before the separate cos/sin multiplications.
     let radius = q32_mul(size, pull);
-
-    // BAM16 angle step for a full turn over 2·numPoints points; the +π/2
-    // phase `pattern.tsx` applies is BAM16 16384. u16 arithmetic wraps
-    // mod 65536.
     let angle_step = div_round_half_away(65_536, i128::from(2 * num_points)) as u16;
-    let count =
-        usize::try_from(2 * num_points).expect("the point count is small and never negative");
+    let count = usize::try_from(2 * num_points).expect("the point count is small and nonnegative");
     let mut ring = Vec::with_capacity(count);
     for index in 1..=count {
         let angle = (index as u32 * u32::from(angle_step) + 16_384) as u16;
@@ -146,66 +165,52 @@ fn circler_path(circler: &Circler, above_body: bool, body_height: i64, top: i64)
             tension,
         });
     }
-    path_string(&build_spline(&ring))
+    build_spline(&ring).shape()
 }
 
-/// Scales a Q1.30 trig value against a milliunit radius, one pinned narrowing.
 fn trig_offset(radius: i64, trig_q30: i32) -> i64 {
     div_round_half_away(i128::from(radius) * i128::from(trig_q30), 1i128 << 30) as i64
 }
 
-/// Voronoi class 3: a vendored path string with the scale/rotate/translate
-/// fit `pattern.tsx` applies, re-expressed in fixed point.
-///
-/// Returns `(path, tx, ty, scale_q32, rotate_degrees, rotate_center)` with
-/// tx/ty in milliunits and the scale as Q32.
-fn voronoi_placement(
-    voronoi: &Voronoi,
-    body_width: i64,
-    body_height: i64,
-) -> (String, i64, i64, i64, i64, i64) {
+struct VoronoiPlacement {
+    index: usize,
+    tx: i64,
+    ty: i64,
+    scale: i64,
+    center: i64,
+}
+
+fn voronoi_placement(voronoi: &Voronoi, body_width: i64, body_height: i64) -> VoronoiPlacement {
     let index = div_round_half_away(
         i128::from(voronoi.index) * (VORONOI_PATTERNS.len() as i128 - 1),
         255,
     ) as usize;
-
     let base_scale = lerp_q32_milli(Q32_POINT_ONE, Q32_TWO_POINT_FIVE, voronoi.scale.0);
     let scale = base_scale
         .max(q32_ratio(body_width))
         .max(q32_ratio(body_height));
-
-    // Translate centers the scaled pattern canvas; both divisions fold into
-    // one pinned narrowing each.
     let scaled_canvas = q32_mul(CANVAS_MILLI, scale);
     let tx = div_round_half_away(
         i128::from(CANVAS_MILLI - scaled_canvas) * i128::from(Q32_ONE),
         2 * i128::from(scale),
     ) as i64;
     let ty = tx - div_round_half_away(i128::from(scaled_canvas), 2) as i64;
-
-    // `pattern.tsx` multiplies the scale by canvas/255 AFTER deriving the
-    // translate; the order is visible in the output and kept.
     let stroke_unit = div_round_half_away(i128::from(CANVAS_MILLI), 255) as i64;
     let final_scale = q32_mul(scale, stroke_unit);
-    let rotate_center = div_round_half_away(
+    let center = div_round_half_away(
         i128::from(CANVAS_MILLI) * i128::from(Q32_ONE),
         2 * i128::from(final_scale),
     ) as i64;
-    let degrees = div_round_half_away(i128::from(voronoi.rotation.0) * 360, 65_536) as i64;
-
-    (
-        VORONOI_PATTERNS[index].to_owned(),
+    VoronoiPlacement {
+        index,
         tx,
         ty,
-        final_scale,
-        degrees,
-        rotate_center,
-    )
+        scale: final_scale,
+        center,
+    }
 }
 
-/// Cut classes 4/5: a horizontal Bézier band across the body. Class 5 is the
-/// same path rotated 180° by the mask transform.
-fn cutting_bezier_path(cut: &Cut, body_height: i64, top: i64) -> String {
+fn cutting_bezier_shape(cut: &Cut, body_height: i64, top: i64) -> Shape {
     let spread = lerp_q32_milli(Q32_ONE / 2, 10 * Q32_ONE, cut.spread.0);
     let lr = q32_mul(CANVAS_MILLI, spread);
     let divisor = lerp_q32_milli(2 * Q32_ONE, 100 * Q32_ONE, cut.y_adjust_div.0);
@@ -213,28 +218,199 @@ fn cutting_bezier_path(cut: &Cut, body_height: i64, top: i64) -> String {
         i128::from(body_height) * i128::from(Q32_ONE),
         i128::from(divisor),
     ) as i64;
+    let bottom = top + body_height + y_adjust;
+    let upper = top + y_adjust;
+    let middle = top + lr + y_adjust;
+    Shape::Path {
+        segments: vec![
+            Segment::MoveTo { x: 0, y: bottom },
+            Segment::CubicTo {
+                cp1x: CENTER - lr,
+                cp1y: bottom,
+                cp2x: CENTER,
+                cp2y: middle,
+                x: CENTER,
+                y: upper,
+            },
+            Segment::CubicTo {
+                cp1x: CENTER,
+                cp1y: middle,
+                cp2x: CENTER + lr,
+                cp2y: bottom,
+                x: CANVAS_MILLI,
+                y: bottom,
+            },
+        ],
+        closed: true,
+        fill_rule: FillRule::NonZero,
+    }
+}
 
-    let y_bottom = top + body_height + y_adjust;
-    let y_top = top + y_adjust;
-    let y_mid = top + lr + y_adjust;
-    // String shape is pinned verbatim to `pattern.tsx`, including the space
-    // after the M pair and the missing space before the second C.
-    format!(
-        "M 0, {} C {} {}, {} {}, {} {}C {} {}, {} {}, {} {}Z",
-        format_milli(y_bottom),
-        format_milli(CENTER - lr),
-        format_milli(y_bottom),
-        format_milli(CENTER),
-        format_milli(y_mid),
-        format_milli(CENTER),
-        format_milli(y_top),
-        format_milli(CENTER),
-        format_milli(y_mid),
-        format_milli(CENTER + lr),
-        format_milli(y_bottom),
-        format_milli(CANVAS_MILLI),
-        format_milli(y_bottom),
-    )
+/// Parses the vendored relative m/c/s paths into absolute tree geometry.
+/// The serializer intentionally reuses the source spelling selected by the
+/// primitive label, preserving the corpus while native consumers get segments.
+fn parse_voronoi_path(source: &str) -> Shape {
+    let tokens = svg_path_tokens(source);
+    let mut index = 0;
+    let mut command = b'm';
+    let mut current = (0, 0);
+    let mut previous_control = current;
+    let mut segments = Vec::new();
+    let mut first_move = true;
+
+    while index < tokens.len() {
+        if let PathToken::Command(next) = tokens[index] {
+            command = next;
+            index += 1;
+            first_move = command == b'm';
+            continue;
+        }
+        match command {
+            b'm' => {
+                let (Some(x), Some(y)) = (
+                    token_number(&tokens, index),
+                    token_number(&tokens, index + 1),
+                ) else {
+                    break;
+                };
+                current = (current.0 + x, current.1 + y);
+                segments.push(if first_move {
+                    Segment::MoveTo {
+                        x: current.0,
+                        y: current.1,
+                    }
+                } else {
+                    Segment::LineTo {
+                        x: current.0,
+                        y: current.1,
+                    }
+                });
+                previous_control = current;
+                first_move = false;
+                index += 2;
+            }
+            b'c' => {
+                let values = (0..6)
+                    .map(|offset| token_number(&tokens, index + offset))
+                    .collect::<Option<Vec<_>>>();
+                let Some(values) = values else { break };
+                let control1 = (current.0 + values[0], current.1 + values[1]);
+                let control2 = (current.0 + values[2], current.1 + values[3]);
+                current = (current.0 + values[4], current.1 + values[5]);
+                segments.push(Segment::CubicTo {
+                    cp1x: control1.0,
+                    cp1y: control1.1,
+                    cp2x: control2.0,
+                    cp2y: control2.1,
+                    x: current.0,
+                    y: current.1,
+                });
+                previous_control = control2;
+                index += 6;
+            }
+            b's' => {
+                let values = (0..4)
+                    .map(|offset| token_number(&tokens, index + offset))
+                    .collect::<Option<Vec<_>>>();
+                let Some(values) = values else { break };
+                let control1 = (
+                    2 * current.0 - previous_control.0,
+                    2 * current.1 - previous_control.1,
+                );
+                let control2 = (current.0 + values[0], current.1 + values[1]);
+                current = (current.0 + values[2], current.1 + values[3]);
+                segments.push(Segment::CubicTo {
+                    cp1x: control1.0,
+                    cp1y: control1.1,
+                    cp2x: control2.0,
+                    cp2y: control2.1,
+                    x: current.0,
+                    y: current.1,
+                });
+                previous_control = control2;
+                index += 4;
+            }
+            _ => index += 1,
+        }
+    }
+
+    Shape::Path {
+        segments,
+        closed: false,
+        fill_rule: FillRule::NonZero,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PathToken {
+    Command(u8),
+    Number(i64),
+}
+
+fn svg_path_tokens(source: &str) -> Vec<PathToken> {
+    let bytes = source.as_bytes();
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            command @ (b'm' | b'c' | b's') => {
+                tokens.push(PathToken::Command(command));
+                index += 1;
+            }
+            b' ' | b',' => index += 1,
+            _ => {
+                let start = index;
+                if matches!(bytes[index], b'-' | b'+') {
+                    index += 1;
+                }
+                while index < bytes.len() && bytes[index].is_ascii_digit() {
+                    index += 1;
+                }
+                if index < bytes.len() && bytes[index] == b'.' {
+                    index += 1;
+                    while index < bytes.len() && bytes[index].is_ascii_digit() {
+                        index += 1;
+                    }
+                }
+                let text =
+                    std::str::from_utf8(&bytes[start..index]).expect("vendored path is ASCII");
+                tokens.push(PathToken::Number(decimal_milli(text)));
+            }
+        }
+    }
+    tokens
+}
+
+fn token_number(tokens: &[PathToken], index: usize) -> Option<i64> {
+    match tokens.get(index) {
+        Some(PathToken::Number(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn decimal_milli(text: &str) -> i64 {
+    let (negative, unsigned) = match text.as_bytes().first() {
+        Some(b'-') => (true, &text[1..]),
+        Some(b'+') => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let mut pieces = unsigned.splitn(2, '.');
+    let whole = pieces.next().unwrap_or("0").parse::<i64>().unwrap_or(0);
+    let fraction_text = pieces.next().unwrap_or("");
+    let tens = fraction_text
+        .as_bytes()
+        .first()
+        .map_or(0, |byte| i64::from(byte - b'0'));
+    let ones = fraction_text
+        .as_bytes()
+        .get(1)
+        .map_or(0, |byte| i64::from(byte - b'0'));
+    let value = whole * 100 + tens * 10 + ones;
+    if negative {
+        -value
+    } else {
+        value
+    }
 }
 
 #[cfg(test)]
@@ -259,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn class_zero_has_no_mask_content() {
+    fn class_zero_has_no_mask_primitives() {
         let pattern = Pattern {
             r#class: 0,
             circler: circler(0, 0, 0, 0, 0),
@@ -273,34 +449,40 @@ mod tests {
                 y_adjust_div: Q32(0),
             },
         };
-        assert!(mask_content(&pattern, 500_000, 500_000, 250_000).is_none());
+        assert!(pattern_mask_primitives(&pattern, 500_000, 500_000, 250_000, &[]).is_none());
     }
 
     #[test]
     fn circler_ring_has_the_expected_point_count() {
         // point_reduce byte 0 → EASE_IN_QUINT[0] = 0 → numPoints = 16 → 32
         // ring points → 32 Bézier segments in the path.
-        let path = circler_path(
+        let shape = circler_shape(
             &circler(0, Q32_ONE / 2, Q32_ONE / 2, 0, Q32_ONE),
             true,
             400_000,
             300_000,
         );
-        assert_eq!(path.matches('C').count(), 32);
-        assert!(path.starts_with('M'));
+        let Shape::Path { segments, .. } = shape else {
+            panic!("circler must be a path");
+        };
+        assert_eq!(segments.len(), 33);
+        assert!(matches!(segments[0], Segment::MoveTo { .. }));
     }
 
     #[test]
     fn circler_point_reduce_shrinks_the_ring() {
         // point_reduce byte 255 → EASE_IN_QUINT[255] = 1.0 → reduction 8 →
         // numPoints 8 → 16 segments.
-        let path = circler_path(
+        let shape = circler_shape(
             &circler(255, Q32_ONE / 2, Q32_ONE / 2, 0, Q32_ONE),
             false,
             400_000,
             300_000,
         );
-        assert_eq!(path.matches('C').count(), 16);
+        let Shape::Path { segments, .. } = shape else {
+            panic!("circler must be a path");
+        };
+        assert_eq!(segments.len(), 17);
     }
 
     #[test]
@@ -309,12 +491,34 @@ mod tests {
             spread: Q32(0),       // lerp(0.5, 10, 0) = 0.5 → lr = canvas/2
             y_adjust_div: Q32(0), // lerp(2, 100, 0) = 2 → yAdjust = h/2
         };
-        let path = cutting_bezier_path(&cut, 200_000, 100_000);
-        // lr = 500_000, yAdjust = 100_000: yBottom = 400_000, yTop = 200_000,
-        // yMid = 700_000, cxLeft = 0, cxRight = 1_000_000.
+        let shape = cutting_bezier_shape(&cut, 200_000, 100_000);
+        // The input resolves to a 500_000 horizontal spread and a 100_000
+        // vertical adjustment, pinning every control point below.
         assert_eq!(
-            path,
-            "M 0, 4000 C 0 4000, 5000 7000, 5000 2000C 5000 7000, 10000 4000, 10000 4000Z"
+            shape,
+            Shape::Path {
+                segments: vec![
+                    Segment::MoveTo { x: 0, y: 400_000 },
+                    Segment::CubicTo {
+                        cp1x: 0,
+                        cp1y: 400_000,
+                        cp2x: 500_000,
+                        cp2y: 700_000,
+                        x: 500_000,
+                        y: 200_000,
+                    },
+                    Segment::CubicTo {
+                        cp1x: 500_000,
+                        cp1y: 700_000,
+                        cp2x: 1_000_000,
+                        cp2y: 400_000,
+                        x: 1_000_000,
+                        y: 400_000,
+                    },
+                ],
+                closed: true,
+                fill_rule: FillRule::NonZero,
+            }
         );
     }
 
@@ -335,19 +539,17 @@ mod tests {
             rotation: Bam16(16_384), // quarter turn → 90°
             scale: Q32(0),           // lerp(0.1, 2.5, 0) = 0.1, below the body ratio
         };
-        let (path, _tx, _ty, scale, degrees, rotate_center) =
-            voronoi_placement(&voronoi, 900_000, 400_000);
-        assert_eq!(path, VORONOI_PATTERNS[0]);
-        assert_eq!(degrees, 90);
+        let placement = voronoi_placement(&voronoi, 900_000, 400_000);
+        assert_eq!(placement.index, 0);
         // Scale is at least the body-width ratio times canvas/255.
         let stroke_unit = div_round_half_away(i128::from(CANVAS_MILLI), 255) as i64;
         let min_scale = q32_mul(q32_ratio(900_000), stroke_unit);
-        assert!(scale >= min_scale);
-        assert!(rotate_center > 0);
+        assert!(placement.scale >= min_scale);
+        assert!(placement.center > 0);
     }
 
     #[test]
-    fn mask_content_wraps_the_path_in_three_groups() {
+    fn mask_primitive_carries_resolved_transform_and_paint() {
         let pattern = Pattern {
             r#class: 4,
             circler: circler(0, 0, 0, 0, 0),
@@ -361,10 +563,19 @@ mod tests {
                 y_adjust_div: Q32(0),
             },
         };
-        let content = mask_content(&pattern, 500_000, 200_000, 100_000).unwrap();
-        assert_eq!(content.matches("<g").count(), 3);
-        assert_eq!(content.matches("</g>").count(), 3);
-        assert!(content.contains("fill=\"#efefef\""));
-        assert!(content.contains("rotate(0 5000 5000)"));
+        let primitives = pattern_mask_primitives(&pattern, 500_000, 200_000, 100_000, &[]).unwrap();
+        assert_eq!(primitives.len(), 1);
+        assert_eq!(primitives[0].label, "av-pattern-cut");
+        assert_eq!(primitives[0].transform.as_ref().unwrap().ops.len(), 3);
+        assert_eq!(
+            primitives[0].paint,
+            Paint::Solid {
+                color: Rgb {
+                    r: 0xef,
+                    g: 0xef,
+                    b: 0xef,
+                }
+            }
+        );
     }
 }

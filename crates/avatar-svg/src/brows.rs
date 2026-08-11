@@ -1,46 +1,67 @@
 //! Three-point eyebrow splines derived from face.tsx 337–377.
 
-use avatar_phenotype::{Face, Palette};
+use avatar_phenotype::{Bam16, Face, Palette};
 
 use crate::eyes::EyePair;
 use crate::face::FaceRect;
-use crate::fixed::{bam_degrees_q32, div_i64, opposite_bam, q32_mul, CANVAS_MILLI, Q32_ONE};
-use crate::format::{format_milli, format_q32_decimal};
-use crate::geometry::{build_spline, path_string, RingPoint};
+use crate::fixed::{div_i64, opposite_bam, q32_mul, CANVAS_MILLI, Q32_ONE};
+use crate::geometry::{build_spline, RingPoint};
 use crate::mood::MoodDeltas;
+use crate::tree::{Paint, Primitive, Shape, Transform, TransformOp};
 
-pub(crate) fn render(
+pub(crate) fn brow_primitives(
     face: &Face,
     rect: FaceRect,
     eyes: &EyePair,
     mood: MoodDeltas,
     palette: &Palette,
-) -> String {
+    root_ops: &[TransformOp],
+) -> Vec<Primitive> {
     let left_points = neutral_points(face, rect, eyes);
     let right_points = left_points.map(|point| RingPoint {
         x: CANVAS_MILLI - point.x,
         ..point
     });
-    let left_path = path_string(&build_spline(&left_points));
-    let right_path = path_string(&build_spline(&right_points));
     let shift_y = q32_mul(rect.height, mood.brow_shift_y.0);
     let left_center = brow_center(&left_points);
     let right_center = brow_center(&right_points);
-    let left_angle = format_q32_decimal(bam_degrees_q32(mood.brow_rotation));
-    let right_angle = format_q32_decimal(bam_degrees_q32(opposite_bam(mood.brow_rotation)));
-    format!(
-        "  <path id=\"av-brow-left\" d=\"{left_path}\" transform=\"translate({},{}) rotate({left_angle},{},{})\" fill=\"{}\"/>\n  <path id=\"av-brow-right\" d=\"{right_path}\" transform=\"translate({},{}) rotate({right_angle},{},{})\" fill=\"{}\"/>\n",
-        format_milli(0),
-        format_milli(shift_y),
-        format_milli(left_center.0),
-        format_milli(left_center.1),
-        hex(palette.secondary_darker),
-        format_milli(0),
-        format_milli(shift_y),
-        format_milli(right_center.0),
-        format_milli(right_center.1),
-        hex(palette.secondary_darker),
-    )
+    let primitive = |shape: Shape, angle: Bam16, center: (i64, i64), label: &str| {
+        let mut ops = root_ops.to_vec();
+        ops.extend([
+            TransformOp::Translate { tx: 0, ty: shift_y },
+            TransformOp::Rotate {
+                angle,
+                cx: center.0,
+                cy: center.1,
+            },
+        ]);
+        Primitive {
+            shape,
+            transform: Some(Transform { ops }),
+            paint: Paint::Solid {
+                color: palette.secondary_darker,
+            },
+            stroke: None,
+            opacity: None,
+            clip: None,
+            effects: Vec::new(),
+            label: label.to_owned(),
+        }
+    };
+    vec![
+        primitive(
+            build_spline(&left_points).shape(),
+            mood.brow_rotation,
+            left_center,
+            "av-brow-left",
+        ),
+        primitive(
+            build_spline(&right_points).shape(),
+            opposite_bam(mood.brow_rotation),
+            right_center,
+            "av-brow-right",
+        ),
+    ]
 }
 
 fn neutral_points(face: &Face, rect: FaceRect, eyes: &EyePair) -> [RingPoint; 3] {
@@ -89,8 +110,4 @@ fn brow_center(points: &[RingPoint; 3]) -> (i64, i64) {
     let min_y = points.iter().map(|point| point.y).min().unwrap_or(0);
     let max_y = points.iter().map(|point| point.y).max().unwrap_or(0);
     (div_i64(min_x + max_x, 2), div_i64(min_y + max_y, 2))
-}
-
-fn hex(color: avatar_phenotype::Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
 }

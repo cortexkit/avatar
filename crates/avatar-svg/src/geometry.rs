@@ -9,13 +9,15 @@ use avatar_phenotype::{Body, Phenotype};
 use avatar_tables::div_round_half_away;
 
 use crate::fixed::{q32_ratio, CANVAS_MILLI, CENTER, Q32_ONE};
+#[cfg(test)]
 use crate::format::format_milli;
+use crate::tree::{FillRule, Segment, Shape};
 
 /// Samples per Bézier segment when flattening the body outline.
 const FLATTEN_STEPS: i64 = 20;
 
-/// Flattened body outline plus the derived metrics the paint pass and the
-/// later face pass consume.
+/// Cubic body outline plus the flattened landmarks and derived metrics used
+/// by later render-tree assembly.
 ///
 /// All lengths are milliunits on the 1_000_000 canonical canvas. `all_points`
 /// holds every flattened sample in segment order (segment endpoints appear
@@ -23,7 +25,7 @@ const FLATTEN_STEPS: i64 = 20;
 /// segment's first), which the face pass needs for mouth fitting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BodyGeometry {
-    pub path: String,
+    pub shape: Shape,
     pub body_width: i64,
     pub body_height: i64,
     pub top: i64,
@@ -43,7 +45,7 @@ pub fn body_geometry(phenotype: &Phenotype) -> BodyGeometry {
     let bottom = bounds.max_y;
     let body_height = bottom - top;
     BodyGeometry {
-        path: path_string(&spline),
+        shape: spline.shape(),
         body_width,
         body_height,
         top,
@@ -120,6 +122,29 @@ pub(crate) struct Spline {
     pub start_x: i64,
     pub start_y: i64,
     pub curves: Vec<Curve>,
+}
+
+impl Spline {
+    pub(crate) fn shape(&self) -> Shape {
+        let mut segments = Vec::with_capacity(self.curves.len() + 1);
+        segments.push(Segment::MoveTo {
+            x: self.start_x,
+            y: self.start_y,
+        });
+        segments.extend(self.curves.iter().map(|curve| Segment::CubicTo {
+            cp1x: curve.cp1x,
+            cp1y: curve.cp1y,
+            cp2x: curve.cp2x,
+            cp2y: curve.cp2y,
+            x: curve.x2,
+            y: curve.y2,
+        }));
+        Shape::Path {
+            segments,
+            closed: false,
+            fill_rule: FillRule::NonZero,
+        }
+    }
 }
 
 /// Stage 2 — turns the closed ring into cubic Béziers.
@@ -389,12 +414,9 @@ fn height_twentieth(height: i64) -> i64 {
     div_round_half_away(i128::from(height), 20) as i64
 }
 
-/// Stage 5 — serializes the spline as an SVG path.
-///
-/// Layout is pinned to the exact string shape `spline.ts` emits (comma after
-/// the `M` pair; `C` groups comma-separated between pairs, space within
-/// pairs): consumers already parse that surface, so it is kept rather than
-/// beautified.
+/// Test-only formatter used to verify that the tree serializer preserves the
+/// established SVG body-path syntax.
+#[cfg(test)]
 pub(crate) fn path_string(spline: &Spline) -> String {
     let mut path = format!(
         "M{},{}",
