@@ -32,6 +32,22 @@ fn main() {
             render_svg(&phenotype, &params).expect("render stable preview"),
         )
         .expect("write stable preview");
+        // Baseline through the SAME preview projection as the variants: the
+        // projection skips lighting, so comparing a variant against the stable
+        // serializer's lit output would show shading differences as if they
+        // were geometry changes.
+        std::fs::write(
+            output.join(format!("{seat}-base.svg")),
+            render_preview(
+                &phenotype,
+                &params,
+                ExperimentalOptions {
+                    asymmetry_strength: Q32(0),
+                    layers: false,
+                },
+            ),
+        )
+        .expect("write baseline preview");
         std::fs::write(
             output.join(format!("{seat}-asym.svg")),
             render_preview(
