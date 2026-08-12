@@ -34,6 +34,10 @@ pub enum MouthKind {
     Flat,
     /// Tiny w-fangs: two down-triangles under a short line.
     Fangs,
+    /// Small round o (surprise/yawn) — mood vocabulary.
+    OMouth,
+    /// Downturned arc (sad) — mood vocabulary.
+    DownArc,
 }
 
 pub struct FacePack {
@@ -52,11 +56,17 @@ pub const PACKS: [FacePack; 6] = [
 ];
 
 /// Eye geometry shared by all archetypes: large, wide-set, low.
-struct EyeFrame {
-    lx: f64,
-    rx: f64,
-    y: f64,
-    r: f64,
+pub struct EyeFrame {
+    pub lx: f64,
+    pub rx: f64,
+    pub y: f64,
+    pub r: f64,
+}
+
+/// Public frame accessor so mood overlays (lids, squint, brows) land exactly
+/// on the archetype geometry without re-deriving it.
+pub fn frame(bp: &BodyParams, cx: f64, cy: f64) -> EyeFrame {
+    eye_frame(bp, cx, cy, 0.0)
 }
 
 fn eye_frame(bp: &BodyParams, cx: f64, cy: f64, tilt: f64) -> EyeFrame {
@@ -164,6 +174,14 @@ pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -
         MouthKind::Flat => format!(
             "<line x1='{:.1}' y1='{my:.1}' x2='{:.1}' y2='{my:.1}' stroke='{accent}' stroke-width='2.6' stroke-linecap='round'/>",
             cx - r * 0.55, cx + r * 0.55,
+        ),
+        MouthKind::OMouth => format!(
+            "<ellipse cx='{cx:.1}' cy='{:.1}' rx='{:.1}' ry='{:.1}' fill='#4a2f33' stroke='{accent}' stroke-width='1.8'/>",
+            my + r * 0.2, r * 0.3, r * 0.38,
+        ),
+        MouthKind::DownArc => format!(
+            "<path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1}' stroke='{accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>",
+            cx - r * 0.55, my + r * 0.35, my - r * 0.25, cx + r * 0.55, my + r * 0.35,
         ),
         MouthKind::Fangs => format!(
             "<path d='M{:.1} {my:.1} Q{cx:.1} {:.1} {:.1} {my:.1}' stroke='{accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} Z' fill='white'/><path d='M{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} Z' fill='white'/>",

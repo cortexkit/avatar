@@ -30,6 +30,70 @@ pub const ALL: [TopPart; 6] = [
     TopPart::Nub,
 ];
 
+/// Bottom-slot families: grounding parts (drawn before the body so they
+/// peek from under the mass).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BottomPart {
+    None,
+    /// Two stubby half-ellipse feet.
+    FeetNubs,
+    /// A curled tail on the lower-right.
+    Tail,
+    /// Wide duck-feet triangles.
+    DuckFeet,
+}
+
+pub fn draw_bottom(part: BottomPart, body: &BodyParams, cx: f64, cy: f64, fill: &str, outline: &str) -> String {
+    let half_h = body.height / 2.0;
+    let by = cy + half_h;
+    let w = width_at(body, half_h * 0.7);
+    match part {
+        BottomPart::None => String::new(),
+        BottomPart::FeetNubs => {
+            let mut s = String::new();
+            for side in [-1.0_f64, 1.0] {
+                let fx = cx + side * w * 0.5;
+                s.push_str(&format!(
+                    "<ellipse cx='{fx:.1}' cy='{:.1}' rx='{:.1}' ry='{:.1}' fill='{fill}' stroke='{outline}' stroke-width='2.4'/>",
+                    by - 2.0,
+                    w * 0.22,
+                    body.height * 0.06,
+                ));
+            }
+            s
+        }
+        BottomPart::Tail => {
+            let tx = cx + w * 0.95;
+            let ty = by - body.height * 0.12;
+            let l = body.height * 0.3;
+            format!(
+                "<path d='M{tx:.1} {ty:.1} Q{:.1} {:.1} {:.1} {:.1} Q{:.1} {:.1} {:.1} {:.1}' stroke='{fill}' stroke-width='{:.1}' fill='none' stroke-linecap='round'/>",
+                tx + l * 0.55, ty + l * 0.1,
+                tx + l * 0.6, ty - l * 0.45,
+                tx + l * 0.62, ty - l * 0.8,
+                tx + l * 0.3, ty - l * 0.72,
+                body.height * 0.055,
+            )
+        }
+        BottomPart::DuckFeet => {
+            let mut s = String::new();
+            for side in [-1.0_f64, 1.0] {
+                let fx = cx + side * w * 0.55;
+                let fw = w * 0.34;
+                let fh = body.height * 0.07;
+                s.push_str(&format!(
+                    "<path d='M{:.1} {:.1} L{:.1} {:.1} Q{:.1} {:.1} {:.1} {:.1} Z' fill='{fill}' stroke='{outline}' stroke-width='2'/>",
+                    fx - fw * 0.4, by - 3.0,
+                    fx + side * fw, by + fh * 0.4,
+                    fx + side * fw * 0.3, by + fh,
+                    fx - fw * 0.5, by + fh * 0.5,
+                ));
+            }
+            s
+        }
+    }
+}
+
 /// Emits SVG path elements for the part, `fill` pre-formatted.
 pub fn draw(part: TopPart, body: &BodyParams, cx: f64, cy: f64, fill: &str) -> String {
     let half_h = body.height / 2.0;
