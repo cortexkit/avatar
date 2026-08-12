@@ -13,6 +13,7 @@
 
 mod brows;
 mod build;
+pub mod experimental;
 mod eyes;
 mod face;
 mod fixed;
@@ -289,6 +290,69 @@ mod tests {
             params.mood = mood;
             assert_eq!(render_body_svg(&phenotype, &params).unwrap(), neutral);
         }
+    }
+
+    #[test]
+    fn experimental_off_state_is_tree_identical_to_the_stable_builder() {
+        let phenotype = phenotype_with(sample_body(), 42, 4);
+        let options = experimental::ExperimentalOptions {
+            asymmetry_strength: Q32(0),
+            layers: false,
+        };
+        assert_eq!(
+            experimental::build_render_tree_experimental(&phenotype, &default_params(), &options)
+                .unwrap(),
+            build_render_tree(&phenotype, &default_params()).unwrap(),
+        );
+    }
+
+    #[test]
+    fn experimental_layers_precede_an_asymmetric_main_body_in_preview_svg() {
+        let mut phenotype = phenotype_with(sample_body(), 42, 4);
+        phenotype.asymmetry.deltas = [Q32::ONE; 8];
+        phenotype.layers.count = 1;
+        phenotype.layers.params = [Q32::ONE; 16];
+        let options = experimental::ExperimentalOptions {
+            asymmetry_strength: Q32::ONE,
+            layers: true,
+        };
+        let stable = build_render_tree(&phenotype, &default_params()).unwrap();
+        let preview =
+            experimental::build_render_tree_experimental(&phenotype, &default_params(), &options)
+                .unwrap();
+        let layers: Vec<_> = preview
+            .primitives
+            .iter()
+            .filter(|primitive| primitive.label.starts_with("av-experimental-layer-"))
+            .collect();
+        assert_eq!(layers.len(), 2);
+        assert_eq!(
+            layers[0].paint,
+            Paint::Solid {
+                color: phenotype.palette.harmonic2
+            }
+        );
+        assert_eq!(
+            layers[1].paint,
+            Paint::Solid {
+                color: phenotype.palette.harmonic1
+            }
+        );
+        assert_eq!(preview.primitives[0].label, "av-experimental-layer-1");
+        let stable_body = stable
+            .primitives
+            .iter()
+            .find(|primitive| primitive.label == "av-body-base")
+            .unwrap();
+        let preview_body = preview
+            .primitives
+            .iter()
+            .find(|primitive| primitive.label == "av-body-base")
+            .unwrap();
+        assert_ne!(preview_body.shape, stable_body.shape);
+        let svg = String::from_utf8(experimental::serialize_svg_experimental(&preview)).unwrap();
+        assert_well_formed_xml(&svg);
+        assert!(svg.find("av-experimental-layer-1").unwrap() < svg.find("av-body-base").unwrap());
     }
 
     #[test]
