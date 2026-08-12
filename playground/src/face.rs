@@ -174,6 +174,40 @@ pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -
     }
 }
 
+/// Ink-parameterized wrappers for grid 3: palettes may flip the face ink
+/// (dark bodies need light features), so the archetype functions gain color
+/// arguments while the grid-2 call sites keep their defaults.
+pub fn eyes_inked(
+    kind: EyeKind,
+    bp: &BodyParams,
+    cx: f64,
+    cy: f64,
+    tilt: f64,
+    accent: &str,
+    ink: &str,
+) -> String {
+    eyes(kind, bp, cx, cy, tilt, accent).replace("#241f26", ink)
+}
+
+pub fn mouth_inked(
+    kind: MouthKind,
+    bp: &BodyParams,
+    cx: f64,
+    cy: f64,
+    accent: &str,
+    ink: &str,
+) -> String {
+    mouth(kind, bp, cx, cy, accent).replace("#241f26", ink)
+}
+
+pub fn blush_colored(bp: &BodyParams, cx: f64, cy: f64, color: &str) -> String {
+    blush(bp, cx, cy).replace("#f0808f' opacity='0.35", &format!("{color}' opacity='0.8"))
+}
+
+pub fn belly_colored(bp: &BodyParams, cx: f64, cy: f64, color: &str) -> String {
+    belly(bp, cx, cy).replace("fill='white' opacity='0.42'", &format!("fill='{color}'"))
+}
+
 /// Cheek blush: soft rosy ellipses outer-low of each eye.
 pub fn blush(bp: &BodyParams, cx: f64, cy: f64) -> String {
     let ey = -bp.height * 0.08;
