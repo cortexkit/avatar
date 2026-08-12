@@ -193,10 +193,12 @@ pub fn brow(kind: Brows, x: f64, y: f64, r: f64, side: f64, ink: &str) -> String
 pub fn adjunct(kind: Adjunct, cx: f64, top_y: f64, scale: f64, ink: &str) -> String {
     match kind {
         Adjunct::None => String::new(),
+        // Pushed wide of the crown so tall top-parts (tuft, antennae) never
+        // collide with the glyphs (grid-4 polish note).
         Adjunct::Zz => format!(
             "<text x='{:.1}' y='{:.1}' font-family='monospace' font-weight='bold' font-size='{:.0}' fill='{ink}' opacity='0.75'>z</text><text x='{:.1}' y='{:.1}' font-family='monospace' font-weight='bold' font-size='{:.0}' fill='{ink}' opacity='0.55'>Z</text>",
-            cx + 46.0 * scale, top_y + 8.0 * scale, 22.0 * scale,
-            cx + 62.0 * scale, top_y - 10.0 * scale, 28.0 * scale,
+            cx + 68.0 * scale, top_y + 16.0 * scale, 22.0 * scale,
+            cx + 86.0 * scale, top_y - 2.0 * scale, 28.0 * scale,
         ),
         Adjunct::Sweat => format!(
             "<path d='M{:.1} {:.1} Q{:.1} {:.1} {:.1} {:.1} Q{:.1} {:.1} {:.1} {:.1} Z' fill='#7fb8e8' opacity='0.85'/>",

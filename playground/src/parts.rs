@@ -63,16 +63,19 @@ pub fn draw_bottom(part: BottomPart, body: &BodyParams, cx: f64, cy: f64, fill: 
             s
         }
         BottomPart::Tail => {
-            let tx = cx + w * 0.95;
-            let ty = by - body.height * 0.12;
-            let l = body.height * 0.3;
+            // A tail must END pointing away from the body: any stroke whose
+            // both ends sit near the silhouette closes into a handle shape
+            // (grid-4 lesson, twice). Root low, rise, tip flicks out-up.
+            let tx = cx + w * 0.88;
+            let ty = by - body.height * 0.08;
+            let l = body.height * 0.4;
             format!(
                 "<path d='M{tx:.1} {ty:.1} Q{:.1} {:.1} {:.1} {:.1} Q{:.1} {:.1} {:.1} {:.1}' stroke='{fill}' stroke-width='{:.1}' fill='none' stroke-linecap='round'/>",
-                tx + l * 0.55, ty + l * 0.1,
-                tx + l * 0.6, ty - l * 0.45,
-                tx + l * 0.62, ty - l * 0.8,
-                tx + l * 0.3, ty - l * 0.72,
-                body.height * 0.055,
+                tx + l * 0.55, ty + l * 0.05,
+                tx + l * 0.52, ty - l * 0.6,
+                tx + l * 0.5, ty - l * 1.05,
+                tx + l * 0.95, ty - l * 1.35,
+                body.height * 0.05,
             )
         }
         BottomPart::DuckFeet => {
