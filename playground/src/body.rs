@@ -56,18 +56,37 @@ fn profile(p: &BodyParams, y: f64) -> f64 {
     base * cap
 }
 
+/// The "alive" layer: deliberate imperfection applied to a sampled body.
+/// Zeroed, the outline is the pure symmetric profile.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Wonk {
+    /// Horizontal shear: x += y * lean (ground contact stays put, mass tips).
+    pub lean: f64,
+    /// Per-side width bias: right *= 1+bias, left *= 1-bias.
+    pub side_bias: f64,
+    /// Eye-line tilt in px carried to the face layer (positive = right eye lower).
+    pub eye_tilt: f64,
+}
+
 /// Samples the closed outline by scanline: down the right side, up the left.
 pub fn sample_outline(p: &BodyParams, steps: usize) -> Vec<Pt> {
+    sample_outline_wonk(p, steps, &Wonk::default())
+}
+
+/// Outline with the wonk layer applied.
+pub fn sample_outline_wonk(p: &BodyParams, steps: usize, w: &Wonk) -> Vec<Pt> {
     let total = 2 * steps;
     let mut points = Vec::with_capacity(2 * total);
     let half_h = p.height / 2.0;
     for i in 0..=total {
         let y = -half_h + p.height * (i as f64 / total as f64);
-        points.push(Pt { x: profile(p, y), y });
+        let x = profile(p, y) * (1.0 + w.side_bias) + y * w.lean;
+        points.push(Pt { x, y });
     }
     for i in (0..=total).rev() {
         let y = -half_h + p.height * (i as f64 / total as f64);
-        points.push(Pt { x: -profile(p, y), y });
+        let x = -profile(p, y) * (1.0 - w.side_bias) + y * w.lean;
+        points.push(Pt { x, y });
     }
     points
 }
