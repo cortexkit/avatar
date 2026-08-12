@@ -37,8 +37,23 @@ const LAYER_ROTATION_LIMIT: i64 = 8_192; // 45 degrees in BAM16
 pub struct ExperimentalOptions {
     /// Right-side control-point displacement strength; zero preserves the stable tree.
     pub asymmetry_strength: Q32,
-    /// Draws one or two small harmonic body echoes behind the main body.
+    /// Draws one or two small body echoes behind the main body.
     pub layers: bool,
+    /// Echo paint scheme: which palette family the layer fills come from.
+    pub layer_paint: LayerPaint,
+}
+
+/// Candidate paint schemes for layer echoes, compared by eye before any
+/// graduation: harmonic fills read as separate objects on busy bodies, so a
+/// body-ramp variant tests whether echoes read better as the creature's own
+/// depth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LayerPaint {
+    /// harmonic2 / harmonic1 — spike-1 scheme, distinct hues.
+    #[default]
+    Harmonic,
+    /// primary_darker / primary_darkest — the body's own shade ramp.
+    BodyRamp,
 }
 
 /// Builds a developer-only render tree with optional asymmetry and body layers.
@@ -80,7 +95,7 @@ pub fn build_render_tree_experimental(
             .expect("the stable body base always has a root transform")
             .ops
             .clone();
-        let layers = layer_primitives(phenotype, &geometry, &root_ops);
+        let layers = layer_primitives(phenotype, &geometry, &root_ops, options.layer_paint);
         tree.primitives.splice(0..0, layers);
     }
 
@@ -164,6 +179,7 @@ fn layer_primitives(
     phenotype: &Phenotype,
     geometry: &BodyGeometry,
     root_ops: &[TransformOp],
+    paint: LayerPaint,
 ) -> Vec<Primitive> {
     let count = 1 + usize::from(phenotype.layers.count % 2);
     let body_center_y = geometry.top + div_i64(geometry.body_height, 2);
@@ -200,10 +216,11 @@ fn layer_primitives(
                 shape: geometry.shape.clone(),
                 transform: Some(Transform { ops }),
                 paint: Paint::Solid {
-                    color: if index == 0 {
-                        phenotype.palette.harmonic2
-                    } else {
-                        phenotype.palette.harmonic1
+                    color: match (paint, index) {
+                        (LayerPaint::Harmonic, 0) => phenotype.palette.harmonic2,
+                        (LayerPaint::Harmonic, _) => phenotype.palette.harmonic1,
+                        (LayerPaint::BodyRamp, 0) => phenotype.palette.primary_darker,
+                        (LayerPaint::BodyRamp, _) => phenotype.palette.primary_darkest,
                     },
                 },
                 stroke: Some(crate::Stroke::new(

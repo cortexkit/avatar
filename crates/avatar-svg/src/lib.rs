@@ -298,6 +298,7 @@ mod tests {
         let options = experimental::ExperimentalOptions {
             asymmetry_strength: Q32(0),
             layers: false,
+            layer_paint: experimental::LayerPaint::Harmonic,
         };
         assert_eq!(
             experimental::build_render_tree_experimental(&phenotype, &default_params(), &options)
@@ -315,6 +316,7 @@ mod tests {
         let options = experimental::ExperimentalOptions {
             asymmetry_strength: Q32::ONE,
             layers: true,
+            layer_paint: experimental::LayerPaint::Harmonic,
         };
         let stable = build_render_tree(&phenotype, &default_params()).unwrap();
         let preview =
