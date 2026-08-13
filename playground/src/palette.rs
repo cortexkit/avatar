@@ -22,6 +22,24 @@ fn hsl(h: f64, s: f64, l: f64) -> String {
 
 pub const RECIPES: usize = 6;
 
+/// Voronoi mottle fills (light, dark) keyed to the recipe: same-hue shade
+/// steps of the body color, translucent so the body tone stays dominant.
+/// The grid-8 fixed black/white overlay read as cracked glass — mottle must
+/// belong to the creature's own palette.
+pub fn mottle(recipe: usize, h: f64) -> (String, String) {
+    let a = |hh: f64, s: f64, l: f64, alpha: f64| {
+        format!("hsl({:.0} {s:.0}% {l:.0}% / {alpha})", hh.rem_euclid(360.0))
+    };
+    match recipe {
+        0 => (a(h, 70.0, 90.0, 0.55), a(h + 10.0, 55.0, 68.0, 0.35)),
+        1 => (a(h, 66.0, 90.0, 0.55), a(h + 12.0, 52.0, 70.0, 0.35)),
+        2 => (a(h, 82.0, 76.0, 0.5), a(h + 14.0, 70.0, 52.0, 0.35)),
+        3 => (a(h, 42.0, 38.0, 0.5), a(h - 8.0, 40.0, 18.0, 0.45)),
+        4 => (a(h, 28.0, 72.0, 0.5), a(h - 12.0, 26.0, 50.0, 0.35)),
+        _ => (a(h, 30.0, 94.0, 0.55), a(h + 8.0, 26.0, 76.0, 0.35)),
+    }
+}
+
 /// recipe index x base hue -> colors.
 pub fn resolve(recipe: usize, h: f64) -> Colors {
     match recipe {

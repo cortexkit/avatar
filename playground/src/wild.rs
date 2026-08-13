@@ -160,10 +160,85 @@ pub fn extremity_outline(e: &Extremity, ring_r: f64, mean_r: f64, mirror: bool) 
     out
 }
 
+/// Raw geometry in ring coordinates: sampled outline + EXACT bounds.
+pub struct RawBody {
+    pub pts: Vec<(f64, f64)>,
+    /// Exact bbox (min_x, min_y, max_x, max_y) from bezier tangent roots
+    /// (dx/dt = 0, dy/dt = 0 per segment), post-ground-flatten — the true
+    /// spline extremes, not a sample or control-point approximation (TOG's
+    /// rescale lesson: sample bboxes under-measure overshoot lobes).
+    pub bbox: (f64, f64, f64, f64),
+}
+
 /// Raw (un-normalized) outline in ring coordinates — lets callers recover
 /// the ring->cell transform that `outline` applies internally.
 pub fn outline_raw(body: &WildBody, dom: f64) -> Vec<(f64, f64)> {
     outline_impl(body, dom, None)
+}
+
+/// Exact per-coordinate cubic extremes: roots of the derivative quadratic
+/// inside (0,1), evaluated. Returns candidate values including endpoints.
+fn cubic_extremes(p0: f64, c1: f64, c2: f64, p3: f64) -> [f64; 4] {
+    let a = p3 - 3.0 * c2 + 3.0 * c1 - p0;
+    let b = 2.0 * (c2 - 2.0 * c1 + p0);
+    let c = c1 - p0;
+    let eval = |t: f64| {
+        let v = 1.0 - t;
+        v * v * v * p0 + 3.0 * v * v * t * c1 + 3.0 * v * t * t * c2 + t * t * t * p3
+    };
+    let mut out = [p0, p3, p0, p3];
+    let mut slot = 2;
+    if a.abs() < 1e-12 {
+        if b.abs() > 1e-12 {
+            let t = -c / b;
+            if t > 0.0 && t < 1.0 {
+                out[slot] = eval(t);
+                slot += 1;
+            }
+        }
+    } else {
+        let disc = b * b - 4.0 * a * c;
+        if disc >= 0.0 {
+            let sq = disc.sqrt();
+            for t in [(-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a)] {
+                if t > 0.0 && t < 1.0 && slot < 4 {
+                    out[slot] = eval(t);
+                    slot += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Full raw build: sampled outline + exact tangent-root bounds, both after
+/// the ground flatten. This is the geometry source for the unified
+/// scale-to-fit transform (one transform for body, extremities, sites).
+pub fn build_raw(body: &WildBody, dom: f64) -> RawBody {
+    let pts = outline_impl(body, dom, None);
+    // Recompute the segment control points exactly as outline_impl does, to
+    // extract true extremes. (Duplication kept local and cheap: playground.)
+    let segs = control_segments(body, dom);
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for s in &segs {
+        for v in cubic_extremes(s[0].0, s[1].0, s[2].0, s[3].0) {
+            min_x = min_x.min(v);
+            max_x = max_x.max(v);
+        }
+        for v in cubic_extremes(s[0].1, s[1].1, s[2].1, s[3].1) {
+            min_y = min_y.min(v);
+            max_y = max_y.max(v);
+        }
+    }
+    // Ground flatten mapping applied to the y extremes (monotonic in y).
+    let h = max_y - min_y;
+    let ground = max_y - h * 0.14;
+    let squash = 0.30 + 0.35 * dom;
+    let max_y_flat = ground + (max_y - ground) * squash;
+    RawBody {
+        pts,
+        bbox: (min_x, min_y, max_x, max_y_flat),
+    }
 }
 
 /// The cute-ification pass. Returns the outline as dense sampled points.
@@ -177,36 +252,61 @@ pub fn outline(body: &WildBody, dom: f64, cx: f64, cy: f64, scale: f64) -> Vec<(
     outline_impl(body, dom, Some((cx, cy, scale)))
 }
 
-fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -> Vec<(f64, f64)> {
-    // Mirroring: reflect spokes with theta in (0, PI) across the y axis,
-    // replacing the originals in (PI, TAU), then sort by angle.
+/// Prepared spoke ring → cubic segment control points [p1, c1, c2, p2].
+/// Shared by the sampler and the exact-extremes bbox so they can never
+/// disagree about the curve.
+fn control_segments(body: &WildBody, dom: f64) -> Vec<[(f64, f64); 4]> {
+    let pts = prepared_points(body, dom);
+    let n = pts.len();
+    let mut segs = Vec::with_capacity(n);
+    for i in 0..n {
+        let p0 = pts[(i + n - 1) % n];
+        let p1 = pts[i];
+        let p2 = pts[(i + 1) % n];
+        let p3 = pts[(i + 2) % n];
+        let t1 = p1.2;
+        let t2 = p2.2;
+        let c1 = (p1.0 + (p2.0 - p0.0) / 6.0 * t1, p1.1 + (p2.1 - p0.1) / 6.0 * t1);
+        let c2 = (p2.0 - (p3.0 - p1.0) / 6.0 * t2, p2.1 - (p3.1 - p1.1) / 6.0 * t2);
+        segs.push([(p1.0, p1.1), c1, c2, (p2.0, p2.1)]);
+    }
+    segs
+}
+
+/// Spoke preparation shared by the sampler and the segment builder: mirror,
+/// sort, dedup, domestication (radius smoothing + floor, tension pull),
+/// producing (x, y, tension) ring points.
+fn prepared_points(body: &WildBody, dom: f64) -> Vec<(f64, f64, f64)> {
+    // Mirroring by FOLDING: every spoke maps into the right half-plane
+    // (θ → π−θ when cos θ < 0), then the folded set is reflected. Every
+    // decoded spoke contributes to the silhouette and symmetry cannot
+    // degenerate. (The previous filter-the-right-half approach had a
+    // fallback — keep the raw set when fewer than 3 spokes landed right of
+    // the axis — which silently produced FREE-FORM bodies: the seed-3003
+    // asymmetry, found by the probe, 19.05 cell units.)
     let mut spokes: Vec<Spoke> = if body.mirrored {
         let mut half: Vec<Spoke> = body
             .spokes
             .iter()
-            .filter(|s| {
+            .map(|s| {
                 let t = s.theta.rem_euclid(std::f64::consts::TAU);
-                (t <= std::f64::consts::PI * 0.5) || (t >= std::f64::consts::PI * 1.5)
-            })
-            .copied()
-            .collect();
-        if half.len() < 3 {
-            half = body.spokes.clone(); // degenerate mirror set: keep free form
-        } else {
-            let mirrored: Vec<Spoke> = half
-                .iter()
-                .filter(|s| {
-                    let t = s.theta.rem_euclid(std::f64::consts::TAU);
-                    !(t < 0.03 || (t - std::f64::consts::PI).abs() < 0.03)
-                })
-                .map(|s| Spoke {
-                    theta: std::f64::consts::PI - s.theta,
+                let folded = if t.cos() < 0.0 { std::f64::consts::PI - t } else { t };
+                Spoke {
+                    theta: folded,
                     r: s.r,
                     tension: s.tension,
-                })
-                .collect();
-            half.extend(mirrored);
-        }
+                }
+            })
+            .collect();
+        let mirrored: Vec<Spoke> = half
+            .iter()
+            .map(|s| Spoke {
+                theta: std::f64::consts::PI - s.theta,
+                r: s.r,
+                tension: s.tension,
+            })
+            .collect();
+        half.extend(mirrored);
         half
     } else {
         body.spokes.clone()
@@ -215,7 +315,9 @@ fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -
         s.theta = s.theta.rem_euclid(std::f64::consts::TAU);
     }
     spokes.sort_by(|a, b| a.theta.partial_cmp(&b.theta).unwrap());
-    spokes.dedup_by(|a, b| (a.theta - b.theta).abs() < 1e-6);
+    // Tolerance covers the vertical-pole mirror duplicates (θ ≈ π−θ) and
+    // jitter near-collisions; a doubled point makes the spline kink.
+    spokes.dedup_by(|a, b| (a.theta - b.theta).abs() < 1e-3);
 
     // 1. Radius smoothing (domestication): two passes of circular 3-tap
     // weighted average, weight rising with dom, PLUS a radius floor — dom
@@ -250,7 +352,11 @@ fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -
             )
         })
         .collect();
+    pts
+}
 
+fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -> Vec<(f64, f64)> {
+    let pts = prepared_points(body, dom);
     // Closed Catmull-Rom through the spoke tips, tension-scaled tangents,
     // sampled densely.
     let n = pts.len();
@@ -352,4 +458,22 @@ pub fn bbox(outline: &[(f64, f64)]) -> (f64, f64, f64, f64) {
         d = d.max(y);
     }
     (a, b, c, d)
+}
+
+/// Symmetry probe: max distance from any outline point to the nearest point
+/// of the x-mirrored outline (0 = perfectly symmetric). Diagnostic only.
+pub fn asymmetry(outline: &[(f64, f64)], axis_x: f64) -> f64 {
+    let mut worst = 0.0_f64;
+    for &(x, y) in outline {
+        let mx = 2.0 * axis_x - x;
+        let mut best = f64::MAX;
+        for &(ox, oy) in outline {
+            let d = ((ox - mx).powi(2) + (oy - y).powi(2)).sqrt();
+            if d < best {
+                best = d;
+            }
+        }
+        worst = worst.max(best);
+    }
+    worst
 }

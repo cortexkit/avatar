@@ -4,14 +4,7 @@
 //!   row 3: + real Voronoi surface mottle (computed, not premade)
 //! Columns share seeds so each row isolates one addition's contribution.
 
-mod body;
-mod face;
-mod genome;
-mod mood;
-mod palette;
-mod parts;
-mod surface;
-mod wild;
+use ava_playground::{body, face, genome, palette, surface, wild};
 
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
@@ -96,26 +89,12 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
     let colors = palette::resolve(recipe, hue);
     let dom = 0.32; // semi-wild band: the population's proposed center
 
-    // Body outline in cell coordinates plus the transform needed to carry
-    // ring-frame extremities through the same normalize step.
-    let outline = wild::outline(&wb, dom, cx, cy, 172.0);
-    let (min_x, min_y, max_x, max_y) = wild::bbox(&outline);
-    let h = max_y - min_y;
-
-    // Ring-frame -> cell transform recovery: outline() normalizes internally,
-    // so recover scale/offset by round-tripping two probe points. Cheap and
-    // honest for playground purposes.
-    let probe = wild::outline(&wb, dom, 0.0, 0.0, 172.0);
-    let (pmin_x, pmin_y, pmax_x, pmax_y) = wild::bbox(&probe);
-    let raw = wild::outline_raw(&wb, dom);
-    let (rmin_x, rmin_y, rmax_x, rmax_y) = wild::bbox(&raw);
-    let sx = (pmax_x - pmin_x) / (rmax_x - rmin_x).max(1e-9);
-    let sy = (pmax_y - pmin_y) / (rmax_y - rmin_y).max(1e-9);
-    let s_avg = (sx + sy) / 2.0;
-    let rcx = (rmin_x + rmax_x) / 2.0;
-    let rcy = (rmin_y + rmax_y) / 2.0;
-    let to_cell = |p: (f64, f64)| -> (f64, f64) { (cx + (p.0 - rcx) * s_avg, cy + (p.1 - rcy) * sy.min(sx * 1.15)) };
-
+    // ALL geometry is built in ring frame first, then one uniform transform
+    // maps everything to the cell. The bbox that drives the scale is the
+    // TRUE union: exact spline extremes for the body (tangent roots, not
+    // samples — the TOG rescale lesson) plus extremity outlines — so limbs
+    // can never overflow the cell.
+    let raw = wild::build_raw(&wb, dom);
     let mean_r = wb.spokes.iter().map(|s| s.r).sum::<f64>() / wb.spokes.len() as f64;
     let ring_r_at = |theta: f64| -> f64 {
         // Nearest-spoke radius (mirrored lookup): good enough for anchoring.
@@ -133,32 +112,61 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
             .unwrap_or(mean_r)
     };
 
+    // Extremities in ring frame: RIGHT side generated, LEFT mirrored in
+    // point space — symmetry by construction, not by parallel derivation.
+    let ext_outlines: Vec<Vec<(f64, f64)>> = if extremities_on {
+        exts.iter()
+            .flat_map(|e| {
+                let right = wild::extremity_outline(e, ring_r_at(e.theta), mean_r, false);
+                let left: Vec<(f64, f64)> = right.iter().map(|p| (-p.0, p.1)).collect();
+                [right, left]
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // Unified bbox: exact body extremes + extremity points.
+    let (mut bx0, mut by0, mut bx1, mut by1) = raw.bbox;
+    for pts in &ext_outlines {
+        for &(x, y) in pts {
+            bx0 = bx0.min(x);
+            by0 = by0.min(y);
+            bx1 = bx1.max(x);
+            by1 = by1.max(y);
+        }
+    }
+    let bw = (bx1 - bx0).max(1e-6);
+    let bh = (by1 - by0).max(1e-6);
+    let scale = (172.0 / bw).min(198.0 / bh);
+    let mx = (bx0 + bx1) / 2.0;
+    let my = (by0 + by1) / 2.0;
+    let t = |p: (f64, f64)| -> (f64, f64) { (cx + (p.0 - mx) * scale, cy + (p.1 - my) * scale) };
+
+    let outline: Vec<(f64, f64)> = raw.pts.iter().map(|&p| t(p)).collect();
+    let (min_x, min_y, max_x, max_y) = wild::bbox(&outline);
+    let h = max_y - min_y;
+
     let mut s = String::new();
     s.push_str(&format!(
-        "<ellipse cx='{:.1}' cy='{:.1}' rx='{:.1}' ry='6' fill='rgba(40,30,50,0.14)'/>",
-        (min_x + max_x) / 2.0,
+        "<ellipse cx='{cx:.1}' cy='{:.1}' rx='{:.1}' ry='6' fill='rgba(40,30,50,0.14)'/>",
         max_y + 4.0,
         (max_x - min_x) * 0.42,
     ));
 
     // Extremities first: body draw covers the grafts (parts-layer trick).
-    if extremities_on {
-        for e in &exts {
-            for mirror in [false, true] {
-                let pts = wild::extremity_outline(e, ring_r_at(e.theta), mean_r, mirror);
-                let mut d = String::new();
-                for (i, p) in pts.iter().enumerate() {
-                    let q = to_cell(*p);
-                    let cmd = if i == 0 { 'M' } else { 'L' };
-                    d.push_str(&format!("{cmd}{:.2} {:.2} ", q.0, q.1));
-                }
-                d.push('Z');
-                s.push_str(&format!(
-                    "<path d='{d}' fill='{}' stroke='{}' stroke-width='2.5' stroke-linejoin='round'/>",
-                    colors.body, colors.outline,
-                ));
-            }
+    for pts in &ext_outlines {
+        let mut d = String::new();
+        for (i, p) in pts.iter().enumerate() {
+            let q = t(*p);
+            let cmd = if i == 0 { 'M' } else { 'L' };
+            d.push_str(&format!("{cmd}{:.2} {:.2} ", q.0, q.1));
         }
+        d.push('Z');
+        s.push_str(&format!(
+            "<path d='{d}' fill='{}' stroke='{}' stroke-width='2.5' stroke-linejoin='round'/>",
+            colors.body, colors.outline,
+        ));
     }
 
     let mut d = String::new();
@@ -174,28 +182,30 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
     ));
     s.push_str(&format!("<g clip-path='url(#{clip_id})'>"));
 
-    // Real Voronoi mottle, clipped to the body.
+    // Real Voronoi mottle: mirrored sites (pattern shares the body's
+    // symmetry axis), Lloyd-relaxed into even organic cells, drawn as
+    // rounded inset pebbles in palette-keyed shades — not cracked glass.
     if voronoi_on {
-        let scaled: Vec<surface::Site> = sites
+        let cell_bbox = (min_x, min_y, max_x, max_y);
+        let mut scaled: Vec<surface::Site> = sites
             .iter()
             .map(|site| surface::Site {
-                x: (min_x + max_x) / 2.0 + site.x * (max_x - min_x) / 2.0,
+                x: cx + site.x * (max_x - min_x) / 2.0,
                 y: (min_y + max_y) / 2.0 + site.y * (max_y - min_y) / 2.0,
                 shade: site.shade,
             })
             .collect();
-        for (site, cell) in scaled.iter().zip(surface::cells(&scaled, (min_x, min_y, max_x, max_y))) {
+        surface::relax(&mut scaled, cell_bbox, 2);
+        let (light, dark) = palette::mottle(recipe, hue);
+        for (site, cell) in scaled.iter().zip(surface::cells(&scaled, cell_bbox)) {
             if cell.len() < 3 || site.shade == 2 {
                 continue;
             }
-            let mut cd = String::new();
-            for (i, p) in cell.iter().enumerate() {
-                let cmd = if i == 0 { 'M' } else { 'L' };
-                cd.push_str(&format!("{cmd}{:.1} {:.1} ", p.0, p.1));
-            }
-            cd.push('Z');
-            let fill = if site.shade == 0 { "rgba(20,10,30,0.10)" } else { "rgba(255,255,255,0.13)" };
-            s.push_str(&format!("<path d='{cd}' fill='{fill}' stroke='rgba(20,10,30,0.06)' stroke-width='1.2'/>"));
+            let fill = if site.shade == 0 { &dark } else { &light };
+            s.push_str(&format!(
+                "<path d='{}' fill='{fill}'/>",
+                surface::cell_path(&cell, 0.88),
+            ));
         }
     }
 
