@@ -1,10 +1,11 @@
-//! Grid 8 — the four corrections from Ufuk's grid-7 review, layered:
-//!   row 1: mirrored-always wild bodies + COMPUTED face placement
-//!   row 2: + extremities (genome-grown limbs, the point-information probe)
-//!   row 3: + real Voronoi surface mottle (computed, not premade)
-//! Columns share seeds so each row isolates one addition's contribution.
+//! Grid 9 — the two EVM-free experiments from the grid-8 review:
+//!   row 1: layered extremities in TONE variants (same hue, shade steps)
+//!   row 2: layered extremities in ACCENT colors (palette part color)
+//!   row 3: extremities MERGED into the body — SDF smooth-min weld,
+//!          marching-squares re-extraction, resplined single silhouette
+//! Columns share seeds so the rows isolate color mode vs topology.
 
-use ava_playground::{body, face, genome, palette, surface, wild};
+use ava_playground::{body, face, genome, merge, palette, surface, wild};
 
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
@@ -58,7 +59,18 @@ fn place_face(outline: &[(f64, f64)]) -> Option<Placement> {
     Some(Placement { eye_y, fx, half_w, r: r.max(4.0) })
 }
 
-fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy: f64) -> String {
+/// Extremity render mode for the grid-9 rows.
+#[derive(Clone, Copy, PartialEq)]
+enum ExtMode {
+    /// Separate layers, tone-variant fills (same hue, lighter/darker).
+    LayerTones,
+    /// Separate layers, palette accent fills.
+    LayerAccent,
+    /// SDF-welded into one silhouette.
+    Merged,
+}
+
+fn draw_creature(seed: u64, mode: ExtMode, voronoi_on: bool, cx: f64, cy: f64) -> String {
     let mut b = genome::Bits::new(seed);
     let wb = wild::decode(&mut b);
     let exts = wild::decode_extremities(&mut b);
@@ -114,21 +126,22 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
 
     // Extremities in ring frame: RIGHT side generated, LEFT mirrored in
     // point space — symmetry by construction, not by parallel derivation.
-    let ext_outlines: Vec<Vec<(f64, f64)>> = if extremities_on {
-        exts.iter()
-            .flat_map(|e| {
-                let right = wild::extremity_outline(e, ring_r_at(e.theta), mean_r, false);
-                let left: Vec<(f64, f64)> = right.iter().map(|p| (-p.0, p.1)).collect();
-                [right, left]
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    // Per-extremity fill selector rides one more genome byte (tone-light /
+    // tone-dark / accent), consumed in every mode so seeds stay comparable.
+    let ext_fills: Vec<u8> = exts.iter().map(|_| b.byte() % 3).collect();
+    let ext_outlines: Vec<(usize, Vec<(f64, f64)>)> = exts
+        .iter()
+        .enumerate()
+        .flat_map(|(i, e)| {
+            let right = wild::extremity_outline(e, ring_r_at(e.theta), mean_r, false);
+            let left: Vec<(f64, f64)> = right.iter().map(|p| (-p.0, p.1)).collect();
+            [(i, right), (i, left)]
+        })
+        .collect();
 
     // Unified bbox: exact body extremes + extremity points.
     let (mut bx0, mut by0, mut bx1, mut by1) = raw.bbox;
-    for pts in &ext_outlines {
+    for (_, pts) in &ext_outlines {
         for &(x, y) in pts {
             bx0 = bx0.min(x);
             by0 = by0.min(y);
@@ -143,7 +156,19 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
     let my = (by0 + by1) / 2.0;
     let t = |p: (f64, f64)| -> (f64, f64) { (cx + (p.0 - mx) * scale, cy + (p.1 - my) * scale) };
 
-    let outline: Vec<(f64, f64)> = raw.pts.iter().map(|&p| t(p)).collect();
+    // MERGED mode: body + extremities become one SDF-welded silhouette,
+    // re-extracted by marching squares and resplined. The weld radius is
+    // proportional to the body so fillets scale with the creature.
+    let outline: Vec<(f64, f64)> = if mode == ExtMode::Merged && !ext_outlines.is_empty() {
+        let mut shapes = vec![merge::Poly::new(&raw.pts, 3)];
+        for (_, pts) in &ext_outlines {
+            shapes.push(merge::Poly::new(pts, 1));
+        }
+        let merged = merge::merged_outline(&shapes, (bx0, by0, bx1, by1), mean_r * 0.16, 130);
+        merged.iter().map(|&p| t(p)).collect()
+    } else {
+        raw.pts.iter().map(|&p| t(p)).collect()
+    };
     let (min_x, min_y, max_x, max_y) = wild::bbox(&outline);
     let h = max_y - min_y;
 
@@ -154,19 +179,27 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
         (max_x - min_x) * 0.42,
     ));
 
-    // Extremities first: body draw covers the grafts (parts-layer trick).
-    for pts in &ext_outlines {
-        let mut d = String::new();
-        for (i, p) in pts.iter().enumerate() {
-            let q = t(*p);
-            let cmd = if i == 0 { 'M' } else { 'L' };
-            d.push_str(&format!("{cmd}{:.2} {:.2} ", q.0, q.1));
+    // Layered modes: extremities first, body draw covers the grafts.
+    if mode != ExtMode::Merged {
+        for (ei, pts) in &ext_outlines {
+            let fill = match (mode, ext_fills[*ei]) {
+                (ExtMode::LayerAccent, _) => colors.part.clone(),
+                (_, 0) => palette::tone(recipe, hue, 1),
+                (_, 1) => palette::tone(recipe, hue, -1),
+                _ => colors.body.clone(),
+            };
+            let mut d = String::new();
+            for (i, p) in pts.iter().enumerate() {
+                let q = t(*p);
+                let cmd = if i == 0 { 'M' } else { 'L' };
+                d.push_str(&format!("{cmd}{:.2} {:.2} ", q.0, q.1));
+            }
+            d.push('Z');
+            s.push_str(&format!(
+                "<path d='{d}' fill='{fill}' stroke='{}' stroke-width='2.5' stroke-linejoin='round'/>",
+                colors.outline,
+            ));
         }
-        d.push('Z');
-        s.push_str(&format!(
-            "<path d='{d}' fill='{}' stroke='{}' stroke-width='2.5' stroke-linejoin='round'/>",
-            colors.body, colors.outline,
-        ));
     }
 
     let mut d = String::new();
@@ -175,7 +208,7 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
         d.push_str(&format!("{cmd}{:.2} {:.2} ", p.0, p.1));
     }
     d.push('Z');
-    let clip_id = format!("g8c{seed}e{}v{}", extremities_on as u8, voronoi_on as u8);
+    let clip_id = format!("g9c{seed}m{}v{}", mode as u8, voronoi_on as u8);
     s.push_str(&format!(
         "<defs><clipPath id='{clip_id}'><path d='{d}'/></clipPath></defs><path d='{d}' fill='{}' stroke='{}' stroke-width='2.5'/>",
         colors.body, colors.outline,
@@ -247,15 +280,15 @@ fn draw_creature(seed: u64, extremities_on: bool, voronoi_on: bool, cx: f64, cy:
 fn main() {
     std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");
     let cols = 6usize;
-    let rows: [(bool, bool, &str); 3] = [
-        (false, false, "mirrored + computed face"),
-        (true, false, "+ extremities"),
-        (true, true, "+ voronoi"),
+    let rows: [(ExtMode, bool, &str); 3] = [
+        (ExtMode::LayerTones, false, "layers, tone fills"),
+        (ExtMode::LayerAccent, false, "layers, accent fills"),
+        (ExtMode::Merged, false, "MERGED silhouette"),
     ];
     let width = PAD + cols as f64 * (CELL + PAD);
     let height = PAD + rows.len() as f64 * (CELL + PAD) + 34.0;
     let mut svg = format!(
-        "<svg xmlns='http://www.w3.org/2000/svg' width='{width:.0}' height='{height:.0}' viewBox='0 0 {width:.0} {height:.0}'><rect width='100%' height='100%' fill='#1c1a20'/><text x='{PAD}' y='24' font-family='monospace' font-size='15' fill='#c8c2ce'>grid 8 — mirrored wild + computed faces / + extremities / + voronoi</text>"
+        "<svg xmlns='http://www.w3.org/2000/svg' width='{width:.0}' height='{height:.0}' viewBox='0 0 {width:.0} {height:.0}'><rect width='100%' height='100%' fill='#1c1a20'/><text x='{PAD}' y='24' font-family='monospace' font-size='15' fill='#c8c2ce'>grid 9 — extremity color modes / SDF-merged silhouettes</text>"
     );
     for (r, &(ext, vor, label)) in rows.iter().enumerate() {
         for c in 0..cols {
@@ -276,6 +309,6 @@ fn main() {
         }
     }
     svg.push_str("</svg>");
-    std::fs::write("/tmp/ava-playground/grid8.svg", &svg).expect("write");
-    println!("grid8 -> /tmp/ava-playground/grid8.svg");
+    std::fs::write("/tmp/ava-playground/grid9.svg", &svg).expect("write");
+    println!("grid9 -> /tmp/ava-playground/grid9.svg");
 }

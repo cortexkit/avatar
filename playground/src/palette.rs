@@ -40,6 +40,22 @@ pub fn mottle(recipe: usize, h: f64) -> (String, String) {
     }
 }
 
+/// Tone variant of the body color: same hue, one shade step lighter
+/// (`dir` > 0) or darker (`dir` < 0). Extremity layer-color experiment B:
+/// variation without leaving the creature's own color.
+pub fn tone(recipe: usize, h: f64, dir: i32) -> String {
+    let (s, l) = match recipe {
+        0 => (66.0, 82.0),
+        1 => (62.0, 83.0),
+        2 => (78.0, 64.0),
+        3 => (38.0, 26.0),
+        4 => (24.0, 62.0),
+        _ => (28.0, 88.0),
+    };
+    let dl: f64 = if dir > 0 { 9.0 } else { -11.0 };
+    hsl(h, (s - dl.abs() * 0.3).max(12.0), (l + dl).clamp(10.0, 94.0))
+}
+
 /// recipe index x base hue -> colors.
 pub fn resolve(recipe: usize, h: f64) -> Colors {
     match recipe {

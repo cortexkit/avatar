@@ -2,6 +2,7 @@
 pub mod body;
 pub mod face;
 pub mod genome;
+pub mod merge;
 pub mod mood;
 pub mod palette;
 pub mod parts;
