@@ -28,16 +28,20 @@ pub struct Spoke {
 /// A wild body: spokes around a center, plus derived vertical extents.
 pub struct WildBody {
     pub spokes: Vec<Spoke>,
-    /// Symmetry flag decoded from the genome: mirrored bodies read tidier,
-    /// free bodies read wilder. Both exist in the population.
+    /// Kept for the grid-7 renderer; decode() now always sets true. The
+    /// free-form experiment produced unusable characters (grid-7 review:
+    /// horizontal symmetry is load-bearing — TOG mirrored for a reason).
+    /// Asymmetry re-enters later as SUBTLE post-mirror displacement, never
+    /// as free topology.
     pub mirrored: bool,
 }
 
-/// Decode a wild body from the bit source. `spoke_count` in 6..=10 gives
-/// TOG-like entropy without polygon soup.
+/// Decode a wild body from the bit source. Spoke count reaches 13 (26 ring
+/// points after mirroring) — more point information than TOG's 1024-bit
+/// region, per the redesign direction.
 pub fn decode(b: &mut Bits) -> WildBody {
     let spoke_count = 5 + (b.byte() % 9) as usize; // 5..=13
-    let mirrored = b.byte() % 2 == 0; // half tidy, half free
+    let _legacy = b.byte(); // was the mirror flag; kept so seeds stay stable
     let mut spokes = Vec::with_capacity(spoke_count);
     let n = spoke_count as f64;
     for i in 0..spoke_count {
@@ -53,7 +57,113 @@ pub fn decode(b: &mut Bits) -> WildBody {
             tension: b.lin(0.4, 2.6),
         });
     }
-    WildBody { spokes, mirrored }
+    WildBody { spokes, mirrored: true }
+}
+
+/// One genome-driven extremity: a curved, tapered capsule lobe grafted onto
+/// the ring — continuous shape parameters, not a curated part family. This
+/// is the "points create extremities" experiment: TOG could only afford a
+/// fixed ring; free computation lets points GROW LIMBS.
+#[derive(Clone, Copy, Debug)]
+pub struct Extremity {
+    /// Anchor angle on the ring (radians; mirrored pairs share one decode).
+    pub theta: f64,
+    /// Length relative to the body's mean radius (can exceed it: limbs
+    /// stick OUT — that is their job).
+    pub len: f64,
+    /// Base half-width relative to mean radius.
+    pub width: f64,
+    /// Progressive bend along the spine (radians over the full length).
+    pub curl: f64,
+    /// Tip width as a fraction of base width (0 = pointed, 1 = capsule).
+    pub taper: f64,
+}
+
+/// Decode 0..=3 extremity PAIRS (mirrored with the body).
+pub fn decode_extremities(b: &mut Bits) -> Vec<Extremity> {
+    let count = (b.byte() % 4) as usize;
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        // Anchor in the upper-and-side band (SVG y-down: PI..TAU is the
+        // upper half); feet territory stays clear so ground-sit survives.
+        let theta = b.lin(std::f64::consts::PI * 0.95, std::f64::consts::TAU * 1.02);
+        out.push(Extremity {
+            theta,
+            len: b.lin(0.35, 1.15),
+            width: b.lin(0.10, 0.30),
+            curl: b.lin(-1.3, 1.3),
+            taper: b.lin(0.15, 0.85),
+        });
+    }
+    out
+}
+
+/// Sampled closed outline of one extremity capsule in ring coordinates
+/// (unit-cell frame, before the body's normalize step — caller transforms).
+/// `ring_r` is the body radius at the anchor angle.
+pub fn extremity_outline(e: &Extremity, ring_r: f64, mean_r: f64, mirror: bool) -> Vec<(f64, f64)> {
+    let theta = if mirror {
+        std::f64::consts::PI - e.theta
+    } else {
+        e.theta
+    };
+    let curl = if mirror { -e.curl } else { e.curl };
+    // Root sits INSIDE the body (85% of ring radius) so the graft is covered.
+    let root = (theta.cos() * ring_r * 0.85, theta.sin() * ring_r * 0.85);
+    let len = e.len * mean_r;
+    let steps = 14usize;
+    let mut spine = Vec::with_capacity(steps + 1);
+    let mut dir = theta;
+    let mut p = root;
+    for i in 0..=steps {
+        spine.push(p);
+        if i < steps {
+            dir += curl / steps as f64;
+            p = (
+                p.0 + dir.cos() * len / steps as f64,
+                p.1 + dir.sin() * len / steps as f64,
+            );
+        }
+    }
+    // Offset left/right of the spine by the tapering width; rounded tip.
+    let base_w = e.width * mean_r;
+    let mut left = Vec::with_capacity(steps + 1);
+    let mut right = Vec::with_capacity(steps + 1);
+    for (i, &(x, y)) in spine.iter().enumerate() {
+        let t = i as f64 / steps as f64;
+        let w = base_w * (1.0 - (1.0 - e.taper) * t);
+        // Perpendicular from local direction: estimate from neighbors.
+        let (dx, dy) = if i == 0 {
+            let n = spine[1];
+            (n.0 - x, n.1 - y)
+        } else {
+            let pr = spine[i - 1];
+            (x - pr.0, y - pr.1)
+        };
+        let l = (dx * dx + dy * dy).sqrt().max(1e-9);
+        let (nx, ny) = (-dy / l, dx / l);
+        left.push((x + nx * w, y + ny * w));
+        right.push((x - nx * w, y - ny * w));
+    }
+    // Tip cap: arc via three points beyond the last spine point.
+    let tip = spine[steps];
+    let tip_w = base_w * e.taper;
+    let (tdx, tdy) = {
+        let pr = spine[steps - 1];
+        let l = ((tip.0 - pr.0).powi(2) + (tip.1 - pr.1).powi(2)).sqrt().max(1e-9);
+        ((tip.0 - pr.0) / l, (tip.1 - pr.1) / l)
+    };
+    let mut out = Vec::new();
+    out.extend(left.iter().copied());
+    out.push((tip.0 + tdx * tip_w, tip.1 + tdy * tip_w));
+    out.extend(right.iter().rev().copied());
+    out
+}
+
+/// Raw (un-normalized) outline in ring coordinates — lets callers recover
+/// the ring->cell transform that `outline` applies internally.
+pub fn outline_raw(body: &WildBody, dom: f64) -> Vec<(f64, f64)> {
+    outline_impl(body, dom, None)
 }
 
 /// The cute-ification pass. Returns the outline as dense sampled points.
@@ -64,6 +174,10 @@ pub fn decode(b: &mut Bits) -> WildBody {
 /// 2. Tension floor: corners round toward arcs.
 /// 3. Ground flatten: y below the sit-line compresses, weight settles.
 pub fn outline(body: &WildBody, dom: f64, cx: f64, cy: f64, scale: f64) -> Vec<(f64, f64)> {
+    outline_impl(body, dom, Some((cx, cy, scale)))
+}
+
+fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -> Vec<(f64, f64)> {
     // Mirroring: reflect spokes with theta in (0, PI) across the y axis,
     // replacing the originals in (PI, TAU), then sort by angle.
     let mut spokes: Vec<Spoke> = if body.mirrored {
@@ -175,6 +289,9 @@ pub fn outline(body: &WildBody, dom: f64, cx: f64, cy: f64, scale: f64) -> Vec<(
             p.1 = ground + (p.1 - ground) * squash;
         }
     }
+    let Some((cx, cy, scale)) = normalize else {
+        return out;
+    };
     // Re-measure and scale uniformly into the cell.
     let (mut min_x2, mut max_x2, mut min_y2, mut max_y2) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
     for &(x, y) in &out {
