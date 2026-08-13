@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AVA creature lab — DNA &amp; mood knobs</title>
+<!--
+  Interactive twin of the Rust playground (design note 008): the same
+  mapping bands, ported to JS so knobs re-render in realtime. Seeds match
+  grid 5 (seed 1000 here IS #1000 on the committed sheet). Throwaway
+  exploration code like the rest of playground/ — the frozen contract
+  comes from the design notes, never from here.
+-->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "SF Mono", monospace; background: #1c1a20; color: #ddd; margin: 0; display: flex; min-height: 100vh; }
+  #controls { width: 340px; padding: 14px 16px 40px; background: #232028; overflow-y: auto; max-height: 100vh; flex-shrink: 0; }
+  #stage { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 18px; gap: 14px; }
+  h1 { font-size: 15px; margin: 2px 0 10px; color: #efe9e4; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #9a93a5; margin: 16px 0 6px; border-bottom: 1px solid #322e3a; padding-bottom: 3px; }
+  label { display: flex; align-items: center; gap: 8px; font-size: 11.5px; margin: 5px 0; color: #c8c2ce; }
+  label span.k { width: 78px; flex-shrink: 0; }
+  label span.v { width: 42px; text-align: right; color: #8f889a; font-variant-numeric: tabular-nums; }
+  input[type=range] { flex: 1; accent-color: #9a7fe8; height: 14px; }
+  select { flex: 1; background: #2c2833; color: #ddd; border: 1px solid #3a3544; border-radius: 5px; padding: 3px 6px; font: inherit; font-size: 11.5px; }
+  button { background: #2c2833; color: #ddd; border: 1px solid #3a3544; border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 11.5px; cursor: pointer; }
+  button:hover { background: #363040; }
+  button.mood { padding: 4px 8px; }
+  button.mood.active { background: #9a7fe8; color: #1c1a20; border-color: #9a7fe8; font-weight: 600; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  #seedbox { display: flex; gap: 6px; align-items: center; }
+  #seed { width: 90px; background: #2c2833; color: #ddd; border: 1px solid #3a3544; border-radius: 5px; padding: 4px 6px; font: inherit; }
+  #main { background: #efe9e4; border-radius: 14px; }
+  #sizes { display: flex; gap: 18px; align-items: flex-end; }
+  .sz { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #8f889a; }
+  .sz .box { background: #efe9e4; border-radius: 6px; overflow: hidden; }
+  #pins { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .pin { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: #8f889a; }
+  .pin .box { background: #efe9e4; border-radius: 8px; cursor: pointer; }
+  .hint { font-size: 10.5px; color: #6f6879; line-height: 1.45; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="controls">
+  <h1>AVA creature lab</h1>
+  <div id="seedbox">
+    <input id="seed" type="number" value="1000">
+    <button id="load">decode seed</button>
+    <button id="rand">gacha 🎲</button>
+  </div>
+  <p class="hint">Decode fills every knob below from the seed via the exact
+  note-009 bands (seed 1000 = grid-5 #1000). Knobs then override freely.</p>
+
+  <h2>Body</h2>
+  <label><span class="k">height</span><input type="range" id="height" min="120" max="215" step="1"><span class="v" id="height-v"></span></label>
+  <label><span class="k">width top</span><input type="range" id="w_top" min="40" max="100" step="1"><span class="v" id="w_top-v"></span></label>
+  <label><span class="k">width bottom</span><input type="range" id="w_bot" min="40" max="105" step="1"><span class="v" id="w_bot-v"></span></label>
+  <label><span class="k">square top</span><input type="range" id="n_top" min="1.6" max="6" step="0.05"><span class="v" id="n_top-v"></span></label>
+  <label><span class="k">square bottom</span><input type="range" id="n_bot" min="1.6" max="6" step="0.05"><span class="v" id="n_bot-v"></span></label>
+  <label><span class="k">waist</span><input type="range" id="waist" min="0.25" max="0.8" step="0.01"><span class="v" id="waist-v"></span></label>
+
+  <h2>Parts</h2>
+  <label><span class="k">top</span><select id="top">
+    <option value="0">none</option><option value="1">ears</option><option value="2">horns</option>
+    <option value="3">antennae</option><option value="4">tuft</option><option value="5">swoop</option>
+  </select></label>
+  <label><span class="k">bottom</span><select id="bottom">
+    <option value="0">none</option><option value="1">feet nubs</option><option value="2">duck feet</option><option value="3">tail</option>
+  </select></label>
+
+  <h2>Face</h2>
+  <label><span class="k">eyes</span><select id="eyes">
+    <option value="0">dot + shine</option><option value="1">lidded</option><option value="2">happy arc</option>
+    <option value="3">uneven (gremlin)</option><option value="4">half-lid (deadpan)</option>
+  </select></label>
+  <label><span class="k">eye scale</span><input type="range" id="eye_scale" min="0.7" max="1.35" step="0.01"><span class="v" id="eye_scale-v"></span></label>
+  <label><span class="k">mouth</span><select id="mouth">
+    <option value="0">arc smile</option><option value="1">cat ω</option><option value="2">open happy</option>
+    <option value="3">snaggle</option><option value="4">flat</option><option value="5">fangs</option>
+  </select></label>
+
+  <h2>Wonk</h2>
+  <label><span class="k">lean</span><input type="range" id="lean" min="-0.14" max="0.14" step="0.005"><span class="v" id="lean-v"></span></label>
+  <label><span class="k">side bias</span><input type="range" id="side_bias" min="-0.12" max="0.12" step="0.005"><span class="v" id="side_bias-v"></span></label>
+  <label><span class="k">eye tilt</span><input type="range" id="eye_tilt" min="-6" max="6" step="0.25"><span class="v" id="eye_tilt-v"></span></label>
+
+  <h2>Palette</h2>
+  <label><span class="k">recipe</span><select id="recipe">
+    <option value="0">pastel analogous</option><option value="1">pastel complement</option>
+    <option value="2">toy saturated</option><option value="3">dark gravitas</option>
+    <option value="4">muted earthy</option><option value="5">cream + accents</option>
+  </select></label>
+  <label><span class="k">hue</span><input type="range" id="hue" min="0" max="360" step="1"><span class="v" id="hue-v"></span></label>
+
+  <h2>Mood</h2>
+  <div class="row" id="moods"></div>
+
+  <h2>Compare</h2>
+  <div class="row">
+    <button id="pinBtn">pin current →</button>
+    <button id="clearPins">clear pins</button>
+  </div>
+  <p class="hint">Pin a creature, tweak knobs, and judge uniqueness
+  side-by-side. Click a pin to restore its exact knob state.</p>
+</div>
+
+<div id="stage">
+  <svg id="main" width="480" height="480" viewBox="0 0 240 240"></svg>
+  <div id="sizes">
+    <div class="sz"><div class="box" style="width:64px;height:64px"><svg width="64" height="64" viewBox="0 0 240 240" class="mini"></svg></div>64</div>
+    <div class="sz"><div class="box" style="width:44px;height:44px"><svg width="44" height="44" viewBox="0 0 240 240" class="mini"></svg></div>44</div>
+    <div class="sz"><div class="box" style="width:28px;height:28px"><svg width="28" height="28" viewBox="0 0 240 240" class="mini"></svg></div>28</div>
+  </div>
+  <div id="pins"></div>
+</div>
+
+<script>
+"use strict";
+// ---------- splitmix64 bit source (exact port of genome.rs) ----------
+const MASK = (1n << 64n) - 1n;
+function bits(seed) {
+  let s = BigInt(seed) & MASK;
+  return {
+    byte() {
+      s = (s + 0x9e3779b97f4a7c15n) & MASK;
+      let z = s;
+      z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & MASK;
+      z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & MASK;
+      return Number(((z ^ (z >> 31n)) >> 24n) & 0xffn);
+    },
+    lin(lo, hi) { return lo + (hi - lo) * (this.byte() / 255); },
+  };
+}
+
+// ---------- decode per note-009 bands (exact port) ----------
+function decode(seed) {
+  const b = bits(seed);
+  b.byte(); // plan byte (mod 1, discarded in v2.0)
+  const bp = {
+    height: b.lin(140, 205), w_top: b.lin(50, 88), w_bot: b.lin(56, 96),
+    n_top: b.lin(2.0, 4.6), n_bot: b.lin(2.0, 5.0), waist: b.lin(0.40, 0.70),
+  };
+  const rsel = b.byte() % 8;
+  const recipe = rsel <= 2 ? 0 : rsel <= 4 ? 2 : rsel <= 6 ? 4 : 3;
+  const hue = (b.byte() / 255 + b.byte() / 65535) * 360;
+  const top = b.byte() % 6;
+  b.byte(); // side slot (skipped in v2.0 rendering)
+  const bottom = b.byte() % 4;
+  const eyes = b.byte() % 5;
+  const eye_scale = b.lin(0.85, 1.18);
+  const mouth = b.byte() % 6;
+  return { ...bp, recipe, hue, top, bottom, eyes, eye_scale, mouth,
+           lean: 0, side_bias: 0, eye_tilt: 0 };
+}
+
+// ---------- body profile (exact port of body.rs) ----------
+function smoother(t) { t = Math.min(1, Math.max(0, t)); return t*t*t*(t*(t*6-15)+10); }
+function profile(p, y) {
+  const halfH = p.height / 2;
+  const waistY = -halfH + p.waist * p.height;
+  const base = p.w_top + (p.w_bot - p.w_top) * smoother((y + halfH) / p.height);
+  let cap;
+  if (y <= waistY) {
+    const u = Math.min(1, Math.max(0, (waistY - y) / (waistY + halfH)));
+    cap = Math.pow(Math.max(0, 1 - Math.pow(u, p.n_top)), 1 / p.n_top);
+  } else {
+    const u = Math.min(1, Math.max(0, (y - waistY) / (halfH - waistY)));
+    cap = Math.pow(Math.max(0, 1 - Math.pow(u, p.n_bot)), 1 / p.n_bot);
+  }
+  return base * cap;
+}
+function outlinePath(p, cx, cy, steps, lean, sideBias) {
+  const total = 2 * steps, halfH = p.height / 2;
+  let d = "";
+  for (let i = 0; i <= total; i++) {
+    const y = -halfH + p.height * (i / total);
+    const x = profile(p, y) * (1 + sideBias) + y * lean;
+    d += (i ? "L" : "M") + (cx + x).toFixed(2) + " " + (cy + y).toFixed(2) + " ";
+  }
+  for (let i = total; i >= 0; i--) {
+    const y = -halfH + p.height * (i / total);
+    const x = -profile(p, y) * (1 - sideBias) + y * lean;
+    d += "L" + (cx + x).toFixed(2) + " " + (cy + y).toFixed(2) + " ";
+  }
+  return d + "Z";
+}
+
+// ---------- palette (exact port of palette.rs) ----------
+function hsl(h, s, l) { return `hsl(${((h % 360) + 360) % 360 | 0} ${s}% ${l}%)`; }
+function resolveColors(recipe, h) {
+  switch (recipe) {
+    case 0: return { body: hsl(h,66,82), outline: hsl(h,42,38), belly: "rgba(255,255,255,0.45)", part: hsl(h+28,55,62), blush: hsl(h+8,75,72), ink: "#241f26" };
+    case 1: return { body: hsl(h,62,83), outline: hsl(h,40,36), belly: "rgba(255,255,255,0.45)", part: hsl(h+180,52,58), blush: hsl(h+170,60,74), ink: "#241f26" };
+    case 2: return { body: hsl(h,78,64), outline: hsl(h,62,30), belly: "rgba(255,255,255,0.6)", part: hsl(h+40,80,55), blush: hsl(h-12,85,70), ink: "#241f26" };
+    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: `hsl(${((h+6)%360+360)%360|0} 45% 42% / 0.55)`, part: hsl(h+24,45,44), blush: `hsl(${((h+14)%360+360)%360|0} 60% 55% / 0.4)`, ink: "#f4eee6" };
+    case 4: return { body: hsl(h,24,62), outline: hsl(h,26,30), belly: "rgba(250,246,235,0.5)", part: hsl(h-26,30,48), blush: hsl(h+20,35,58), ink: "#2b2622" };
+    default: return { body: hsl(h,28,88), outline: hsl(h,24,42), belly: "rgba(255,255,255,0.55)", part: hsl(h+140,62,55), blush: hsl(h+150,70,74), ink: "#241f26" };
+  }
+}
+
+// ---------- parts (exact port of parts.rs) ----------
+function drawTop(part, p, cx, cy, fill) {
+  const halfH = p.height / 2, ay = -halfH * 0.82, aw = profile(p, ay);
+  let s = "";
+  if (part === 1) { // ears
+    for (const side of [-1, 1]) {
+      const bx = cx + side * aw * 0.62, by = cy + ay;
+      const len = p.height * 0.34, wid = p.w_top * 0.34;
+      s += `<path d='M${(bx-wid*0.5).toFixed(1)} ${by.toFixed(1)} C${(bx-wid*0.55).toFixed(1)} ${(by-len*0.75).toFixed(1)} ${(bx+side*wid*0.18).toFixed(1)} ${(by-len*1.05).toFixed(1)} ${(bx+side*wid*0.32).toFixed(1)} ${(by-len*0.98).toFixed(1)} C${(bx+side*wid*0.62).toFixed(1)} ${(by-len*0.55).toFixed(1)} ${(bx+wid*0.55).toFixed(1)} ${(by-len*0.1).toFixed(1)} ${(bx+wid*0.5).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
+    }
+  } else if (part === 2) { // horns
+    for (const side of [-1, 1]) {
+      const bx = cx + side * aw * 0.55, by = cy + ay;
+      const len = p.height * 0.30, wid = p.w_top * 0.22;
+      s += `<path d='M${(bx-side*wid).toFixed(1)} ${by.toFixed(1)} Q${(bx+side*wid*0.2).toFixed(1)} ${(by-len*0.55).toFixed(1)} ${(bx+side*wid*1.7).toFixed(1)} ${(by-len).toFixed(1)} Q${(bx+side*wid*0.9).toFixed(1)} ${(by-len*0.45).toFixed(1)} ${(bx+side*wid).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
+    }
+  } else if (part === 3) { // antennae
+    for (const side of [-1, 1]) {
+      const bx = cx + side * aw * 0.35, by = cy + ay;
+      const len = p.height * 0.36, ball = p.height * 0.05;
+      s += `<path d='M${bx.toFixed(1)} ${by.toFixed(1)} Q${(bx+side*len*0.35).toFixed(1)} ${(by-len*0.7).toFixed(1)} ${(bx+side*len*0.55).toFixed(1)} ${(by-len).toFixed(1)}' stroke='${fill}' stroke-width='${(ball*0.6).toFixed(1)}' fill='none' stroke-linecap='round'/><circle cx='${(bx+side*len*0.55).toFixed(1)}' cy='${(by-len).toFixed(1)}' r='${ball.toFixed(1)}' fill='${fill}'/>`;
+    }
+  } else if (part === 4) { // tuft
+    const by = cy + ay;
+    for (const [dx, len, leanT] of [[-0.3, 0.2, -0.4], [0, 0.3, 0.06], [0.28, 0.17, 0.45]]) {
+      const bx = cx + dx * aw, l = p.height * len, w = p.w_top * 0.2;
+      s += `<path d='M${(bx-w).toFixed(1)} ${by.toFixed(1)} Q${(bx-w*0.2+leanT*l).toFixed(1)} ${(by-l*0.9).toFixed(1)} ${(bx+leanT*l*1.3).toFixed(1)} ${(by-l).toFixed(1)} Q${(bx+w*0.4+leanT*l*0.4).toFixed(1)} ${(by-l*0.5).toFixed(1)} ${(bx+w).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
+    }
+  } else if (part === 5) { // swoop
+    const bx = cx + aw * 0.38, by = cy + ay;
+    const len = p.height * 0.3, wid = p.w_top * 0.42;
+    s += `<path d='M${(bx-wid).toFixed(1)} ${by.toFixed(1)} C${(bx-wid*0.9).toFixed(1)} ${(by-len*1.1).toFixed(1)} ${(bx+wid*0.5).toFixed(1)} ${(by-len*1.15).toFixed(1)} ${(bx+wid*0.7).toFixed(1)} ${(by-len*0.6).toFixed(1)} C${(bx+wid*0.85).toFixed(1)} ${(by-len*0.2).toFixed(1)} ${(bx+wid).toFixed(1)} ${(by-len*0.05).toFixed(1)} ${(bx+wid).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
+  }
+  return s;
+}
+function drawBottom(part, p, cx, cy, fill, outline) {
+  const halfH = p.height / 2, by = cy + halfH, w = profile(p, halfH * 0.7);
+  let s = "";
+  if (part === 1) { // feet nubs
+    for (const side of [-1, 1]) {
+      s += `<ellipse cx='${(cx+side*w*0.5).toFixed(1)}' cy='${(by-2).toFixed(1)}' rx='${(w*0.22).toFixed(1)}' ry='${(p.height*0.06).toFixed(1)}' fill='${fill}' stroke='${outline}' stroke-width='2.4'/>`;
+    }
+  } else if (part === 2) { // duck feet
+    for (const side of [-1, 1]) {
+      const fx = cx + side * w * 0.55, fw = w * 0.34, fh = p.height * 0.07;
+      s += `<path d='M${(fx-fw*0.4).toFixed(1)} ${(by-3).toFixed(1)} L${(fx+side*fw).toFixed(1)} ${(by+fh*0.4).toFixed(1)} Q${(fx+side*fw*0.3).toFixed(1)} ${(by+fh).toFixed(1)} ${(fx-fw*0.5).toFixed(1)} ${(by+fh*0.5).toFixed(1)} Z' fill='${fill}' stroke='${outline}' stroke-width='2'/>`;
+    }
+  } else if (part === 3) { // tail
+    const tx = cx + w * 0.88, ty = by - p.height * 0.08, l = p.height * 0.4;
+    s += `<path d='M${tx.toFixed(1)} ${ty.toFixed(1)} Q${(tx+l*0.55).toFixed(1)} ${(ty+l*0.05).toFixed(1)} ${(tx+l*0.52).toFixed(1)} ${(ty-l*0.6).toFixed(1)} Q${(tx+l*0.5).toFixed(1)} ${(ty-l*1.05).toFixed(1)} ${(tx+l*0.95).toFixed(1)} ${(ty-l*1.35).toFixed(1)}' stroke='${fill}' stroke-width='${(p.height*0.05).toFixed(1)}' fill='none' stroke-linecap='round'/>`;
+  }
+  return s;
+}
+
+// ---------- face (exact port of face.rs) ----------
+function eyeFrame(p, cx, cy, tilt) {
+  const ey = -p.height * 0.08, w = profile(p, ey);
+  return { lx: cx - w * 0.42, rx: cx + w * 0.42, y: cy + ey + tilt, r: Math.min(p.height * 0.085, w * 0.3) };
+}
+function drawEyes(kind, p, cx, cy, tilt, accent, ink) {
+  const f = eyeFrame(p, cx, cy, 0);
+  let s = "";
+  const pair = [[f.lx, -tilt], [f.rx, tilt]];
+  if (kind === 0) {
+    for (const [x, dy] of pair) {
+      const y = f.y + dy;
+      s += `<circle cx='${x.toFixed(1)}' cy='${y.toFixed(1)}' r='${f.r.toFixed(1)}' fill='${ink}'/><circle cx='${(x+f.r*0.32).toFixed(1)}' cy='${(y-f.r*0.35).toFixed(1)}' r='${(f.r*0.3).toFixed(1)}' fill='white' opacity='0.9'/>`;
+    }
+  } else if (kind === 1) {
+    for (const [x, dy] of pair) {
+      const y = f.y + dy, rw = f.r * 1.1, rh = f.r * 1.25;
+      s += `<ellipse cx='${x.toFixed(1)}' cy='${y.toFixed(1)}' rx='${rw.toFixed(1)}' ry='${rh.toFixed(1)}' fill='white' stroke='${accent}' stroke-width='2'/><circle cx='${x.toFixed(1)}' cy='${(y+rh*0.08).toFixed(1)}' r='${(f.r*0.78).toFixed(1)}' fill='${ink}'/><circle cx='${(x+f.r*0.28).toFixed(1)}' cy='${(y-f.r*0.2).toFixed(1)}' r='${(f.r*0.22).toFixed(1)}' fill='white' opacity='0.9'/><path d='M${(x-rw).toFixed(1)} ${(y-rh*0.1).toFixed(1)} A${rw.toFixed(1)} ${rh.toFixed(1)} 0 0 1 ${(x+rw).toFixed(1)} ${(y-rh*0.1).toFixed(1)} L${(x+rw).toFixed(1)} ${(y-rh*0.28).toFixed(1)} A${rw.toFixed(1)} ${(rh*0.9).toFixed(1)} 0 0 0 ${(x-rw).toFixed(1)} ${(y-rh*0.28).toFixed(1)} Z' fill='${accent}' opacity='0.5'/>`;
+    }
+  } else if (kind === 2) {
+    for (const [x, dy] of pair) {
+      const y = f.y + dy;
+      s += `<path d='M${(x-f.r).toFixed(1)} ${(y+f.r*0.2).toFixed(1)} Q${x.toFixed(1)} ${(y-f.r*0.9).toFixed(1)} ${(x+f.r).toFixed(1)} ${(y+f.r*0.2).toFixed(1)}' stroke='${ink}' stroke-width='3.4' fill='none' stroke-linecap='round'/>`;
+    }
+  } else if (kind === 3) {
+    s += `<circle cx='${f.lx.toFixed(1)}' cy='${(f.y-tilt).toFixed(1)}' r='${(f.r*1.25).toFixed(1)}' fill='${ink}'/><circle cx='${(f.lx+f.r*0.4).toFixed(1)}' cy='${(f.y-tilt-f.r*0.44).toFixed(1)}' r='${(f.r*0.36).toFixed(1)}' fill='white' opacity='0.9'/>`;
+    s += `<circle cx='${f.rx.toFixed(1)}' cy='${(f.y+tilt+f.r*0.15).toFixed(1)}' r='${(f.r*0.62).toFixed(1)}' fill='${ink}'/><circle cx='${(f.rx+f.r*0.2).toFixed(1)}' cy='${(f.y+tilt-f.r*0.08).toFixed(1)}' r='${(f.r*0.18).toFixed(1)}' fill='white' opacity='0.9'/>`;
+  } else {
+    for (const [x, dy] of pair) {
+      const y = f.y + dy;
+      s += `<path d='M${(x-f.r*0.92).toFixed(1)} ${(y-f.r*0.25).toFixed(1)} A${f.r.toFixed(1)} ${f.r.toFixed(1)} 0 1 0 ${(x+f.r*0.92).toFixed(1)} ${(y-f.r*0.25).toFixed(1)} Z' fill='${ink}'/><line x1='${(x-f.r*1.05).toFixed(1)}' y1='${(y-f.r*0.3).toFixed(1)}' x2='${(x+f.r*1.05).toFixed(1)}' y2='${(y-f.r*0.3).toFixed(1)}' stroke='${ink}' stroke-width='2.6' stroke-linecap='round'/>`;
+    }
+  }
+  return s;
+}
+function drawMouth(kind, p, cx, cy, accent, ink) {
+  const ey = -p.height * 0.08;
+  const r = Math.min(p.height * 0.085, profile(p, ey) * 0.3);
+  const my = cy + ey + p.height * 0.15;
+  switch (kind) {
+    case 0: return `<path d='M${(cx-r*0.5).toFixed(1)} ${my.toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.45).toFixed(1)} ${(cx+r*0.5).toFixed(1)} ${my.toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
+    case 1: return `<path d='M${(cx-r*0.8).toFixed(1)} ${my.toFixed(1)} Q${(cx-r*0.4).toFixed(1)} ${(my+r*0.55).toFixed(1)} ${cx.toFixed(1)} ${my.toFixed(1)} Q${(cx+r*0.4).toFixed(1)} ${(my+r*0.55).toFixed(1)} ${(cx+r*0.8).toFixed(1)} ${my.toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
+    case 2: return `<path d='M${(cx-r*0.7).toFixed(1)} ${(my-r*0.1).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*1.1).toFixed(1)} ${(cx+r*0.7).toFixed(1)} ${(my-r*0.1).toFixed(1)} Z' fill='#4a2f33' stroke='${accent}' stroke-width='2'/><path d='M${(cx-r*0.35).toFixed(1)} ${(my+r*0.52).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.95).toFixed(1)} ${(cx+r*0.35).toFixed(1)} ${(my+r*0.52).toFixed(1)}' fill='#e88a93'/>`;
+    case 3: return `<path d='M${(cx-r*0.75).toFixed(1)} ${(my+r*0.15).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.5).toFixed(1)} ${(cx+r*0.7).toFixed(1)} ${(my-r*0.1).toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${(cx+r*0.05).toFixed(1)} ${(my+r*0.34).toFixed(1)} L${(cx+r*0.55).toFixed(1)} ${(my+r*0.38).toFixed(1)} L${(cx+r*0.32).toFixed(1)} ${(my-r*0.42).toFixed(1)} Z' fill='white' stroke='${accent}' stroke-width='1.4'/>`;
+    case 4: return `<line x1='${(cx-r*0.55).toFixed(1)}' y1='${my.toFixed(1)}' x2='${(cx+r*0.55).toFixed(1)}' y2='${my.toFixed(1)}' stroke='${accent}' stroke-width='2.6' stroke-linecap='round'/>`;
+    case 5: return `<path d='M${(cx-r*0.6).toFixed(1)} ${my.toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.5).toFixed(1)} ${(cx+r*0.6).toFixed(1)} ${my.toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${(cx-r*0.45).toFixed(1)} ${(my+r*0.12).toFixed(1)} L${(cx-r*0.15).toFixed(1)} ${(my+r*0.14).toFixed(1)} L${(cx-r*0.3).toFixed(1)} ${(my+r*0.62).toFixed(1)} Z' fill='white'/><path d='M${(cx+r*0.15).toFixed(1)} ${(my+r*0.14).toFixed(1)} L${(cx+r*0.45).toFixed(1)} ${(my+r*0.12).toFixed(1)} L${(cx+r*0.3).toFixed(1)} ${(my+r*0.62).toFixed(1)} Z' fill='white'/>`;
+    case 6: return `<ellipse cx='${cx.toFixed(1)}' cy='${(my+r*0.2).toFixed(1)}' rx='${(r*0.3).toFixed(1)}' ry='${(r*0.38).toFixed(1)}' fill='#4a2f33' stroke='${accent}' stroke-width='1.8'/>`;
+    case 7: return `<path d='M${(cx-r*0.55).toFixed(1)} ${(my+r*0.35).toFixed(1)} Q${cx.toFixed(1)} ${(my-r*0.25).toFixed(1)} ${(cx+r*0.55).toFixed(1)} ${(my+r*0.35).toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
+    case 8: return `<path d='M${(cx-r*0.75).toFixed(1)} ${(my-r*0.05).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.75).toFixed(1)} ${(cx+r*0.75).toFixed(1)} ${(my-r*0.05).toFixed(1)}' stroke='${accent}' stroke-width='2.6' fill='none' stroke-linecap='round'/>`;
+    default: return "";
+  }
+}
+function drawBlush(p, cx, cy, color) {
+  const ey = -p.height * 0.08, w = profile(p, ey);
+  const bx = w * 0.62, by = cy + ey + p.height * 0.09, rw = w * 0.14, rh = rw * 0.62;
+  return `<ellipse cx='${(cx-bx).toFixed(1)}' cy='${by.toFixed(1)}' rx='${rw.toFixed(1)}' ry='${rh.toFixed(1)}' fill='${color}' opacity='0.8'/><ellipse cx='${(cx+bx).toFixed(1)}' cy='${by.toFixed(1)}' rx='${rw.toFixed(1)}' ry='${rh.toFixed(1)}' fill='${color}' opacity='0.8'/>`;
+}
+function drawBelly(p, cx, cy, color) {
+  const halfH = p.height / 2, top = -halfH * 0.05, bot = halfH * 0.92, steps = 24;
+  let d = "";
+  for (let i = 0; i <= steps; i++) {
+    const y = top + (bot - top) * (i / steps), x = profile(p, y) * 0.58;
+    d += (i ? "L" : "M") + (cx + x).toFixed(1) + " " + (cy + y).toFixed(1) + " ";
+  }
+  for (let i = steps; i >= 0; i--) {
+    const y = top + (bot - top) * (i / steps), x = profile(p, y) * 0.58;
+    d += "L" + (cx - x).toFixed(1) + " " + (cy + y).toFixed(1) + " ";
+  }
+  return `<path d='${d}Z' fill='${color}'/>`;
+}
+
+// ---------- mood morphs (exact port of mood.rs) ----------
+const MOODS = ["neutral", "working", "happy", "waiting", "blocked", "sad", "sleepy"];
+function moodSpec(m) {
+  switch (m) {
+    case "working": return { lid: 0.22, lidAngle: 4, eyeScale: 0.96, squint: 0.1, brows: "focus", mouth: "pressed", adjunct: "sweat" };
+    case "happy":   return { lid: 0, lidAngle: 0, eyeScale: 1.04, squint: 0.45, brows: null, mouth: "grin", adjunct: null };
+    case "waiting": return { lid: 0, lidAngle: 0, eyeScale: 1.16, squint: 0, brows: "raised", mouth: "o", adjunct: null };
+    case "blocked": return { lid: 0.38, lidAngle: 14, eyeScale: 1.0, squint: 0, brows: "knit", mouth: "pressed", adjunct: null };
+    case "sad":     return { lid: 0.3, lidAngle: -12, eyeScale: 0.97, squint: 0, brows: "worry", mouth: "down", adjunct: null };
+    case "sleepy":  return { lid: 0.72, lidAngle: 0, eyeScale: 1.0, squint: 0, brows: null, mouth: "o", adjunct: "zz" };
+    default:        return { lid: 0, lidAngle: 0, eyeScale: 1.0, squint: 0, brows: null, mouth: "keep", adjunct: null };
+  }
+}
+function lidOverlay(x, y, r, lid, angle, bodyFill, outline) {
+  if (lid <= 0.01) return "";
+  const cover = r * 1.35, bottom = y - r + 2 * r * lid;
+  return `<g transform='rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})'><rect x='${(x-cover).toFixed(1)}' y='${(bottom-2.6*r).toFixed(1)}' width='${(cover*2).toFixed(1)}' height='${(2.6*r).toFixed(1)}' fill='${bodyFill}'/><line x1='${(x-cover*0.82).toFixed(1)}' y1='${bottom.toFixed(1)}' x2='${(x+cover*0.82).toFixed(1)}' y2='${bottom.toFixed(1)}' stroke='${outline}' stroke-width='2.2' stroke-linecap='round'/></g>`;
+}
+function squintOverlay(x, y, r, squint, bodyFill, outline) {
+  if (squint <= 0.01) return "";
+  const top = y + r - 2 * r * squint;
+  return `<path d='M${(x-r*1.2).toFixed(1)} ${(y+r*1.3).toFixed(1)} Q${x.toFixed(1)} ${(top-r*0.4).toFixed(1)} ${(x+r*1.2).toFixed(1)} ${(y+r*1.3).toFixed(1)} L${(x+r*1.2).toFixed(1)} ${(y+r*1.5).toFixed(1)} L${(x-r*1.2).toFixed(1)} ${(y+r*1.5).toFixed(1)} Z' fill='${bodyFill}'/><path d='M${(x-r*1.05).toFixed(1)} ${(y+r*1.05).toFixed(1)} Q${x.toFixed(1)} ${top.toFixed(1)} ${(x+r*1.05).toFixed(1)} ${(y+r*1.05).toFixed(1)}' stroke='${outline}' stroke-width='2.2' fill='none' stroke-linecap='round'/>`;
+}
+function drawBrow(kind, x, y, r, side, ink) {
+  if (!kind) return "";
+  const by = y - r * 1.7, w = r * 0.95;
+  const t = { focus: [0.1, 0, 0], raised: [-0.15, -0.05, -0.5], knit: [0.55, -0.15, 0.1], worry: [-0.55, 0.15, 0] }[kind];
+  const [innerDy, outerDy, lift] = [t[0] * r, t[1] * r, t[2] * r];
+  return `<line x1='${(x-side*w).toFixed(1)}' y1='${(by+innerDy+lift).toFixed(1)}' x2='${(x+side*w).toFixed(1)}' y2='${(by+outerDy+lift).toFixed(1)}' stroke='${ink}' stroke-width='3.2' stroke-linecap='round'/>`;
+}
+function drawAdjunct(kind, cx, topY, ink) {
+  if (kind === "zz") return `<text x='${(cx+58).toFixed(1)}' y='${(topY+14).toFixed(1)}' font-family='monospace' font-weight='bold' font-size='19' fill='${ink}' opacity='0.75'>z</text><text x='${(cx+74).toFixed(1)}' y='${(topY-2).toFixed(1)}' font-family='monospace' font-weight='bold' font-size='24' fill='${ink}' opacity='0.55'>Z</text>`;
+  if (kind === "sweat") return `<path d='M${(cx+46).toFixed(1)} ${(topY+16).toFixed(1)} Q${(cx+53).toFixed(1)} ${(topY+30).toFixed(1)} ${(cx+46).toFixed(1)} ${(topY+35).toFixed(1)} Q${(cx+39).toFixed(1)} ${(topY+30).toFixed(1)} ${(cx+46).toFixed(1)} ${(topY+16).toFixed(1)} Z' fill='#7fb8e8' opacity='0.85'/>`;
+  return "";
+}
+
+// ---------- full creature ----------
+function creatureSVG(k, mood) {
+  const spec = moodSpec(mood);
+  const colors = resolveColors(k.recipe, k.hue);
+  const cx = 120, cy = 116, scale = 0.52;
+  const p = { height: k.height * scale * 1.5, w_top: k.w_top * scale * 1.5, w_bot: k.w_bot * scale * 1.5, n_top: k.n_top, n_bot: k.n_bot, waist: k.waist };
+  let s = "";
+  const halfH = p.height / 2;
+  s += `<ellipse cx='${cx}' cy='${(cy + halfH + 5).toFixed(1)}' rx='${(profile(p, halfH*0.35)*1.1).toFixed(1)}' ry='6' fill='rgba(40,30,50,0.14)'/>`;
+  s += drawBottom(k.bottom, p, cx, cy, colors.part, colors.outline);
+  s += drawTop(k.top, p, cx, cy, colors.part);
+  s += `<path d='${outlinePath(p, cx, cy, 48, k.lean, k.side_bias)}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='2.5'/>`;
+  s += drawBelly(p, cx, cy, colors.belly);
+  s += drawBlush(p, cx, cy, colors.blush);
+  // Eyes with combined identity x mood scale, then mood overlays in eye frame.
+  const f = eyeFrame(p, cx, cy, 0);
+  const totalScale = k.eye_scale * spec.eyeScale;
+  let eyes = drawEyes(k.eyes, p, cx, cy, k.eye_tilt, colors.outline, colors.ink);
+  if (Math.abs(totalScale - 1) > 0.01) {
+    eyes = `<g transform='translate(${cx} ${f.y.toFixed(1)}) scale(${totalScale.toFixed(3)}) translate(${-cx} ${(-f.y).toFixed(1)})'>${eyes}</g>`;
+  }
+  s += eyes;
+  const rr = f.r * totalScale;
+  for (const [x, side] of [[f.lx, -1], [f.rx, 1]]) {
+    const ty = f.y + (side < 0 ? -k.eye_tilt : k.eye_tilt);
+    s += lidOverlay(x, ty, rr, spec.lid, spec.lidAngle * side, colors.body, colors.outline);
+    s += squintOverlay(x, ty, rr, spec.squint, colors.body, colors.outline);
+    s += drawBrow(spec.brows, x, ty, rr, side, colors.ink);
+  }
+  // Mood mouth override.
+  let mouthKind = k.mouth;
+  if (spec.mouth === "grin") mouthKind = k.mouth === 2 ? 2 : 8;
+  else if (spec.mouth === "o") mouthKind = 6;
+  else if (spec.mouth === "pressed") mouthKind = 4;
+  else if (spec.mouth === "down") mouthKind = 7;
+  s += drawMouth(mouthKind, p, cx, cy, colors.outline, colors.ink);
+  s += drawAdjunct(spec.adjunct, cx, cy - halfH - 8, colors.ink);
+  return s;
+}
+
+// ---------- UI wiring ----------
+const SLIDERS = ["height", "w_top", "w_bot", "n_top", "n_bot", "waist", "eye_scale", "lean", "side_bias", "eye_tilt", "hue"];
+const SELECTS = ["top", "bottom", "eyes", "mouth", "recipe"];
+let mood = "neutral";
+let pinCount = 0;
+
+function knobs() {
+  const k = {};
+  for (const id of SLIDERS) k[id] = parseFloat(document.getElementById(id).value);
+  for (const id of SELECTS) k[id] = parseInt(document.getElementById(id).value, 10);
+  return k;
+}
+function setKnobs(k) {
+  for (const id of SLIDERS) if (id in k) document.getElementById(id).value = k[id];
+  for (const id of SELECTS) if (id in k) document.getElementById(id).value = k[id];
+}
+function render() {
+  const k = knobs();
+  const body = creatureSVG(k, mood);
+  document.getElementById("main").innerHTML = body;
+  for (const el of document.querySelectorAll(".mini")) el.innerHTML = body;
+  for (const id of SLIDERS) {
+    const v = document.getElementById(id).value;
+    document.getElementById(id + "-v").textContent = (+v).toFixed(id === "height" || id === "w_top" || id === "w_bot" || id === "hue" ? 0 : 2);
+  }
+}
+function loadSeed() {
+  const seed = parseInt(document.getElementById("seed").value, 10) || 0;
+  setKnobs(decode(seed));
+  render();
+}
+document.getElementById("load").addEventListener("click", loadSeed);
+document.getElementById("rand").addEventListener("click", () => {
+  document.getElementById("seed").value = Math.floor(Math.random() * 1e9);
+  loadSeed();
+});
+for (const id of [...SLIDERS, ...SELECTS]) {
+  document.getElementById(id).addEventListener("input", render);
+}
+const moodsDiv = document.getElementById("moods");
+for (const m of MOODS) {
+  const b = document.createElement("button");
+  b.textContent = m;
+  b.className = "mood" + (m === mood ? " active" : "");
+  b.addEventListener("click", () => {
+    mood = m;
+    for (const x of moodsDiv.children) x.classList.toggle("active", x.textContent === m);
+    render();
+  });
+  moodsDiv.appendChild(b);
+}
+document.getElementById("pinBtn").addEventListener("click", () => {
+  const k = knobs();
+  const wrap = document.createElement("div");
+  wrap.className = "pin";
+  const label = `pin ${++pinCount} · ${MOODS.includes(mood) ? mood : ""}`;
+  wrap.innerHTML = `<div class="box" title="click to restore"><svg width="140" height="140" viewBox="0 0 240 240">${creatureSVG(k, mood)}</svg></div>${label}`;
+  wrap.querySelector(".box").addEventListener("click", () => { setKnobs(k); render(); });
+  document.getElementById("pins").appendChild(wrap);
+});
+document.getElementById("clearPins").addEventListener("click", () => {
+  document.getElementById("pins").innerHTML = "";
+  pinCount = 0;
+});
+// URL params: ?seed=1234&mood=happy — shareable states, and they let the
+// mood path render headlessly (screenshot verification without clicks).
+const params = new URLSearchParams(location.search);
+if (params.has("seed")) document.getElementById("seed").value = params.get("seed");
+if (params.has("mood") && MOODS.includes(params.get("mood"))) {
+  mood = params.get("mood");
+  for (const x of moodsDiv.children) x.classList.toggle("active", x.textContent === mood);
+}
+loadSeed();
+</script>
+</body>
+</html>
