@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Creature redesign — exploration grids</title>
+<style>
+  body { font-family: -apple-system, monospace; background: #1c1a20; color: #ddd; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 2.2rem; }
+  p { color: #aaa; max-width: 72ch; }
+  img, object { width: 100%; background: #efe9e4; border-radius: 8px; }
+  .note { color: #887; font-size: .85rem; }
+</style>
+<h1>Creature redesign — exploration grids (design note 008)</h1>
+<p>Look-first exploration for the v2 creature design. Each grid answered one
+question before the contract freezes. Regenerable: <code>git archive &lt;sha&gt;
+playground | tar -x &amp;&amp; cargo run</code>; the SVGs here are the committed
+outputs of each grid's final state.</p>
+
+<h2>Grid 1 — body proportions × top parts</h2>
+<p>Question: does blob-space alone produce species-level characters, and which
+top parts make silhouettes? Answer: yes — mochi/ghost/troll/alien/robot from
+four floats; ears and antennae strongest.</p>
+<object data="grid1.svg" type="image/svg+xml"></object>
+
+<h2>Grid 2 — the life layer</h2>
+<p>Question: what makes them alive? Answer: blush + belly patch (always-on
+now), face packs for personality range (deadpan/gremlin/imp hold the
+ugly-cute end). Body wonk too subtle to matter — asymmetry budget moved to
+parts/face.</p>
+<object data="grid2.svg" type="image/svg+xml"></object>
+
+<h2>Grid 3 — palette recipes × cast + 28px strip</h2>
+<p>Question: procedural color harmony without the lookup table, and does
+identity survive icon size? Answer: four recipe bands keep (pastel, toy,
+dark-gravitas, earthy), two drop; the 28px strip passes decisively.</p>
+<object data="grid3.svg" type="image/svg+xml"></object>
+<p class="note">Icon strip at natural 36px (open and zoom):</p>
+<object data="grid3-strip.svg" type="image/svg+xml" style="width:50%"></object>
+
+<h2>Grid 4 — mood freeze-gate (7 moods × cast)</h2>
+<p>Question: can the wire's 7-mood contract express on every face archetype?
+Answer: yes, including deadpan half-lids — lids/brows/mouth/squint/adjunct
+layers, mood provably orthogonal to identity. Found and fixed the brow
+mirror bug.</p>
+<object data="grid4.svg" type="image/svg+xml"></object>
+
+<h2>Grid 5 — the gacha test (36 random genomes)</h2>
+<p>Question: does "no ugly genome" hold on RANDOM input? Answer: 36/36
+presentable from sequential seeds, dark band rare and striking, two
+near-collisions in 36 (fine at fleet scale).</p>
+<object data="grid5.svg" type="image/svg+xml"></object>
+
+<h2>Grid 6 — hue A/B (same genomes, golden-angle spacing)</h2>
+<p>Question: is hue clustering worth a fleet-wide allocator? Answer
+(recommendation): no — evenness gain is modest, silhouette+value already
+carry identity; ship stateless uniform hue, allocator addable later via the
+era store.</p>
+<object data="grid6.svg" type="image/svg+xml"></object>
