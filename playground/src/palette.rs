@@ -47,6 +47,35 @@ pub fn mottle(recipe: usize, h: f64) -> (String, String) {
     }
 }
 
+/// Belly-patch fill: OPAQUE by design — the translucent bellies let the
+/// voronoi mottle bleed through, and an opaque belly is immune to whatever
+/// pattern lives on the hide (Ufuk's review). `variant` is genome-driven:
+/// 0 = classic near-white, 1 = lighter same-hue tone, 2 = warm cream,
+/// 3 = soft accent tint. Dark gravitas keeps its luminous register.
+pub fn belly_fill(recipe: usize, h: f64, variant: u8) -> String {
+    if recipe == 3 {
+        return match variant % 4 {
+            0 => hsl(h + 6.0, 45.0, 48.0),
+            1 => hsl(h, 40.0, 38.0),
+            2 => hsl(45.0, 30.0, 55.0),
+            _ => hsl(h + 24.0, 42.0, 50.0),
+        };
+    }
+    let (s, l): (f64, f64) = match recipe {
+        0 => (66.0, 82.0),
+        1 => (62.0, 83.0),
+        2 => (78.0, 64.0),
+        4 => (24.0, 62.0),
+        _ => (28.0, 88.0),
+    };
+    match variant % 4 {
+        0 => hsl(h, s * 0.42, 93.0),
+        1 => hsl(h, s * 0.72, (l + 14.0).min(94.0)),
+        2 => hsl(45.0, 38.0, 91.0),
+        _ => hsl(h + 28.0, s * 0.5, (l + 10.0).min(92.0)),
+    }
+}
+
 /// Tone variant of the body color: same hue, one shade step lighter
 /// (`dir` > 0) or darker (`dir` < 0). Extremity layer-color experiment B:
 /// variation without leaving the creature's own color.

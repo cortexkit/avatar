@@ -23,6 +23,7 @@ struct Creature {
     /// 0 = merged silhouette, 1 = layered tone fills, 2 = layered accent.
     topology: u8,
     voronoi: bool,
+    belly_variant: u8,
 }
 
 fn decode_full(seed: u64) -> Creature {
@@ -58,6 +59,9 @@ fn decode_full(seed: u64) -> Creature {
     let topology = b.byte() % 3;
     // Voronoi mottle on ~40% of the population.
     let voronoi = b.byte() % 5 < 2;
+    // Trailing read on purpose: appending keeps every earlier field's bytes
+    // stable for a given seed.
+    let belly_variant = b.byte() % 4;
     Creature {
         wb,
         exts,
@@ -69,6 +73,7 @@ fn decode_full(seed: u64) -> Creature {
         mouth,
         topology,
         voronoi,
+        belly_variant,
     }
 }
 
@@ -257,7 +262,11 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         d.push_str(&format!("{cmd}{:.2} {:.2} ", p.0, p.1));
     }
     d.push('Z');
-    let clip_id = format!("g10c{}m{}", c.hue as u32, m as u8);
+    // Unique per CELL: hue+mood collided across cells (two same-hue
+    // creatures in one sheet), and url(#) resolves document-wide to the
+    // FIRST match — seed 4009's face was clipped by another creature's
+    // body path and vanished. Position is the one per-cell invariant.
+    let clip_id = format!("g10x{:.0}y{:.0}m{}", cx, cy, m as u8);
     s.push_str(&format!(
         "<defs><clipPath id='{clip_id}'><path d='{d}'/></clipPath></defs><path d='{d}' fill='{}' stroke='{}' stroke-width='1.5'/>",
         colors.body, colors.outline,
@@ -310,7 +319,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             let fill = if site.shade == 0 { &dark } else { &light };
             s.push_str(&format!(
                 "<path d='{}' fill='{fill}'/>",
-                surface::cell_path(&cell, 0.88),
+                surface::cell_path(&cell, 0.8),
             ));
         }
         if !mask_defs.is_empty() {
@@ -330,7 +339,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                 (blx + brx) / 2.0,
                 belly_y + h * 0.05,
                 h * 0.24,
-                colors.belly,
+                palette::belly_fill(c.recipe, c.hue, c.belly_variant),
             ));
         }
         s.push_str(&format!(
@@ -568,6 +577,28 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--check") {
         let n = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(200);
         run_checker(n);
+        return;
+    }
+    if let Some(i) = args.iter().position(|a| a == "--inspect") {
+        let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
+        let c = decode_full(seed);
+        let outline = outline_for(&c, 120.0, 120.0);
+        let (bx0, by0, bx1, by1) = wild::bbox(&outline);
+        println!(
+            "seed {seed}: topology={} exts={} outline pts={} bbox=({:.1},{:.1})-({:.1},{:.1}) h={:.1}",
+            c.topology,
+            c.exts.len(),
+            outline.len(),
+            bx0, by0, bx1, by1,
+            by1 - by0,
+        );
+        match place_face(&outline) {
+            Some(p) => println!(
+                "  placed: fx={:.1} eye_y={:.1} ipd={:.1} r={:.1}",
+                p.fx, p.eye_y, p.ipd, p.r
+            ),
+            None => println!("  NO PLACEMENT"),
+        }
         return;
     }
     std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");

@@ -23,12 +23,22 @@ pub struct Site {
 /// the body's symmetry axis (grid-8 review: an asymmetric mottle on a
 /// symmetric body reads as a symmetry BUG, not as texture).
 pub fn decode_sites(b: &mut Bits) -> Vec<Site> {
-    let pairs = 3 + (b.byte() % 4) as usize; // 3..=6 pairs -> 6..=12 cells
+    // 8..=13 pairs -> 16..=26 cells. The earlier 6..=12 cells were so large
+    // that every edge was a long straight chord — zoomed review read them as
+    // crumpled-paper facets, not mottle. Smaller cells + sparser shading
+    // (most cells skipped, shade 2 dominant) reads as hide spots.
+    let pairs = 8 + (b.byte() % 6) as usize;
     let mut sites = Vec::with_capacity(pairs * 2);
     for _ in 0..pairs {
         let x = b.lin(0.04, 1.05);
         let y = b.lin(-1.05, 1.05);
-        let shade = b.byte() % 3;
+        // Shade roles reweighted: 0/1 (dark/light mottle) each 1-in-4, skip
+        // 2-in-4 — spots scattered on hide, not wall-to-wall tiling.
+        let shade = match b.byte() % 4 {
+            0 => 0,
+            1 => 1,
+            _ => 2,
+        };
         sites.push(Site { x, y, shade });
         sites.push(Site { x: -x, y, shade });
     }
@@ -84,13 +94,16 @@ pub fn cell_path(poly: &[(f64, f64)], inset: f64) -> String {
         .iter()
         .map(|&(x, y)| (cx + (x - cx) * inset, cy + (y - cy) * inset))
         .collect();
+    // Corner rounding at 0.5 puts every on-curve point at an edge MIDPOINT:
+    // no straight segments survive, so the pebble is fully curved (0.26 left
+    // half of every edge straight — the zoomed shard look).
     let mut d = String::new();
     for i in 0..n {
         let prev = pts[(i + n - 1) % n];
         let cur = pts[i];
         let next = pts[(i + 1) % n];
-        let a = (cur.0 + (prev.0 - cur.0) * 0.26, cur.1 + (prev.1 - cur.1) * 0.26);
-        let b = (cur.0 + (next.0 - cur.0) * 0.26, cur.1 + (next.1 - cur.1) * 0.26);
+        let a = (cur.0 + (prev.0 - cur.0) * 0.5, cur.1 + (prev.1 - cur.1) * 0.5);
+        let b = (cur.0 + (next.0 - cur.0) * 0.5, cur.1 + (next.1 - cur.1) * 0.5);
         if i == 0 {
             d.push_str(&format!("M{:.1} {:.1} ", a.0, a.1));
         } else {

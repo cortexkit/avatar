@@ -21,10 +21,18 @@ impl Poly {
     }
 
     /// Signed distance: negative inside, positive outside.
+    ///
+    /// Inside is the NONZERO WINDING rule — the same rule SVG uses for fill
+    /// and clip-path — not crossing parity. On self-crossing outlines
+    /// (tension overshoot makes them, by design) the two disagree: parity
+    /// declared the star-notch interior "inside" while the renderer clipped
+    /// it, so faces were placed in regions the body never painted — and the
+    /// checker, sharing this SDF, certified the faceless result. The
+    /// renderer's rule is ground truth; the SDF must speak it.
     pub fn sdf(&self, x: f64, y: f64) -> f64 {
         let n = self.pts.len();
         let mut d2 = f64::MAX;
-        let mut inside = false;
+        let mut winding = 0i32;
         for i in 0..n {
             let (x1, y1) = self.pts[i];
             let (x2, y2) = self.pts[(i + 1) % n];
@@ -34,16 +42,16 @@ impl Poly {
             let t = ((px * ex + py * ey) / (ex * ex + ey * ey).max(1e-12)).clamp(0.0, 1.0);
             let (qx, qy) = (px - ex * t, py - ey * t);
             d2 = d2.min(qx * qx + qy * qy);
-            // Crossing parity.
-            if (y1 <= y && y2 > y) || (y2 <= y && y1 > y) {
-                let xi = x1 + (y - y1) / (y2 - y1) * ex;
-                if xi > x {
-                    inside = !inside;
-                }
+            // Winding accumulation (Sunday's algorithm).
+            let cross = ex * py - ey * px;
+            if y1 <= y && y2 > y && cross > 0.0 {
+                winding += 1;
+            } else if y2 <= y && y1 > y && cross < 0.0 {
+                winding -= 1;
             }
         }
         let d = d2.sqrt();
-        if inside {
+        if winding != 0 {
             -d
         } else {
             d

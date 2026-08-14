@@ -126,7 +126,16 @@ pub fn extremity_outline(e: &Extremity, ring_r: f64, mean_r: f64, mirror: bool) 
         }
     }
     // Offset left/right of the spine by the tapering width; rounded tip.
-    let base_w = e.width * mean_r;
+    // The half-width is capped by the spine's radius of curvature
+    // (ρ = len/|curl|): a wider offset loops back over itself at strong
+    // curls, and the self-crossing capsule renders as detached shards under
+    // the nonzero fill rule (grid-10 zoom review, seed 4009's wings).
+    let curvature_cap = if e.curl.abs() > 1e-6 {
+        0.8 * len / e.curl.abs()
+    } else {
+        f64::MAX
+    };
+    let base_w = (e.width * mean_r).min(curvature_cap);
     let mut left = Vec::with_capacity(steps + 1);
     let mut right = Vec::with_capacity(steps + 1);
     for (i, &(x, y)) in spine.iter().enumerate() {
