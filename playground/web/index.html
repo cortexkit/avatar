@@ -699,9 +699,16 @@ function creatureSVG(k, moodName, size) {
     let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink, colors.pupil, colors.sclera);
     if (Math.abs(spec.es - 1) > 0.01) eyesSvg = `<g transform='translate(${p.fx} ${f.y}) scale(${spec.es}) translate(${-p.fx} ${-f.y})'>${eyesSvg}</g>`;
     s += eyesSvg;
+    // Archetype-aware mood expression (mirrors Rust): lids/squints are
+    // disc-eye concepts — suppressed on closed-arc eyes, only sleepy-scale
+    // lids on half-lid, per-disc radii on uneven.
+    const doSquint = k.eyes != 2 && k.eyes != 4;
+    const doLid = k.eyes == 2 ? false : k.eyes == 4 ? spec.lid > 0.45 : true;
     for (const [x, side] of [[f.lx,-1],[f.rx,1]]) {
-      s += squintOverlay(x, f.y, f.r, spec.sq, colors.body, colors.outline);
-      s += lidOverlay(x, f.y, f.r, spec.lid, spec.ang*side, colors.body, colors.outline);
+      const er = k.eyes == 3 ? (side < 0 ? f.r*1.25 : f.r*0.62) : f.r;
+      const ey = k.eyes == 3 && side > 0 ? f.y + f.r*0.15 : f.y;
+      if (doSquint) s += squintOverlay(x, ey, er, spec.sq, colors.body, colors.outline);
+      if (doLid) s += lidOverlay(x, ey, er, spec.lid, spec.ang*side, colors.body, colors.outline);
       s += drawBrow(spec.brows, x, f.y, f.r, side, colors.ink);
     }
     const mouthKind = spec.mouth === 0 ? k.mouth : spec.mouth === 1 ? 2 : spec.mouth === 2 ? 6 : spec.mouth === 3 ? 4 : 7;

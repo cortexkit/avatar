@@ -372,18 +372,42 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             s.push_str(&eyes_svg);
         }
 
-        // Mood layers per eye: squint from below, lid from above, brows.
+        // Mood layers per eye — ARCHETYPE-AWARE (Ufuk's lab find: lids and
+        // squints are disc-eye concepts; stacked on line eyes they read as
+        // line noise). The spec stays semantic; each archetype decides what
+        // expresses it:
+        //  - HappyArc is already-closed line art: brows alone carry mood —
+        //    a lid over a closed eye is another arc, a squint another line.
+        //  - HalfLid has a built-in lid: only mood lids that close FURTHER
+        //    than the archetype's own (sleepy-scale, >0.45) add anything.
+        //  - Uneven's discs differ per eye (1.25r / 0.62r): overlays must
+        //    track each disc's radius and center or they float as stray
+        //    curves.
+        let (do_squint, do_lid) = match c.eyes {
+            face::EyeKind::HappyArc => (false, false),
+            face::EyeKind::HalfLid => (false, spec.lid > 0.45),
+            _ => (true, true),
+        };
         for (x, side) in [(f.lx, -1.0), (f.rx, 1.0)] {
-            s.push_str(&mood::squint_overlay(x, f.y, f.r, spec.squint, &colors.body, &colors.outline));
-            s.push_str(&mood::lid_overlay(
-                x,
-                f.y,
-                f.r,
-                spec.lid,
-                spec.lid_angle * side,
-                &colors.body,
-                &colors.outline,
-            ));
+            let (er, ey) = match c.eyes {
+                face::EyeKind::Uneven if side < 0.0 => (f.r * 1.25, f.y),
+                face::EyeKind::Uneven => (f.r * 0.62, f.y + f.r * 0.15),
+                _ => (f.r, f.y),
+            };
+            if do_squint {
+                s.push_str(&mood::squint_overlay(x, ey, er, spec.squint, &colors.body, &colors.outline));
+            }
+            if do_lid {
+                s.push_str(&mood::lid_overlay(
+                    x,
+                    ey,
+                    er,
+                    spec.lid,
+                    spec.lid_angle * side,
+                    &colors.body,
+                    &colors.outline,
+                ));
+            }
             s.push_str(&mood::brow(spec.brows, x, f.y, f.r, side, &colors.ink));
         }
 
