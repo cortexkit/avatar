@@ -472,24 +472,32 @@ function bboxOf(outline) {
   for (const [x,y] of outline) { a=Math.min(a,x); b=Math.min(b,y); c=Math.max(c,x); d=Math.max(d,y); }
   return [a,b,c,d];
 }
+// SDF-verified placement (mirrors Rust place_face): both eye centers must
+// have interior depth for the disc plus 22% margin; search y-band x spacing.
 function placeFace(outline) {
   const [,minY,,maxY] = bboxOf(outline);
   const h = maxY - minY;
+  const sparse = outline.filter((_, i) => i % 2 === 0);
+  const MARGIN = 1.22, rCap = h * 0.085 * 1.15, rFloor = h * 0.028;
   let best = null;
-  for (let i = 0; i <= 14; i++) {
-    const y = minY + h * (0.24 + 0.028*i);
+  for (let yi = 0; yi <= 18; yi++) {
+    const y = minY + h * (0.20 + 0.026 * yi);
     const e = extentAt(outline, y);
-    if (e && (!best || e[1]-e[0] > best.w)) best = { w: e[1]-e[0], y, fx: (e[0]+e[1])/2 };
+    if (!e) continue;
+    const span = e[1] - e[0], fx = (e[0] + e[1]) / 2;
+    for (const ipdRatio of [0.44, 0.36, 0.28, 0.21]) {
+      const ex = span / 2 * ipdRatio;
+      const depth = -Math.max(polySDF(sparse, fx - ex, y), polySDF(sparse, fx + ex, y));
+      // Eyes never touch each other: widest archetype ~1.25r half-width,
+      // so cap r by spacing (mirrors Rust).
+      const r = Math.min(depth / MARGIN, rCap, span * 0.30 * 1.15, ex / 1.45);
+      if (r < rFloor) continue;
+      const bandPenalty = Math.abs((y - (minY + h * 0.34)) / h) * 0.25;
+      const score = r * (1 + 0.22 * ipdRatio) * (1 - bandPenalty);
+      if (!best || score > best.score) best = { score, fx, eyeY: y, halfW: span/2, ipd: ex, r };
+    }
   }
-  if (!best) return null;
-  let r = Math.min(h * 0.085, best.w * 0.30) * 1.15;
-  for (let i = 0; i < 6; i++) {
-    const ex = best.w/2 * 0.44;
-    const e2 = extentAt(outline, best.y);
-    if (e2 && best.fx - ex - r > e2[0] && best.fx + ex + r < e2[1]) break;
-    r *= 0.85;
-  }
-  return { fx: best.fx, eyeY: best.y, halfW: best.w/2, r };
+  return best;
 }
 function drawEyes(kind, f, accent, ink) {
   let s = "";
@@ -624,6 +632,8 @@ function creatureSVG(k, moodName, size) {
   s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='2.5'/>`;
   s += `<g clip-path='url(#${clip})'>`;
 
+  const p = placeFace(outline);
+
   if (k.voronoi) {
     const cellBbox = [minX, minY, maxX, maxY];
     const scaled = k.sites.map(site => ({ x: cx + site.x*(maxX-minX)/2, y: (minY+maxY)/2 + site.y*(maxY-minY)/2, shade: site.shade }));
@@ -634,21 +644,33 @@ function creatureSVG(k, moodName, size) {
       });
     }
     const [light, dark] = mottle(k.recipe, k.hue);
+    // Mottle belongs to the hide, not the face: fade cells out over the
+    // face-and-belly capsule (radial mask), mirroring the Rust renderer.
+    let masked = false;
+    if (p) {
+      const capTop = p.eyeY - p.r * 2.2;
+      const capBot = minY + h * 0.62 + h * 0.29;
+      const capCy = (capTop + capBot) / 2, capRy = (capBot - capTop) / 2;
+      const capRx = Math.max(p.ipd + p.r * 2.6, p.halfW * 0.66);
+      const mid = `vm${uid++}`;
+      s += `<defs><radialGradient id='fg${mid}'><stop offset='0.62' stop-color='black'/><stop offset='1' stop-color='white'/></radialGradient><mask id='${mid}'><rect x='${minX-20}' y='${minY-20}' width='${maxX-minX+40}' height='${maxY-minY+40}' fill='white'/><ellipse cx='${p.fx}' cy='${capCy}' rx='${capRx}' ry='${capRy}' fill='url(#fg${mid})'/></mask></defs><g mask='url(#${mid})'>`;
+      masked = true;
+    }
     scaled.forEach((site, i) => {
       if (site.shade === 2) return;
       const poly = clipCell(scaled, i, cellBbox);
       if (poly.length < 3) return;
       s += `<path d='${pebblePath(poly, 0.88)}' fill='${site.shade === 0 ? dark : light}'/>`;
     });
+    if (masked) s += `</g>`;
   }
-
-  const p = placeFace(outline);
   if (p) {
     const bellyY = minY + h*0.62;
     const be = extentAt(outline, bellyY);
     if (be) s += `<ellipse cx='${(be[0]+be[1])/2}' cy='${bellyY + h*0.05}' rx='${(be[1]-be[0])/2*0.62}' ry='${h*0.24}' fill='${colors.belly}'/>`;
-    const ex = p.halfW * 0.44;
-    const f = { lx: p.fx - ex, rx: p.fx + ex, y: p.eyeY, r: p.r };
+    // The search-chosen ipd IS the spacing (it may have pulled eyes inward
+    // off thin side masses) — never re-derive from halfW.
+    const f = { lx: p.fx - p.ipd, rx: p.fx + p.ipd, y: p.eyeY, r: p.r };
     s += `<ellipse cx='${f.lx - p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
     s += `<ellipse cx='${f.rx + p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
     let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink);

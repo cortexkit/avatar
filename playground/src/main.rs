@@ -76,42 +76,70 @@ struct FacePlacement {
     fx: f64,
     eye_y: f64,
     half_w: f64,
+    /// Absolute half inter-pupil distance CHOSEN by the search — the fit may
+    /// have pulled the eyes inward off thin side masses, so consumers must
+    /// not re-derive spacing from half_w.
+    ipd: f64,
     r: f64,
 }
 
 /// Widest-band scan with eye-fit shrink (the EVM-free findRect).
+/// SDF-verified face placement. The widest-scanline approach checked fit
+/// only HORIZONTALLY at one y — eye discs crossed the silhouette vertically
+/// on notched crowns and landed on thin masses (manta wings, Ufuk's grid-10
+/// review). Every candidate is now scored by the signed distance of both
+/// eye centers to the outline: an eye exists only where the body has
+/// interior DEPTH for it. Search over height band x eye spacing; radius is
+/// what the interior affords, capped by the cute proportions.
 fn place_face(outline: &[(f64, f64)]) -> Option<FacePlacement> {
-    let (min_x, min_y, max_x, max_y) = wild::bbox(outline);
+    let (_, min_y, _, max_y) = wild::bbox(outline);
     let h = max_y - min_y;
-    let _ = max_x - min_x;
-    let mut best: Option<(f64, f64, f64)> = None; // (width, y, center)
-    for i in 0..=14 {
-        let y = min_y + h * (0.24 + 0.028 * i as f64);
-        if let Some((l, r)) = wild::extent_at(outline, y) {
-            let w = r - l;
-            if best.map(|b| w > b.0).unwrap_or(true) {
-                best = Some((w, y, (l + r) / 2.0));
+    let poly = merge::Poly::new(outline, 2);
+    // The eye disc must clear the outline by 22% of its radius.
+    const MARGIN: f64 = 1.22;
+    let r_cap = h * 0.085 * 1.15;
+    let r_floor = h * 0.028;
+    let mut best: Option<(f64, FacePlacement)> = None;
+    for yi in 0..=18 {
+        let y = min_y + h * (0.20 + 0.026 * yi as f64);
+        let Some((l, rgt)) = wild::extent_at(outline, y) else {
+            continue;
+        };
+        let span = rgt - l;
+        let fx = (l + rgt) / 2.0;
+        for ipd_ratio in [0.44_f64, 0.36, 0.28, 0.21] {
+            let ex = span / 2.0 * ipd_ratio;
+            // Interior depth at the shallower of the two eye centers.
+            let depth = -(poly.sdf(fx - ex, y).max(poly.sdf(fx + ex, y)));
+            // Eyes must never touch EACH OTHER (the TOG pain point): the
+            // widest archetype (uneven/lidded) reaches ~1.25r half-width,
+            // so center spacing 2·ex needs 2·r·1.45 — cap r by the spacing.
+            let r = (depth / MARGIN)
+                .min(r_cap)
+                .min(span * 0.30 * 1.15)
+                .min(ex / 1.45);
+            if r < r_floor {
+                continue;
+            }
+            // Radius first (big cute eyes), wide spacing preferred, gentle
+            // pull toward the canonical eye band (~34% down).
+            let band_penalty = ((y - (min_y + h * 0.34)) / h).abs() * 0.25;
+            let score = r * (1.0 + 0.22 * ipd_ratio) * (1.0 - band_penalty);
+            if best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
+                best = Some((
+                    score,
+                    FacePlacement {
+                        fx,
+                        eye_y: y,
+                        half_w: span / 2.0,
+                        ipd: ex,
+                        r,
+                    },
+                ));
             }
         }
     }
-    let (w, y, fx) = best?;
-    let mut r = (h * 0.085).min(w * 0.30) * 1.15;
-    // Shrink until both eyes fit inside the outline at eye_y.
-    for _ in 0..6 {
-        let ex = w / 2.0 * 0.44;
-        if let Some((l2, r2)) = wild::extent_at(outline, y) {
-            if fx - ex - r > l2 && fx + ex + r < r2 {
-                break;
-            }
-        }
-        r *= 0.85;
-    }
-    Some(FacePlacement {
-        fx,
-        eye_y: y,
-        half_w: w / 2.0,
-        r,
-    })
+    best.map(|(_, p)| p)
 }
 
 fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
@@ -220,6 +248,9 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
     ));
     s.push_str(&format!("<g clip-path='url(#{clip_id})'>"));
 
+    // Placement first: the voronoi mask needs to know where the face lives.
+    let placement = place_face(&outline);
+
     if c.voronoi {
         let cell_bbox = (min_x, min_y, max_x, max_y);
         let mut scaled: Vec<surface::Site> = c
@@ -233,6 +264,29 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             .collect();
         surface::relax(&mut scaled, cell_bbox, 2);
         let (light, dark) = palette::mottle(c.recipe, c.hue);
+        // Face-capsule mask: the mottle belongs to the creature's HIDE, not
+        // its face — pebble edges crossing the eye/belly zone read as glare
+        // artifacts (Ufuk's review). A radial-gradient mask fades cells out
+        // over the face-and-belly capsule instead of hard-cutting them.
+        let mask_id = format!("vm{clip_id}");
+        let mut mask_defs = String::new();
+        if let Some(p) = &placement {
+            let cap_top = p.eye_y - p.r * 2.2;
+            let cap_bot = min_y + h * 0.62 + h * 0.29;
+            let cap_cy = (cap_top + cap_bot) / 2.0;
+            let cap_ry = (cap_bot - cap_top) / 2.0;
+            let cap_rx = (p.ipd + p.r * 2.6).max(p.half_w * 0.66);
+            mask_defs = format!(
+                "<defs><radialGradient id='fg{mask_id}'><stop offset='0.62' stop-color='black'/><stop offset='1' stop-color='white'/></radialGradient><mask id='{mask_id}'><rect x='{:.0}' y='{:.0}' width='{:.0}' height='{:.0}' fill='white'/><ellipse cx='{:.1}' cy='{cap_cy:.1}' rx='{cap_rx:.1}' ry='{cap_ry:.1}' fill='url(#fg{mask_id})'/></mask></defs>",
+                min_x - 20.0,
+                min_y - 20.0,
+                max_x - min_x + 40.0,
+                max_y - min_y + 40.0,
+                p.fx,
+            );
+            s.push_str(&mask_defs);
+            s.push_str(&format!("<g mask='url(#{mask_id})'>"));
+        }
         for (site, cell) in scaled.iter().zip(surface::cells(&scaled, cell_bbox)) {
             if cell.len() < 3 || site.shade == 2 {
                 continue;
@@ -243,12 +297,15 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                 surface::cell_path(&cell, 0.88),
             ));
         }
+        if !mask_defs.is_empty() {
+            s.push_str("</g>");
+        }
     }
 
     // Face + mood overlays (the grid-4 layered-morph machinery on wild
     // placement: lids and squints in body color, on-demand brows, mouth
     // override, eye scale, adjuncts).
-    if let Some(p) = place_face(&outline) {
+    if let Some(p) = placement {
         let belly_y = min_y + h * 0.62;
         if let Some((blx, brx)) = wild::extent_at(&outline, belly_y) {
             let bw2 = (brx - blx) / 2.0 * 0.62;
@@ -260,16 +317,17 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                 colors.belly,
             ));
         }
-        let ex = p.half_w * 0.44;
         s.push_str(&format!(
             "<ellipse cx='{:.1}' cy='{:.1}' rx='{:.1}' ry='{:.1}' fill='{}' opacity='0.8'/><ellipse cx='{:.1}' cy='{:.1}' rx='{:.1}' ry='{:.1}' fill='{}' opacity='0.8'/>",
-            p.fx - ex * 1.28, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5, colors.blush,
-            p.fx + ex * 1.28, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5, colors.blush,
+            p.fx - p.ipd * 1.28, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5, colors.blush,
+            p.fx + p.ipd * 1.28, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5, colors.blush,
         ));
+        // The shim width is derived from the CHOSEN ipd (frame computes
+        // ex = width*0.42), so the fit-searched spacing survives verbatim.
         let shim = body::BodyParams {
             height: p.r / 0.085,
-            w_top: p.half_w,
-            w_bot: p.half_w,
+            w_top: p.ipd / 0.42,
+            w_bot: p.ipd / 0.42,
             n_top: 2.0,
             n_bot: 2.0,
             waist: 0.5,
@@ -335,7 +393,120 @@ fn cell_bg(svg: &mut String, cx: f64, cy: f64, label: &str) {
     ));
 }
 
+/// Rebuilds exactly the outline draw_full renders (same transforms), for
+/// the eyes-inside checker. Kept beside draw_full in the same file so the
+/// two can never drift silently.
+fn outline_for(c: &Creature, cx: f64, cy: f64) -> Vec<(f64, f64)> {
+    let dom = 0.32;
+    let raw = wild::build_raw(&c.wb, dom);
+    let mean_r = c.wb.spokes.iter().map(|s| s.r).sum::<f64>() / c.wb.spokes.len() as f64;
+    let ring_r_at = |theta: f64| -> f64 {
+        let t = theta.rem_euclid(std::f64::consts::TAU);
+        let tm = (std::f64::consts::PI - t).rem_euclid(std::f64::consts::TAU);
+        c.wb
+            .spokes
+            .iter()
+            .map(|s| {
+                let d1 = (s.theta - t).abs().min(std::f64::consts::TAU - (s.theta - t).abs());
+                let d2 = (s.theta - tm).abs().min(std::f64::consts::TAU - (s.theta - tm).abs());
+                (d1.min(d2), s.r)
+            })
+            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+            .map(|(_, r)| r)
+            .unwrap_or(mean_r)
+    };
+    let ext_outlines: Vec<Vec<(f64, f64)>> = c
+        .exts
+        .iter()
+        .flat_map(|e| {
+            let right = wild::extremity_outline(e, ring_r_at(e.theta), mean_r, false);
+            let left: Vec<(f64, f64)> = right.iter().map(|p| (-p.0, p.1)).collect();
+            [right, left]
+        })
+        .collect();
+    let (mut bx0, mut by0, mut bx1, mut by1) = raw.bbox;
+    for pts in &ext_outlines {
+        for &(x, y) in pts {
+            bx0 = bx0.min(x);
+            by0 = by0.min(y);
+            bx1 = bx1.max(x);
+            by1 = by1.max(y);
+        }
+    }
+    let scale = (172.0 / (bx1 - bx0).max(1e-6)).min(198.0 / (by1 - by0).max(1e-6));
+    let mx = (bx0 + bx1) / 2.0;
+    let my = (by0 + by1) / 2.0;
+    let t = |p: (f64, f64)| -> (f64, f64) { (cx + (p.0 - mx) * scale, cy + (p.1 - my) * scale) };
+    if c.topology == 0 && !ext_outlines.is_empty() {
+        let mut shapes = vec![merge::Poly::new(&raw.pts, 3)];
+        for pts in &ext_outlines {
+            shapes.push(merge::Poly::new(pts, 1));
+        }
+        merge::merged_outline(&shapes, (bx0, by0, bx1, by1), mean_r * 0.16, 130)
+            .iter()
+            .map(|&p| t(p))
+            .collect()
+    } else {
+        raw.pts.iter().map(|&p| t(p)).collect()
+    }
+}
+
+/// Eyes-inside sweep: SDF-verifies both eye discs for a seed range. Run
+/// with `--check N`. Prints violations; exits nonzero on any.
+fn run_checker(n: u64) {
+    let mut violations = 0usize;
+    let mut placed = 0usize;
+    let mut worst: (f64, u64) = (f64::MAX, 0);
+    for seed in 4000..(4000 + n) {
+        let c = decode_full(seed);
+        let outline = outline_for(&c, 120.0, 120.0);
+        let Some(p) = place_face(&outline) else {
+            println!("seed {seed}: NO PLACEMENT");
+            violations += 1;
+            continue;
+        };
+        placed += 1;
+        let poly = merge::Poly::new(&outline, 2);
+        // Verify the DRAWN eye disc: the placement radius is what the
+        // renderer uses, so clearance = interior depth minus radius.
+        let clearance = [
+            poly.sdf(p.fx - p.ipd, p.eye_y),
+            poly.sdf(p.fx + p.ipd, p.eye_y),
+        ]
+        .iter()
+        .map(|d| -d - p.r)
+        .fold(f64::MAX, f64::min);
+        if clearance < 0.0 {
+            println!("seed {seed}: eye disc breaches outline by {:.2}", -clearance);
+            violations += 1;
+        }
+        // Separation invariant: eye discs never touch each other (widest
+        // archetype half-width 1.25r + margin).
+        let sep = 2.0 * p.ipd - 2.0 * p.r * 1.45;
+        if sep < -1e-9 {
+            println!("seed {seed}: eyes overlap by {:.2}", -sep);
+            violations += 1;
+        }
+        if clearance < worst.0 {
+            worst = (clearance, seed);
+        }
+    }
+    println!(
+        "checked {n} seeds: {placed} placed, {violations} violations; tightest clearance {:.2} units (seed {})",
+        worst.0, worst.1,
+    );
+    if violations > 0 {
+        std::process::exit(1);
+    }
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--check") {
+        let n = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(200);
+        run_checker(n);
+        return;
+    }
     std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");
 
     // Sheet 1: gacha 36, sequential seeds, neutral mood.
