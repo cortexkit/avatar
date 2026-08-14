@@ -11,8 +11,15 @@ pub struct Colors {
     pub belly: String,
     pub part: String,
     pub blush: String,
-    /// Eye/mouth ink (near-black on light bodies, warm-light on dark).
+    /// LINE ink: mouth strokes, brows, closed-eye arcs. Flips light on dark
+    /// bodies so line-work keeps contrast.
     pub ink: String,
+    /// Pupil fill — always dark. Pupils are not line-work: a light "pupil"
+    /// on a dark body reads as a blank ghost orb (Ufuk's lab find).
+    pub pupil: String,
+    /// Light sclera backing drawn behind pupils on dark bodies only; None
+    /// on light bodies where the body itself is the backdrop.
+    pub sclera: Option<String>,
     pub name: &'static str,
 }
 
@@ -68,6 +75,8 @@ pub fn resolve(recipe: usize, h: f64) -> Colors {
             part: hsl(h + 28.0, 55.0, 62.0),
             blush: hsl(h + 8.0, 75.0, 72.0),
             ink: "#241f26".into(),
+            pupil: "#241f26".into(),
+            sclera: None,
         },
         // Pastel + complementary accent: parts pop against the body.
         1 => Colors {
@@ -78,6 +87,8 @@ pub fn resolve(recipe: usize, h: f64) -> Colors {
             part: hsl(h + 180.0, 52.0, 58.0),
             blush: hsl(h + 170.0, 60.0, 74.0),
             ink: "#241f26".into(),
+            pupil: "#241f26".into(),
+            sclera: None,
         },
         // Toy-saturated: candy chroma, white belly, darker same-hue outline.
         2 => Colors {
@@ -88,6 +99,8 @@ pub fn resolve(recipe: usize, h: f64) -> Colors {
             part: hsl(h + 40.0, 80.0, 55.0),
             blush: hsl(h - 12.0, 85.0, 70.0),
             ink: "#241f26".into(),
+            pupil: "#241f26".into(),
+            sclera: None,
         },
         // Dark gravitas band: deep body, luminous belly, ink flips light.
         3 => Colors {
@@ -98,6 +111,8 @@ pub fn resolve(recipe: usize, h: f64) -> Colors {
             part: hsl(h + 24.0, 45.0, 44.0),
             blush: format!("hsl({:.0} 60% 55% / 0.4)", (h + 14.0).rem_euclid(360.0)),
             ink: "#f4eee6".into(),
+            pupil: hsl(h, 32.0, 12.0),
+            sclera: Some("#f6f1e9".into()),
         },
         // Muted earthy: desaturated ugly-cute swamp band.
         4 => Colors {
@@ -108,6 +123,8 @@ pub fn resolve(recipe: usize, h: f64) -> Colors {
             part: hsl(h - 26.0, 30.0, 48.0),
             blush: hsl(h + 20.0, 35.0, 58.0),
             ink: "#2b2622".into(),
+            pupil: "#2b2622".into(),
+            sclera: None,
         },
         // Cream body + colorful parts: identity moves to the accents.
         _ => Colors {
@@ -118,6 +135,8 @@ pub fn resolve(recipe: usize, h: f64) -> Colors {
             part: hsl(h + 140.0, 62.0, 55.0),
             blush: hsl(h + 150.0, 70.0, 74.0),
             ink: "#241f26".into(),
+            pupil: "#241f26".into(),
+            sclera: None,
         },
     }
 }

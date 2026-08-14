@@ -229,7 +229,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             }
             d.push('Z');
             s.push_str(&format!(
-                "<path d='{d}' fill='{fill}' stroke='{}' stroke-width='2.5' stroke-linejoin='round'/>",
+                "<path d='{d}' fill='{fill}' stroke='{}' stroke-width='1.5' stroke-linejoin='round'/>",
                 colors.outline,
             ));
         }
@@ -243,7 +243,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
     d.push('Z');
     let clip_id = format!("g10c{}m{}", c.hue as u32, m as u8);
     s.push_str(&format!(
-        "<defs><clipPath id='{clip_id}'><path d='{d}'/></clipPath></defs><path d='{d}' fill='{}' stroke='{}' stroke-width='2.5'/>",
+        "<defs><clipPath id='{clip_id}'><path d='{d}'/></clipPath></defs><path d='{d}' fill='{}' stroke='{}' stroke-width='1.5'/>",
         colors.body, colors.outline,
     ));
     s.push_str(&format!("<g clip-path='url(#{clip_id})'>"));
@@ -336,7 +336,17 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         let f = face::frame(&shim, p.fx, face_cy);
 
         // Eyes, optionally mood-scaled around the eye line.
-        let eyes_svg = face::eyes_inked(c.eyes, &shim, p.fx, face_cy, 0.0, &colors.outline, &colors.ink);
+        let eyes_svg = face::eyes_inked(
+            c.eyes,
+            &shim,
+            p.fx,
+            face_cy,
+            0.0,
+            &colors.outline,
+            &colors.ink,
+            &colors.pupil,
+            colors.sclera.as_deref(),
+        );
         if (spec.eye_scale - 1.0).abs() > 0.01 {
             s.push_str(&format!(
                 "<g transform='translate({:.1} {:.1}) scale({:.3}) translate({:.1} {:.1})'>{eyes_svg}</g>",

@@ -205,6 +205,12 @@ pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -
 /// Ink-parameterized wrappers for grid 3: palettes may flip the face ink
 /// (dark bodies need light features), so the archetype functions gain color
 /// arguments while the grid-2 call sites keep their defaults.
+///
+/// Pupils are NOT ink: ink is line-work (mouth strokes, brows, closed-eye
+/// arcs) and flips light on dark bodies, but a light "pupil" reads as a
+/// blank ghost orb. Pupils stay dark everywhere; on dark bodies a light
+/// sclera disc drawn BEHIND each open-eye pupil provides the contrast the
+/// light body gives for free. Closed/arc eyes are line-work and keep ink.
 pub fn eyes_inked(
     kind: EyeKind,
     bp: &BodyParams,
@@ -213,8 +219,52 @@ pub fn eyes_inked(
     tilt: f64,
     accent: &str,
     ink: &str,
+    pupil: &str,
+    sclera: Option<&str>,
 ) -> String {
-    eyes(kind, bp, cx, cy, tilt, accent).replace("#241f26", ink)
+    let f = eye_frame(bp, cx, cy, tilt);
+    let mut s = String::new();
+    if let Some(sc) = sclera {
+        // Sclera per OPEN-eye archetype; HappyArc is a stroke, not a disc.
+        // Radii track each archetype's drawn pupil footprint plus a rim.
+        match kind {
+            EyeKind::DotShine => {
+                for x in [f.lx, f.rx] {
+                    s.push_str(&format!(
+                        "<circle cx='{x:.1}' cy='{:.1}' r='{:.1}' fill='{sc}'/>",
+                        f.y, f.r * 1.22,
+                    ));
+                }
+            }
+            EyeKind::HalfLid => {
+                for x in [f.lx, f.rx] {
+                    s.push_str(&format!(
+                        "<circle cx='{x:.1}' cy='{:.1}' r='{:.1}' fill='{sc}'/>",
+                        f.y, f.r * 1.18,
+                    ));
+                }
+            }
+            EyeKind::Uneven => {
+                s.push_str(&format!(
+                    "<circle cx='{:.1}' cy='{:.1}' r='{:.1}' fill='{sc}'/>",
+                    f.lx, f.y - tilt, f.r * 1.25 * 1.18,
+                ));
+                s.push_str(&format!(
+                    "<circle cx='{:.1}' cy='{:.1}' r='{:.1}' fill='{sc}'/>",
+                    f.rx, f.y + tilt + f.r * 0.15, f.r * 0.62 * 1.25,
+                ));
+            }
+            // Lidded draws its own white sclera; HappyArc is line-work.
+            EyeKind::Lidded | EyeKind::HappyArc => {}
+        }
+    }
+    // Line-work archetypes (closed arcs) take ink; pupil fills take pupil.
+    let body = match kind {
+        EyeKind::HappyArc => eyes(kind, bp, cx, cy, tilt, accent).replace("#241f26", ink),
+        _ => eyes(kind, bp, cx, cy, tilt, accent).replace("#241f26", pupil),
+    };
+    s.push_str(&body);
+    s
 }
 
 pub fn mouth_inked(

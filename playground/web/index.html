@@ -432,10 +432,12 @@ function pebblePath(poly, inset) {
 function hsl(h, s, l) { return `hsl(${(((h % 360) + 360) % 360) | 0} ${s}% ${l}%)`; }
 function resolveColors(recipe, h) {
   switch (+recipe) {
-    case 0: return { body: hsl(h,66,82), outline: hsl(h,42,38), belly: "rgba(255,255,255,0.45)", part: hsl(h+28,55,62), blush: hsl(h+8,75,72), ink: "#241f26" };
-    case 2: return { body: hsl(h,78,64), outline: hsl(h,62,30), belly: "rgba(255,255,255,0.6)", part: hsl(h+40,80,55), blush: hsl(h-12,85,70), ink: "#241f26" };
-    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: `hsl(${(((h+6)%360)+360)%360|0} 45% 42% / 0.55)`, part: hsl(h+24,45,44), blush: `hsl(${(((h+14)%360)+360)%360|0} 60% 55% / 0.4)`, ink: "#f4eee6" };
-    default: return { body: hsl(h,24,62), outline: hsl(h,26,30), belly: "rgba(250,246,235,0.5)", part: hsl(h-26,30,48), blush: hsl(h+20,35,58), ink: "#2b2622" };
+    // ink = LINE work (flips light on dark bodies); pupil = always dark;
+    // sclera = light backing behind pupils on dark bodies only.
+    case 0: return { body: hsl(h,66,82), outline: hsl(h,42,38), belly: "rgba(255,255,255,0.45)", part: hsl(h+28,55,62), blush: hsl(h+8,75,72), ink: "#241f26", pupil: "#241f26", sclera: null };
+    case 2: return { body: hsl(h,78,64), outline: hsl(h,62,30), belly: "rgba(255,255,255,0.6)", part: hsl(h+40,80,55), blush: hsl(h-12,85,70), ink: "#241f26", pupil: "#241f26", sclera: null };
+    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: `hsl(${(((h+6)%360)+360)%360|0} 45% 42% / 0.55)`, part: hsl(h+24,45,44), blush: `hsl(${(((h+14)%360)+360)%360|0} 60% 55% / 0.4)`, ink: "#f4eee6", pupil: hsl(h,32,12), sclera: "#f6f1e9" };
+    default: return { body: hsl(h,24,62), outline: hsl(h,26,30), belly: "rgba(250,246,235,0.5)", part: hsl(h-26,30,48), blush: hsl(h+20,35,58), ink: "#2b2622", pupil: "#2b2622", sclera: null };
   }
 }
 function tone(recipe, h, dir) {
@@ -499,27 +501,38 @@ function placeFace(outline) {
   }
   return best;
 }
-function drawEyes(kind, f, accent, ink) {
+// Pupils are always `pupil` (dark); `ink` is line-work only (closed arcs,
+// lid crease). On dark bodies `sclera` discs back each open eye — a light
+// "pupil" reads as a blank ghost orb (mirrors Rust face.rs).
+function drawEyes(kind, f, accent, ink, pupil, sclera) {
   let s = "";
   const eyes = [[f.lx], [f.rx]];
+  if (sclera) {
+    if (+kind === 0) for (const [x] of eyes) s += `<circle cx='${x}' cy='${f.y}' r='${f.r*1.22}' fill='${sclera}'/>`;
+    else if (+kind === 4) for (const [x] of eyes) s += `<circle cx='${x}' cy='${f.y}' r='${f.r*1.18}' fill='${sclera}'/>`;
+    else if (+kind === 3) {
+      s += `<circle cx='${f.lx}' cy='${f.y}' r='${f.r*1.25*1.18}' fill='${sclera}'/>`;
+      s += `<circle cx='${f.rx}' cy='${f.y+f.r*0.15}' r='${f.r*0.62*1.25}' fill='${sclera}'/>`;
+    }
+  }
   switch (+kind) {
     case 0:
-      for (const [x] of eyes) s += `<circle cx='${x}' cy='${f.y}' r='${f.r}' fill='${ink}'/><circle cx='${x+f.r*0.32}' cy='${f.y-f.r*0.35}' r='${f.r*0.3}' fill='white' opacity='0.9'/>`;
+      for (const [x] of eyes) s += `<circle cx='${x}' cy='${f.y}' r='${f.r}' fill='${pupil}'/><circle cx='${x+f.r*0.32}' cy='${f.y-f.r*0.35}' r='${f.r*0.3}' fill='white' opacity='0.9'/>`;
       break;
     case 1: {
       const rw = f.r*1.1, rh = f.r*1.25;
-      for (const [x] of eyes) s += `<ellipse cx='${x}' cy='${f.y}' rx='${rw}' ry='${rh}' fill='white' stroke='${accent}' stroke-width='2'/><circle cx='${x}' cy='${f.y+rh*0.08}' r='${f.r*0.78}' fill='${ink}'/><circle cx='${x+f.r*0.28}' cy='${f.y-f.r*0.2}' r='${f.r*0.22}' fill='white' opacity='0.9'/>`;
+      for (const [x] of eyes) s += `<ellipse cx='${x}' cy='${f.y}' rx='${rw}' ry='${rh}' fill='white' stroke='${accent}' stroke-width='2'/><circle cx='${x}' cy='${f.y+rh*0.08}' r='${f.r*0.78}' fill='${pupil}'/><circle cx='${x+f.r*0.28}' cy='${f.y-f.r*0.2}' r='${f.r*0.22}' fill='white' opacity='0.9'/>`;
       break;
     }
     case 2:
       for (const [x] of eyes) s += `<path d='M${x-f.r} ${f.y+f.r*0.2} Q${x} ${f.y-f.r*0.9} ${x+f.r} ${f.y+f.r*0.2}' stroke='${ink}' stroke-width='3.4' fill='none' stroke-linecap='round'/>`;
       break;
     case 3:
-      s += `<circle cx='${f.lx}' cy='${f.y}' r='${f.r*1.25}' fill='${ink}'/><circle cx='${f.lx+f.r*0.4}' cy='${f.y-f.r*0.44}' r='${f.r*0.36}' fill='white' opacity='0.9'/>`;
-      s += `<circle cx='${f.rx}' cy='${f.y+f.r*0.15}' r='${f.r*0.62}' fill='${ink}'/><circle cx='${f.rx+f.r*0.2}' cy='${f.y-f.r*0.08}' r='${f.r*0.18}' fill='white' opacity='0.9'/>`;
+      s += `<circle cx='${f.lx}' cy='${f.y}' r='${f.r*1.25}' fill='${pupil}'/><circle cx='${f.lx+f.r*0.4}' cy='${f.y-f.r*0.44}' r='${f.r*0.36}' fill='white' opacity='0.9'/>`;
+      s += `<circle cx='${f.rx}' cy='${f.y+f.r*0.15}' r='${f.r*0.62}' fill='${pupil}'/><circle cx='${f.rx+f.r*0.2}' cy='${f.y-f.r*0.08}' r='${f.r*0.18}' fill='white' opacity='0.9'/>`;
       break;
     default:
-      for (const [x] of eyes) s += `<path d='M${x-f.r*0.92} ${f.y-f.r*0.25} A${f.r} ${f.r} 0 1 0 ${x+f.r*0.92} ${f.y-f.r*0.25} Z' fill='${ink}'/><line x1='${x-f.r*1.05}' y1='${f.y-f.r*0.3}' x2='${x+f.r*1.05}' y2='${f.y-f.r*0.3}' stroke='${ink}' stroke-width='2.6' stroke-linecap='round'/>`;
+      for (const [x] of eyes) s += `<path d='M${x-f.r*0.92} ${f.y-f.r*0.25} A${f.r} ${f.r} 0 1 0 ${x+f.r*0.92} ${f.y-f.r*0.25} Z' fill='${pupil}'/><line x1='${x-f.r*1.05}' y1='${f.y-f.r*0.3}' x2='${x+f.r*1.05}' y2='${f.y-f.r*0.3}' stroke='${pupil}' stroke-width='2.6' stroke-linecap='round'/>`;
   }
   return s;
 }
@@ -628,12 +641,12 @@ function creatureSVG(k, moodName, size) {
   if (!merged) {
     for (const [ei, pts] of extOutlines) {
       const fill = +k.topology === 2 ? colors.part : (k.extFills[ei] === 0 ? tone(k.recipe, k.hue, 1) : k.extFills[ei] === 1 ? tone(k.recipe, k.hue, -1) : colors.body);
-      s += `<path d='${pts.map((p,i) => (i?'L':'M') + T(p).map(v=>v.toFixed(1)).join(' ')).join(' ')} Z' fill='${fill}' stroke='${colors.outline}' stroke-width='2.5' stroke-linejoin='round'/>`;
+      s += `<path d='${pts.map((p,i) => (i?'L':'M') + T(p).map(v=>v.toFixed(1)).join(' ')).join(' ')} Z' fill='${fill}' stroke='${colors.outline}' stroke-width='1.5' stroke-linejoin='round'/>`;
     }
   }
   const d = outline.map((p,i) => (i?'L':'M') + p.map(v=>v.toFixed(1)).join(' ')).join(' ') + ' Z';
   const clip = `lab${uid++}`;
-  s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='2.5'/>`;
+  s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='1.5'/>`;
   s += `<g clip-path='url(#${clip})'>`;
 
   const p = placeFace(outline);
@@ -677,7 +690,7 @@ function creatureSVG(k, moodName, size) {
     const f = { lx: p.fx - p.ipd, rx: p.fx + p.ipd, y: p.eyeY, r: p.r };
     s += `<ellipse cx='${f.lx - p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
     s += `<ellipse cx='${f.rx + p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
-    let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink);
+    let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink, colors.pupil, colors.sclera);
     if (Math.abs(spec.es - 1) > 0.01) eyesSvg = `<g transform='translate(${p.fx} ${f.y}) scale(${spec.es}) translate(${-p.fx} ${-f.y})'>${eyesSvg}</g>`;
     s += eyesSvg;
     for (const [x, side] of [[f.lx,-1],[f.rx,1]]) {
