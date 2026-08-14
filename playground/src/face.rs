@@ -171,10 +171,15 @@ pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -
             cx - r * 0.7, my - r * 0.1, my + r * 1.1, cx + r * 0.7, my - r * 0.1,
             cx - r * 0.35, my + r * 0.30, my + r * 0.62, cx + r * 0.35, my + r * 0.30,
         ),
+        // Snaggletooth hangs DOWN from the lip. Base endpoints evaluated ON
+        // the mouth quadratic (t=0.6 and t=0.8 of M(-0.75r,+0.15r)
+        // Q(0,+0.5r) (0.7r,-0.1r)), apex dropped below — the previous
+        // up-pointing triangle crossed the mouth line and read as a shard
+        // through the face (Ufuk's lab find).
         MouthKind::Snaggle => format!(
-            "<path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1}' stroke='{accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} Z' fill='white' stroke='{accent}' stroke-width='1.4'/>",
+            "<path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1}' stroke='{accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} Z' fill='white' stroke='{accent}' stroke-width='1.4' stroke-linejoin='round'/>",
             cx - r * 0.75, my + r * 0.15, my + r * 0.5, cx + r * 0.7, my - r * 0.1,
-            cx + r * 0.05, my + r * 0.34, cx + r * 0.55, my + r * 0.38, cx + r * 0.32, my - r * 0.42,
+            cx + r * 0.13, my + r * 0.23, cx + r * 0.42, my + r * 0.10, cx + r * 0.33, my + r * 0.55,
         ),
         MouthKind::Flat => format!(
             "<line x1='{:.1}' y1='{my:.1}' x2='{:.1}' y2='{my:.1}' stroke='{accent}' stroke-width='2.6' stroke-linecap='round'/>",
