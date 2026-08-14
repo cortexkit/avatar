@@ -2,475 +2,814 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>AVA creature lab — DNA &amp; mood knobs</title>
-<!--
-  Interactive twin of the Rust playground (design note 008): the same
-  mapping bands, ported to JS so knobs re-render in realtime. Seeds match
-  grid 5 (seed 1000 here IS #1000 on the committed sheet). Throwaway
-  exploration code like the rest of playground/ — the frozen contract
-  comes from the design notes, never from here.
--->
+<title>AVA creature lab — wild pipeline</title>
 <style>
   :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, "SF Mono", monospace; background: #1c1a20; color: #ddd; margin: 0; display: flex; min-height: 100vh; }
-  #controls { width: 340px; padding: 14px 16px 40px; background: #232028; overflow-y: auto; max-height: 100vh; flex-shrink: 0; }
-  #stage { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 18px; gap: 14px; }
-  h1 { font-size: 15px; margin: 2px 0 10px; color: #efe9e4; }
-  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #9a93a5; margin: 16px 0 6px; border-bottom: 1px solid #322e3a; padding-bottom: 3px; }
-  label { display: flex; align-items: center; gap: 8px; font-size: 11.5px; margin: 5px 0; color: #c8c2ce; }
-  label span.k { width: 78px; flex-shrink: 0; }
-  label span.v { width: 42px; text-align: right; color: #8f889a; font-variant-numeric: tabular-nums; }
-  input[type=range] { flex: 1; accent-color: #9a7fe8; height: 14px; }
-  select { flex: 1; background: #2c2833; color: #ddd; border: 1px solid #3a3544; border-radius: 5px; padding: 3px 6px; font: inherit; font-size: 11.5px; }
-  button { background: #2c2833; color: #ddd; border: 1px solid #3a3544; border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 11.5px; cursor: pointer; }
-  button:hover { background: #363040; }
-  button.mood { padding: 4px 8px; }
-  button.mood.active { background: #9a7fe8; color: #1c1a20; border-color: #9a7fe8; font-weight: 600; }
-  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
-  #seedbox { display: flex; gap: 6px; align-items: center; }
-  #seed { width: 90px; background: #2c2833; color: #ddd; border: 1px solid #3a3544; border-radius: 5px; padding: 4px 6px; font: inherit; }
-  #main { background: #efe9e4; border-radius: 14px; }
-  #sizes { display: flex; gap: 18px; align-items: flex-end; }
-  .sz { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #8f889a; }
-  .sz .box { background: #efe9e4; border-radius: 6px; overflow: hidden; }
-  #pins { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-  .pin { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: #8f889a; }
-  .pin .box { background: #efe9e4; border-radius: 8px; cursor: pointer; }
-  .hint { font-size: 10.5px; color: #6f6879; line-height: 1.45; margin-top: 4px; }
+  body { margin: 0; display: flex; font-family: ui-monospace, Menlo, monospace; background: #1c1a20; color: #d8d2de; }
+  #panel { width: 300px; padding: 14px; background: #232028; height: 100vh; overflow-y: auto; box-sizing: border-box; flex-shrink: 0; }
+  #stage { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 18px; }
+  h1 { font-size: 15px; margin: 0 0 10px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: #9a93a6; margin: 16px 0 6px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row label { width: 86px; font-size: 11px; color: #b6afc2; }
+  .row input[type=range] { flex: 1; accent-color: #a78bfa; }
+  .row output { width: 38px; font-size: 11px; text-align: right; color: #cfc8da; }
+  select, input[type=text] { background: #2e2a36; color: #ddd; border: 1px solid #443f52; border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; }
+  button { background: #2e2a36; color: #ddd; border: 1px solid #443f52; border-radius: 7px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  button:hover { background: #3a3546; }
+  button.active { background: #a78bfa; color: #1c1a20; border-color: #a78bfa; }
+  #moods { display: flex; flex-wrap: wrap; gap: 5px; }
+  #view { background: #efe9e4; border-radius: 14px; }
+  #sizes { display: flex; gap: 14px; margin-top: 14px; align-items: flex-end; }
+  .mini { text-align: center; font-size: 10px; color: #8f8a96; }
+  .mini > div { background: #efe9e4; border-radius: 6px; margin-bottom: 3px; }
+  #pins { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .pin { width: 84px; cursor: pointer; text-align: center; font-size: 10px; color: #8f8a96; }
+  .pin > div { background: #efe9e4; border-radius: 8px; }
+  .hint { font-size: 10px; color: #756e82; line-height: 1.5; margin: 6px 0; }
 </style>
 </head>
 <body>
-<div id="controls">
-  <h1>AVA creature lab</h1>
-  <div id="seedbox">
-    <input id="seed" type="number" value="1000">
-    <button id="load">decode seed</button>
-    <button id="rand">gacha 🎲</button>
+<div id="panel">
+  <h1>AVA creature lab — wild pipeline</h1>
+  <div class="row">
+    <input type="text" id="seed" value="4000" style="width:80px">
+    <button id="decodeBtn">decode</button>
+    <button id="gachaBtn">gacha 🎲</button>
   </div>
-  <p class="hint">Decode fills every knob below from the seed via the exact
-  note-009 bands (seed 1000 = grid-5 #1000). Knobs then override freely.</p>
+  <div class="hint">Seeds 4000+ match committed grid-10 cells. Knobs override the decoded genome; sliders marked ×1 are multipliers on decoded values.</div>
 
   <h2>Body</h2>
-  <label><span class="k">height</span><input type="range" id="height" min="120" max="215" step="1"><span class="v" id="height-v"></span></label>
-  <label><span class="k">width top</span><input type="range" id="w_top" min="40" max="100" step="1"><span class="v" id="w_top-v"></span></label>
-  <label><span class="k">width bottom</span><input type="range" id="w_bot" min="40" max="105" step="1"><span class="v" id="w_bot-v"></span></label>
-  <label><span class="k">square top</span><input type="range" id="n_top" min="1.6" max="6" step="0.05"><span class="v" id="n_top-v"></span></label>
-  <label><span class="k">square bottom</span><input type="range" id="n_bot" min="1.6" max="6" step="0.05"><span class="v" id="n_bot-v"></span></label>
-  <label><span class="k">waist</span><input type="range" id="waist" min="0.25" max="0.8" step="0.01"><span class="v" id="waist-v"></span></label>
+  <div class="row"><label>spokes</label><input type="range" id="spokes" min="5" max="13" step="1"><output></output></div>
+  <div class="row"><label>domestication</label><input type="range" id="dom" min="0" max="1" step="0.01"><output></output></div>
+  <div class="row"><label>radius ×</label><input type="range" id="radScale" min="0.5" max="1.5" step="0.01" value="1"><output></output></div>
+  <div class="row"><label>tension ×</label><input type="range" id="tenScale" min="0.4" max="1.6" step="0.01" value="1"><output></output></div>
+  <div class="row"><button id="rerollBody">reroll body</button></div>
 
-  <h2>Parts</h2>
-  <label><span class="k">top</span><select id="top">
-    <option value="0">none</option><option value="1">ears</option><option value="2">horns</option>
-    <option value="3">antennae</option><option value="4">tuft</option><option value="5">swoop</option>
-  </select></label>
-  <label><span class="k">bottom</span><select id="bottom">
-    <option value="0">none</option><option value="1">feet nubs</option><option value="2">duck feet</option><option value="3">tail</option>
-  </select></label>
+  <h2>Extremities</h2>
+  <div class="row"><label>pairs</label><input type="range" id="extCount" min="0" max="3" step="1"><output></output></div>
+  <div class="row"><label>length ×</label><input type="range" id="extLen" min="0.4" max="1.8" step="0.01" value="1"><output></output></div>
+  <div class="row"><label>width ×</label><input type="range" id="extWid" min="0.4" max="1.8" step="0.01" value="1"><output></output></div>
+  <div class="row"><label>curl ×</label><input type="range" id="extCurl" min="-1.6" max="1.6" step="0.01" value="1"><output></output></div>
+  <div class="row"><button id="rerollExt">reroll extremities</button></div>
 
-  <h2>Face</h2>
-  <label><span class="k">eyes</span><select id="eyes">
-    <option value="0">dot + shine</option><option value="1">lidded</option><option value="2">happy arc</option>
-    <option value="3">uneven (gremlin)</option><option value="4">half-lid (deadpan)</option>
-  </select></label>
-  <label><span class="k">eye scale</span><input type="range" id="eye_scale" min="0.7" max="1.35" step="0.01"><span class="v" id="eye_scale-v"></span></label>
-  <label><span class="k">mouth</span><select id="mouth">
-    <option value="0">arc smile</option><option value="1">cat ω</option><option value="2">open happy</option>
-    <option value="3">snaggle</option><option value="4">flat</option><option value="5">fangs</option>
-  </select></label>
+  <h2>Topology</h2>
+  <div class="row">
+    <select id="topology">
+      <option value="0">merged (SDF weld)</option>
+      <option value="1">layered — tone fills</option>
+      <option value="2">layered — accent fills</option>
+    </select>
+  </div>
+  <div class="row"><label>weld radius ×</label><input type="range" id="weld" min="0.3" max="2.5" step="0.01" value="1"><output></output></div>
 
-  <h2>Wonk</h2>
-  <label><span class="k">lean</span><input type="range" id="lean" min="-0.14" max="0.14" step="0.005"><span class="v" id="lean-v"></span></label>
-  <label><span class="k">side bias</span><input type="range" id="side_bias" min="-0.12" max="0.12" step="0.005"><span class="v" id="side_bias-v"></span></label>
-  <label><span class="k">eye tilt</span><input type="range" id="eye_tilt" min="-6" max="6" step="0.25"><span class="v" id="eye_tilt-v"></span></label>
+  <h2>Surface</h2>
+  <div class="row"><label>voronoi</label><input type="checkbox" id="voronoi"></div>
+  <div class="row"><button id="rerollSites">reroll pattern</button></div>
 
   <h2>Palette</h2>
-  <label><span class="k">recipe</span><select id="recipe">
-    <option value="0">pastel analogous</option><option value="1">pastel complement</option>
-    <option value="2">toy saturated</option><option value="3">dark gravitas</option>
-    <option value="4">muted earthy</option><option value="5">cream + accents</option>
-  </select></label>
-  <label><span class="k">hue</span><input type="range" id="hue" min="0" max="360" step="1"><span class="v" id="hue-v"></span></label>
+  <div class="row">
+    <select id="recipe">
+      <option value="0">pastel analogous</option>
+      <option value="2">toy saturated</option>
+      <option value="4">muted earthy</option>
+      <option value="3">dark gravitas</option>
+    </select>
+  </div>
+  <div class="row"><label>hue</label><input type="range" id="hue" min="0" max="360" step="1"><output></output></div>
+
+  <h2>Face</h2>
+  <div class="row">
+    <select id="eyes">
+      <option value="0">dot + shine</option>
+      <option value="1">lidded</option>
+      <option value="2">happy arc</option>
+      <option value="3">uneven (gremlin)</option>
+      <option value="4">half-lid (deadpan)</option>
+    </select>
+  </div>
+  <div class="row">
+    <select id="mouth">
+      <option value="0">arc</option>
+      <option value="1">cat ω</option>
+      <option value="2">open happy</option>
+      <option value="3">snaggle</option>
+      <option value="4">flat</option>
+      <option value="5">fangs</option>
+    </select>
+  </div>
 
   <h2>Mood</h2>
-  <div class="row" id="moods"></div>
+  <div id="moods"></div>
 
   <h2>Compare</h2>
-  <div class="row">
-    <button id="pinBtn">pin current →</button>
-    <button id="clearPins">clear pins</button>
-  </div>
-  <p class="hint">Pin a creature, tweak knobs, and judge uniqueness
-  side-by-side. Click a pin to restore its exact knob state.</p>
+  <div class="row"><button id="pinBtn">pin current →</button><button id="clearPins">clear pins</button></div>
 </div>
 
 <div id="stage">
-  <svg id="main" width="480" height="480" viewBox="0 0 240 240"></svg>
+  <div id="view"></div>
   <div id="sizes">
-    <div class="sz"><div class="box" style="width:64px;height:64px"><svg width="64" height="64" viewBox="0 0 240 240" class="mini"></svg></div>64</div>
-    <div class="sz"><div class="box" style="width:44px;height:44px"><svg width="44" height="44" viewBox="0 0 240 240" class="mini"></svg></div>44</div>
-    <div class="sz"><div class="box" style="width:28px;height:28px"><svg width="28" height="28" viewBox="0 0 240 240" class="mini"></svg></div>28</div>
+    <div class="mini"><div id="s64"></div>64</div>
+    <div class="mini"><div id="s44"></div>44</div>
+    <div class="mini"><div id="s28"></div>28</div>
   </div>
   <div id="pins"></div>
 </div>
 
 <script>
 "use strict";
-// ---------- splitmix64 bit source (exact port of genome.rs) ----------
-const MASK = (1n << 64n) - 1n;
+window.addEventListener("error", e => {
+  const v = document.getElementById("view");
+  if (v) v.innerHTML = `<pre style='color:#c33;font-size:11px;padding:12px;white-space:pre-wrap'>${e.message}\n${e.filename}:${e.lineno}</pre>`;
+});
+// ============ bit source (splitmix64 via BigInt — matches Rust) ============
 function bits(seed) {
-  let s = BigInt(seed) & MASK;
+  let s = BigInt(seed) & 0xFFFFFFFFFFFFFFFFn;
+  const M = 0xFFFFFFFFFFFFFFFFn;
   return {
     byte() {
-      s = (s + 0x9e3779b97f4a7c15n) & MASK;
+      s = (s + 0x9e3779b97f4a7c15n) & M;
       let z = s;
-      z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & MASK;
-      z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & MASK;
-      return Number(((z ^ (z >> 31n)) >> 24n) & 0xffn);
+      z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & M;
+      z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & M;
+      return Number(((z ^ (z >> 31n)) >> 24n) & 0xFFn);
     },
     lin(lo, hi) { return lo + (hi - lo) * (this.byte() / 255); },
   };
 }
 
-// ---------- decode per note-009 bands (exact port) ----------
-function decode(seed) {
+// ============ genome decode (mirrors grid-10 decode_full byte order) ============
+function decodeFull(seed) {
   const b = bits(seed);
-  b.byte(); // plan byte (mod 1, discarded in v2.0)
-  const bp = {
-    height: b.lin(140, 205), w_top: b.lin(50, 88), w_bot: b.lin(56, 96),
-    n_top: b.lin(2.0, 4.6), n_bot: b.lin(2.0, 5.0), waist: b.lin(0.40, 0.70),
-  };
+  const spokeCount = 5 + (b.byte() % 9);
+  b.byte(); // legacy mirror flag slot
+  const spokes = [];
+  for (let i = 0; i < spokeCount; i++) {
+    const base = (i / spokeCount) * Math.PI * 2;
+    const jitter = b.lin(-0.45, 0.45) * Math.PI * 2 / spokeCount;
+    spokes.push({ theta: base + jitter, r: b.lin(0.12, 1.35), tension: b.lin(0.4, 2.6) });
+  }
+  const extCount = b.byte() % 4;
+  const exts = [];
+  for (let i = 0; i < extCount; i++) {
+    exts.push({
+      theta: b.lin(Math.PI * 0.95, Math.PI * 2 * 1.02),
+      len: b.lin(0.35, 1.15),
+      width: b.lin(0.10, 0.30),
+      curl: b.lin(-1.3, 1.3),
+      taper: b.lin(0.15, 0.85),
+    });
+  }
+  const pairCount = 3 + (b.byte() % 4);
+  const sites = [];
+  for (let i = 0; i < pairCount; i++) {
+    const x = b.lin(0.04, 1.05), y = b.lin(-1.05, 1.05), shade = b.byte() % 3;
+    sites.push({ x, y, shade }, { x: -x, y, shade });
+  }
   const rsel = b.byte() % 8;
   const recipe = rsel <= 2 ? 0 : rsel <= 4 ? 2 : rsel <= 6 ? 4 : 3;
   const hue = (b.byte() / 255 + b.byte() / 65535) * 360;
-  const top = b.byte() % 6;
-  b.byte(); // side slot (skipped in v2.0 rendering)
-  const bottom = b.byte() % 4;
   const eyes = b.byte() % 5;
-  const eye_scale = b.lin(0.85, 1.18);
   const mouth = b.byte() % 6;
-  return { ...bp, recipe, hue, top, bottom, eyes, eye_scale, mouth,
-           lean: 0, side_bias: 0, eye_tilt: 0 };
+  const extFills = exts.map(() => b.byte() % 3);
+  const topology = b.byte() % 3;
+  const voronoi = (b.byte() % 5) < 2;
+  return { spokes, exts, extFills, sites, recipe, hue, eyes, mouth, topology, voronoi, dom: 0.32 };
 }
 
-// ---------- body profile (exact port of body.rs) ----------
-function smoother(t) { t = Math.min(1, Math.max(0, t)); return t*t*t*(t*(t*6-15)+10); }
-function profile(p, y) {
-  const halfH = p.height / 2;
-  const waistY = -halfH + p.waist * p.height;
-  const base = p.w_top + (p.w_bot - p.w_top) * smoother((y + halfH) / p.height);
-  let cap;
-  if (y <= waistY) {
-    const u = Math.min(1, Math.max(0, (waistY - y) / (waistY + halfH)));
-    cap = Math.pow(Math.max(0, 1 - Math.pow(u, p.n_top)), 1 / p.n_top);
-  } else {
-    const u = Math.min(1, Math.max(0, (y - waistY) / (halfH - waistY)));
-    cap = Math.pow(Math.max(0, 1 - Math.pow(u, p.n_bot)), 1 / p.n_bot);
+// ============ wild body (fold-mirror + Catmull-Rom + domestication) ============
+function preparedPoints(spokes, dom) {
+  const TAU = Math.PI * 2;
+  let half = spokes.map(s => {
+    let t = ((s.theta % TAU) + TAU) % TAU;
+    if (Math.cos(t) < 0) t = Math.PI - t;
+    return { theta: t, r: s.r, tension: s.tension };
+  });
+  const mirrored = half.map(s => ({ theta: Math.PI - s.theta, r: s.r, tension: s.tension }));
+  let all = half.concat(mirrored).map(s => ({ ...s, theta: ((s.theta % TAU) + TAU) % TAU }));
+  all.sort((a, b) => a.theta - b.theta);
+  const dedup = [];
+  for (const s of all) {
+    if (!dedup.length || Math.abs(s.theta - dedup[dedup.length - 1].theta) >= 1e-3) dedup.push(s);
   }
-  return base * cap;
+  const k = 0.55 * dom;
+  let radii = dedup.map(s => s.r);
+  for (let pass = 0; pass < 2; pass++) {
+    const prev = radii.slice();
+    const n = prev.length;
+    for (let i = 0; i < n; i++) {
+      radii[i] = prev[i] * (1 - k) + (prev[(i + n - 1) % n] + prev[(i + 1) % n]) * 0.5 * k;
+    }
+  }
+  const meanR = radii.reduce((a, b) => a + b, 0) / radii.length;
+  const floor = meanR * 0.55 * dom;
+  radii = radii.map(r => Math.max(r, floor));
+  return dedup.map((s, i) => ({
+    x: Math.cos(s.theta) * radii[i],
+    y: Math.sin(s.theta) * radii[i],
+    t: s.tension + (1 - s.tension) * dom,
+  }));
 }
-function outlinePath(p, cx, cy, steps, lean, sideBias) {
-  const total = 2 * steps, halfH = p.height / 2;
-  let d = "";
-  for (let i = 0; i <= total; i++) {
-    const y = -halfH + p.height * (i / total);
-    const x = profile(p, y) * (1 + sideBias) + y * lean;
-    d += (i ? "L" : "M") + (cx + x).toFixed(2) + " " + (cy + y).toFixed(2) + " ";
+
+function sampleOutline(spokes, dom) {
+  const pts = preparedPoints(spokes, dom);
+  const n = pts.length;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    const c1 = [p1.x + (p2.x - p0.x) / 6 * p1.t, p1.y + (p2.y - p0.y) / 6 * p1.t];
+    const c2 = [p2.x - (p3.x - p1.x) / 6 * p2.t, p2.y - (p3.y - p1.y) / 6 * p2.t];
+    for (let s = 0; s < 18; s++) {
+      const u = s / 18, v = 1 - u;
+      out.push([
+        v*v*v*p1.x + 3*v*v*u*c1[0] + 3*v*u*u*c2[0] + u*u*u*p2.x,
+        v*v*v*p1.y + 3*v*v*u*c1[1] + 3*v*u*u*c2[1] + u*u*u*p2.y,
+      ]);
+    }
   }
-  for (let i = total; i >= 0; i--) {
-    const y = -halfH + p.height * (i / total);
-    const x = -profile(p, y) * (1 - sideBias) + y * lean;
-    d += "L" + (cx + x).toFixed(2) + " " + (cy + y).toFixed(2) + " ";
+  // ground flatten
+  let minY = 1/0, maxY = -1/0;
+  for (const p of out) { minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); }
+  const ground = maxY - (maxY - minY) * 0.14;
+  const squash = 0.30 + 0.35 * dom;
+  for (const p of out) if (p[1] > ground) p[1] = ground + (p[1] - ground) * squash;
+  return out;
+}
+
+// ============ extremities ============
+function extremityOutline(e, ringR, meanR, mirror) {
+  const theta = mirror ? Math.PI - e.theta : e.theta;
+  const curl = mirror ? -e.curl : e.curl;
+  const root = [Math.cos(theta) * ringR * 0.85, Math.sin(theta) * ringR * 0.85];
+  const len = e.len * meanR, steps = 14;
+  const spine = [];
+  let dir = theta, p = root.slice();
+  for (let i = 0; i <= steps; i++) {
+    spine.push(p.slice());
+    if (i < steps) {
+      dir += curl / steps;
+      p = [p[0] + Math.cos(dir) * len / steps, p[1] + Math.sin(dir) * len / steps];
+    }
+  }
+  const baseW = e.width * meanR;
+  const left = [], right = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const w = baseW * (1 - (1 - e.taper) * t);
+    const [x, y] = spine[i];
+    let dx, dy;
+    if (i === 0) { dx = spine[1][0] - x; dy = spine[1][1] - y; }
+    else { dx = x - spine[i-1][0]; dy = y - spine[i-1][1]; }
+    const l = Math.hypot(dx, dy) || 1e-9;
+    left.push([x - dy/l*w, y + dx/l*w]);
+    right.push([x + dy/l*w, y - dx/l*w]);
+  }
+  const tip = spine[steps];
+  const pr = spine[steps-1];
+  const l = Math.hypot(tip[0]-pr[0], tip[1]-pr[1]) || 1e-9;
+  const tipW = baseW * e.taper;
+  return left.concat([[tip[0] + (tip[0]-pr[0])/l*tipW, tip[1] + (tip[1]-pr[1])/l*tipW]], right.reverse());
+}
+
+// ============ SDF merge (smooth-min + marching squares) ============
+function polySDF(pts, x, y) {
+  const n = pts.length;
+  let d2 = 1/0, inside = false;
+  for (let i = 0; i < n; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % n];
+    const ex = x2 - x1, ey = y2 - y1, px = x - x1, py = y - y1;
+    const t = Math.min(1, Math.max(0, (px*ex + py*ey) / (ex*ex + ey*ey || 1e-12)));
+    const qx = px - ex*t, qy = py - ey*t;
+    d2 = Math.min(d2, qx*qx + qy*qy);
+    if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y)) {
+      if (x1 + (y - y1) / (y2 - y1) * ex > x) inside = !inside;
+    }
+  }
+  return (inside ? -1 : 1) * Math.sqrt(d2);
+}
+function smin(a, b, k) {
+  if (k <= 0) return Math.min(a, b);
+  const h = Math.min(1, Math.max(0, 0.5 + 0.5 * (b - a) / k));
+  return b * (1 - h) + a * h - k * h * (1 - h);
+}
+function mergedOutline(shapes, bbox, weld, res) {
+  const [minX, minY, maxX, maxY] = bbox;
+  const pad = weld * 2 + 6;
+  const x0 = minX - pad, y0 = minY - pad, x1 = maxX + pad, y1 = maxY + pad;
+  const dx = (x1 - x0) / res, dy = (y1 - y0) / res;
+  const field = new Float64Array((res + 1) * (res + 1));
+  for (let j = 0; j <= res; j++) for (let i = 0; i <= res; i++) {
+    // Finite sentinel, NOT Infinity: smin computes a*h with h=0 for a huge
+    // first argument, and Infinity*0 is NaN — which silently poisons the
+    // whole field (Rust uses f64::MAX and never hits this).
+    let v = 1e30;
+    const x = x0 + i * dx, y = y0 + j * dy;
+    for (const sh of shapes) v = smin(v, polySDF(sh, x, y), weld);
+    field[j * (res + 1) + i] = v;
+  }
+  const at = (i, j) => field[j * (res + 1) + i];
+  const lerp = (a, b) => a / (a - b);
+  const segs = [];
+  for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
+    const v00 = at(i, j), v10 = at(i+1, j), v01 = at(i, j+1), v11 = at(i+1, j+1);
+    const gx = x0 + i * dx, gy = y0 + j * dy;
+    const pts = [];
+    if ((v00 < 0) !== (v10 < 0)) pts.push([gx + dx * lerp(v00, v10), gy]);
+    if ((v10 < 0) !== (v11 < 0)) pts.push([gx + dx, gy + dy * lerp(v10, v11)]);
+    if ((v01 < 0) !== (v11 < 0)) pts.push([gx + dx * lerp(v01, v11), gy + dy]);
+    if ((v00 < 0) !== (v01 < 0)) pts.push([gx, gy + dy * lerp(v00, v01)]);
+    if (pts.length === 2) segs.push([pts[0], pts[1]]);
+    else if (pts.length === 4) { segs.push([pts[0], pts[1]]); segs.push([pts[2], pts[3]]); }
+  }
+  const eps = Math.min(dx, dy) * 0.5;
+  const used = new Array(segs.length).fill(false);
+  let bestLoop = [];
+  for (let start = 0; start < segs.length; start++) {
+    if (used[start]) continue;
+    const chain = [segs[start][0], segs[start][1]];
+    used[start] = true;
+    for (;;) {
+      const tail = chain[chain.length - 1];
+      let ext = false;
+      for (let idx = 0; idx < segs.length; idx++) {
+        if (used[idx]) continue;
+        const s = segs[idx];
+        if (Math.hypot(s[0][0]-tail[0], s[0][1]-tail[1]) < eps) { chain.push(s[1]); used[idx] = true; ext = true; break; }
+        if (Math.hypot(s[1][0]-tail[0], s[1][1]-tail[1]) < eps) { chain.push(s[0]); used[idx] = true; ext = true; break; }
+      }
+      if (!ext) break;
+      const h = chain[0], t2 = chain[chain.length - 1];
+      if (Math.hypot(h[0]-t2[0], h[1]-t2[1]) < eps) break;
+    }
+    if (chain.length > bestLoop.length) bestLoop = chain;
+  }
+  // resample + smooth
+  const n = bestLoop.length;
+  if (n < 8) return bestLoop;
+  let total = 0;
+  const cum = [0];
+  for (let i = 0; i < n; i++) {
+    const a = bestLoop[i], b = bestLoop[(i + 1) % n];
+    total += Math.hypot(b[0]-a[0], b[1]-a[1]);
+    cum.push(total);
+  }
+  let out = [];
+  for (let k2 = 0; k2 < 160; k2++) {
+    const d = total * k2 / 160;
+    let idx = cum.findIndex(c => c > d) - 1;
+    if (idx < 0) idx = n - 1;
+    const segLen = (cum[idx+1] - cum[idx]) || 1e-12;
+    const t = (d - cum[idx]) / segLen;
+    const a = bestLoop[idx], b = bestLoop[(idx + 1) % n];
+    out.push([a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t]);
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    const prev = out.map(p => p.slice());
+    const m = prev.length;
+    for (let i = 0; i < m; i++) {
+      const a = prev[(i+m-1)%m], b2 = prev[i], c = prev[(i+1)%m];
+      out[i] = [b2[0]*0.5 + (a[0]+c[0])*0.25, b2[1]*0.5 + (a[1]+c[1])*0.25];
+    }
+  }
+  return out;
+}
+
+// ============ voronoi (half-plane clip + Lloyd + pebble path) ============
+function clipCell(sites, i, bbox) {
+  const [minX, minY, maxX, maxY] = bbox;
+  let poly = [[minX,minY],[maxX,minY],[maxX,maxY],[minX,maxY]];
+  const s = sites[i];
+  for (let j = 0; j < sites.length; j++) {
+    if (j === i) continue;
+    const o = sites[j];
+    const mx = (s.x + o.x)/2, my = (s.y + o.y)/2;
+    const nx = o.x - s.x, ny = o.y - s.y;
+    const next = [];
+    for (let k2 = 0; k2 < poly.length; k2++) {
+      const a = poly[k2], b = poly[(k2+1)%poly.length];
+      const da = (a[0]-mx)*nx + (a[1]-my)*ny, db = (b[0]-mx)*nx + (b[1]-my)*ny;
+      if (da <= 0) next.push(a);
+      if ((da <= 0) !== (db <= 0)) {
+        const t = da / (da - db);
+        next.push([a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t]);
+      }
+    }
+    poly = next;
+    if (!poly.length) break;
+  }
+  return poly;
+}
+function centroid(poly) {
+  let a2 = 0, cx = 0, cy = 0;
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const [x1,y1] = poly[i], [x2,y2] = poly[(i+1)%n];
+    const cr = x1*y2 - x2*y1;
+    a2 += cr; cx += (x1+x2)*cr; cy += (y1+y2)*cr;
+  }
+  if (Math.abs(a2) < 1e-9) {
+    return [poly.reduce((s,p)=>s+p[0],0)/n, poly.reduce((s,p)=>s+p[1],0)/n];
+  }
+  return [cx/(3*a2), cy/(3*a2)];
+}
+function pebblePath(poly, inset) {
+  const n = poly.length;
+  if (n < 3) return "";
+  const [cx, cy] = centroid(poly);
+  const pts = poly.map(([x,y]) => [cx + (x-cx)*inset, cy + (y-cy)*inset]);
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i+n-1)%n], cur = pts[i], next = pts[(i+1)%n];
+    const a = [cur[0]+(prev[0]-cur[0])*0.26, cur[1]+(prev[1]-cur[1])*0.26];
+    const b = [cur[0]+(next[0]-cur[0])*0.26, cur[1]+(next[1]-cur[1])*0.26];
+    d += (i ? `L${a[0].toFixed(1)} ${a[1].toFixed(1)} ` : `M${a[0].toFixed(1)} ${a[1].toFixed(1)} `);
+    d += `Q${cur[0].toFixed(1)} ${cur[1].toFixed(1)} ${b[0].toFixed(1)} ${b[1].toFixed(1)} `;
   }
   return d + "Z";
 }
 
-// ---------- palette (exact port of palette.rs) ----------
-function hsl(h, s, l) { return `hsl(${((h % 360) + 360) % 360 | 0} ${s}% ${l}%)`; }
+// ============ palette ============
+function hsl(h, s, l) { return `hsl(${(((h % 360) + 360) % 360) | 0} ${s}% ${l}%)`; }
 function resolveColors(recipe, h) {
-  switch (recipe) {
+  switch (+recipe) {
     case 0: return { body: hsl(h,66,82), outline: hsl(h,42,38), belly: "rgba(255,255,255,0.45)", part: hsl(h+28,55,62), blush: hsl(h+8,75,72), ink: "#241f26" };
-    case 1: return { body: hsl(h,62,83), outline: hsl(h,40,36), belly: "rgba(255,255,255,0.45)", part: hsl(h+180,52,58), blush: hsl(h+170,60,74), ink: "#241f26" };
     case 2: return { body: hsl(h,78,64), outline: hsl(h,62,30), belly: "rgba(255,255,255,0.6)", part: hsl(h+40,80,55), blush: hsl(h-12,85,70), ink: "#241f26" };
-    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: `hsl(${((h+6)%360+360)%360|0} 45% 42% / 0.55)`, part: hsl(h+24,45,44), blush: `hsl(${((h+14)%360+360)%360|0} 60% 55% / 0.4)`, ink: "#f4eee6" };
-    case 4: return { body: hsl(h,24,62), outline: hsl(h,26,30), belly: "rgba(250,246,235,0.5)", part: hsl(h-26,30,48), blush: hsl(h+20,35,58), ink: "#2b2622" };
-    default: return { body: hsl(h,28,88), outline: hsl(h,24,42), belly: "rgba(255,255,255,0.55)", part: hsl(h+140,62,55), blush: hsl(h+150,70,74), ink: "#241f26" };
+    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: `hsl(${(((h+6)%360)+360)%360|0} 45% 42% / 0.55)`, part: hsl(h+24,45,44), blush: `hsl(${(((h+14)%360)+360)%360|0} 60% 55% / 0.4)`, ink: "#f4eee6" };
+    default: return { body: hsl(h,24,62), outline: hsl(h,26,30), belly: "rgba(250,246,235,0.5)", part: hsl(h-26,30,48), blush: hsl(h+20,35,58), ink: "#2b2622" };
+  }
+}
+function tone(recipe, h, dir) {
+  const base = { 0: [66,82], 2: [78,64], 3: [38,26], 4: [24,62] }[+recipe] || [28,88];
+  const dl = dir > 0 ? 9 : -11;
+  return hsl(h, Math.max(12, base[0] - Math.abs(dl)*0.3), Math.min(94, Math.max(10, base[1] + dl)));
+}
+function mottle(recipe, h) {
+  const a = (hh,s,l,al) => `hsl(${(((hh%360)+360)%360)|0} ${s}% ${l}% / ${al})`;
+  switch (+recipe) {
+    case 0: return [a(h,70,90,0.55), a(h+10,55,68,0.35)];
+    case 2: return [a(h,82,76,0.5), a(h+14,70,52,0.35)];
+    case 3: return [a(h,42,38,0.5), a(h-8,40,18,0.45)];
+    default: return [a(h,28,72,0.5), a(h-12,26,50,0.35)];
   }
 }
 
-// ---------- parts (exact port of parts.rs) ----------
-function drawTop(part, p, cx, cy, fill) {
-  const halfH = p.height / 2, ay = -halfH * 0.82, aw = profile(p, ay);
+// ============ face (frame + eyes + mouths + mood layers) ============
+function extentAt(outline, y) {
+  const xs = [];
+  const n = outline.length;
+  for (let i = 0; i < n; i++) {
+    const [x1,y1] = outline[i], [x2,y2] = outline[(i+1)%n];
+    if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y)) xs.push(x1 + (y - y1)/(y2 - y1)*(x2 - x1));
+  }
+  if (xs.length < 2) return null;
+  xs.sort((a,b) => a-b);
+  let best = [xs[0], xs[xs.length-1]], bw = 0;
+  for (let i = 0; i+1 < xs.length; i++) if (xs[i+1]-xs[i] > bw) { bw = xs[i+1]-xs[i]; best = [xs[i], xs[i+1]]; }
+  return best;
+}
+function bboxOf(outline) {
+  let a=1/0,b=1/0,c=-1/0,d=-1/0;
+  for (const [x,y] of outline) { a=Math.min(a,x); b=Math.min(b,y); c=Math.max(c,x); d=Math.max(d,y); }
+  return [a,b,c,d];
+}
+function placeFace(outline) {
+  const [,minY,,maxY] = bboxOf(outline);
+  const h = maxY - minY;
+  let best = null;
+  for (let i = 0; i <= 14; i++) {
+    const y = minY + h * (0.24 + 0.028*i);
+    const e = extentAt(outline, y);
+    if (e && (!best || e[1]-e[0] > best.w)) best = { w: e[1]-e[0], y, fx: (e[0]+e[1])/2 };
+  }
+  if (!best) return null;
+  let r = Math.min(h * 0.085, best.w * 0.30) * 1.15;
+  for (let i = 0; i < 6; i++) {
+    const ex = best.w/2 * 0.44;
+    const e2 = extentAt(outline, best.y);
+    if (e2 && best.fx - ex - r > e2[0] && best.fx + ex + r < e2[1]) break;
+    r *= 0.85;
+  }
+  return { fx: best.fx, eyeY: best.y, halfW: best.w/2, r };
+}
+function drawEyes(kind, f, accent, ink) {
   let s = "";
-  if (part === 1) { // ears
-    for (const side of [-1, 1]) {
-      const bx = cx + side * aw * 0.62, by = cy + ay;
-      const len = p.height * 0.34, wid = p.w_top * 0.34;
-      s += `<path d='M${(bx-wid*0.5).toFixed(1)} ${by.toFixed(1)} C${(bx-wid*0.55).toFixed(1)} ${(by-len*0.75).toFixed(1)} ${(bx+side*wid*0.18).toFixed(1)} ${(by-len*1.05).toFixed(1)} ${(bx+side*wid*0.32).toFixed(1)} ${(by-len*0.98).toFixed(1)} C${(bx+side*wid*0.62).toFixed(1)} ${(by-len*0.55).toFixed(1)} ${(bx+wid*0.55).toFixed(1)} ${(by-len*0.1).toFixed(1)} ${(bx+wid*0.5).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
+  const eyes = [[f.lx], [f.rx]];
+  switch (+kind) {
+    case 0:
+      for (const [x] of eyes) s += `<circle cx='${x}' cy='${f.y}' r='${f.r}' fill='${ink}'/><circle cx='${x+f.r*0.32}' cy='${f.y-f.r*0.35}' r='${f.r*0.3}' fill='white' opacity='0.9'/>`;
+      break;
+    case 1: {
+      const rw = f.r*1.1, rh = f.r*1.25;
+      for (const [x] of eyes) s += `<ellipse cx='${x}' cy='${f.y}' rx='${rw}' ry='${rh}' fill='white' stroke='${accent}' stroke-width='2'/><circle cx='${x}' cy='${f.y+rh*0.08}' r='${f.r*0.78}' fill='${ink}'/><circle cx='${x+f.r*0.28}' cy='${f.y-f.r*0.2}' r='${f.r*0.22}' fill='white' opacity='0.9'/>`;
+      break;
     }
-  } else if (part === 2) { // horns
-    for (const side of [-1, 1]) {
-      const bx = cx + side * aw * 0.55, by = cy + ay;
-      const len = p.height * 0.30, wid = p.w_top * 0.22;
-      s += `<path d='M${(bx-side*wid).toFixed(1)} ${by.toFixed(1)} Q${(bx+side*wid*0.2).toFixed(1)} ${(by-len*0.55).toFixed(1)} ${(bx+side*wid*1.7).toFixed(1)} ${(by-len).toFixed(1)} Q${(bx+side*wid*0.9).toFixed(1)} ${(by-len*0.45).toFixed(1)} ${(bx+side*wid).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
-    }
-  } else if (part === 3) { // antennae
-    for (const side of [-1, 1]) {
-      const bx = cx + side * aw * 0.35, by = cy + ay;
-      const len = p.height * 0.36, ball = p.height * 0.05;
-      s += `<path d='M${bx.toFixed(1)} ${by.toFixed(1)} Q${(bx+side*len*0.35).toFixed(1)} ${(by-len*0.7).toFixed(1)} ${(bx+side*len*0.55).toFixed(1)} ${(by-len).toFixed(1)}' stroke='${fill}' stroke-width='${(ball*0.6).toFixed(1)}' fill='none' stroke-linecap='round'/><circle cx='${(bx+side*len*0.55).toFixed(1)}' cy='${(by-len).toFixed(1)}' r='${ball.toFixed(1)}' fill='${fill}'/>`;
-    }
-  } else if (part === 4) { // tuft
-    const by = cy + ay;
-    for (const [dx, len, leanT] of [[-0.3, 0.2, -0.4], [0, 0.3, 0.06], [0.28, 0.17, 0.45]]) {
-      const bx = cx + dx * aw, l = p.height * len, w = p.w_top * 0.2;
-      s += `<path d='M${(bx-w).toFixed(1)} ${by.toFixed(1)} Q${(bx-w*0.2+leanT*l).toFixed(1)} ${(by-l*0.9).toFixed(1)} ${(bx+leanT*l*1.3).toFixed(1)} ${(by-l).toFixed(1)} Q${(bx+w*0.4+leanT*l*0.4).toFixed(1)} ${(by-l*0.5).toFixed(1)} ${(bx+w).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
-    }
-  } else if (part === 5) { // swoop
-    const bx = cx + aw * 0.38, by = cy + ay;
-    const len = p.height * 0.3, wid = p.w_top * 0.42;
-    s += `<path d='M${(bx-wid).toFixed(1)} ${by.toFixed(1)} C${(bx-wid*0.9).toFixed(1)} ${(by-len*1.1).toFixed(1)} ${(bx+wid*0.5).toFixed(1)} ${(by-len*1.15).toFixed(1)} ${(bx+wid*0.7).toFixed(1)} ${(by-len*0.6).toFixed(1)} C${(bx+wid*0.85).toFixed(1)} ${(by-len*0.2).toFixed(1)} ${(bx+wid).toFixed(1)} ${(by-len*0.05).toFixed(1)} ${(bx+wid).toFixed(1)} ${by.toFixed(1)} Z' fill='${fill}'/>`;
+    case 2:
+      for (const [x] of eyes) s += `<path d='M${x-f.r} ${f.y+f.r*0.2} Q${x} ${f.y-f.r*0.9} ${x+f.r} ${f.y+f.r*0.2}' stroke='${ink}' stroke-width='3.4' fill='none' stroke-linecap='round'/>`;
+      break;
+    case 3:
+      s += `<circle cx='${f.lx}' cy='${f.y}' r='${f.r*1.25}' fill='${ink}'/><circle cx='${f.lx+f.r*0.4}' cy='${f.y-f.r*0.44}' r='${f.r*0.36}' fill='white' opacity='0.9'/>`;
+      s += `<circle cx='${f.rx}' cy='${f.y+f.r*0.15}' r='${f.r*0.62}' fill='${ink}'/><circle cx='${f.rx+f.r*0.2}' cy='${f.y-f.r*0.08}' r='${f.r*0.18}' fill='white' opacity='0.9'/>`;
+      break;
+    default:
+      for (const [x] of eyes) s += `<path d='M${x-f.r*0.92} ${f.y-f.r*0.25} A${f.r} ${f.r} 0 1 0 ${x+f.r*0.92} ${f.y-f.r*0.25} Z' fill='${ink}'/><line x1='${x-f.r*1.05}' y1='${f.y-f.r*0.3}' x2='${x+f.r*1.05}' y2='${f.y-f.r*0.3}' stroke='${ink}' stroke-width='2.6' stroke-linecap='round'/>`;
   }
   return s;
 }
-function drawBottom(part, p, cx, cy, fill, outline) {
-  const halfH = p.height / 2, by = cy + halfH, w = profile(p, halfH * 0.7);
-  let s = "";
-  if (part === 1) { // feet nubs
-    for (const side of [-1, 1]) {
-      s += `<ellipse cx='${(cx+side*w*0.5).toFixed(1)}' cy='${(by-2).toFixed(1)}' rx='${(w*0.22).toFixed(1)}' ry='${(p.height*0.06).toFixed(1)}' fill='${fill}' stroke='${outline}' stroke-width='2.4'/>`;
-    }
-  } else if (part === 2) { // duck feet
-    for (const side of [-1, 1]) {
-      const fx = cx + side * w * 0.55, fw = w * 0.34, fh = p.height * 0.07;
-      s += `<path d='M${(fx-fw*0.4).toFixed(1)} ${(by-3).toFixed(1)} L${(fx+side*fw).toFixed(1)} ${(by+fh*0.4).toFixed(1)} Q${(fx+side*fw*0.3).toFixed(1)} ${(by+fh).toFixed(1)} ${(fx-fw*0.5).toFixed(1)} ${(by+fh*0.5).toFixed(1)} Z' fill='${fill}' stroke='${outline}' stroke-width='2'/>`;
-    }
-  } else if (part === 3) { // tail
-    const tx = cx + w * 0.88, ty = by - p.height * 0.08, l = p.height * 0.4;
-    s += `<path d='M${tx.toFixed(1)} ${ty.toFixed(1)} Q${(tx+l*0.55).toFixed(1)} ${(ty+l*0.05).toFixed(1)} ${(tx+l*0.52).toFixed(1)} ${(ty-l*0.6).toFixed(1)} Q${(tx+l*0.5).toFixed(1)} ${(ty-l*1.05).toFixed(1)} ${(tx+l*0.95).toFixed(1)} ${(ty-l*1.35).toFixed(1)}' stroke='${fill}' stroke-width='${(p.height*0.05).toFixed(1)}' fill='none' stroke-linecap='round'/>`;
-  }
-  return s;
-}
-
-// ---------- face (exact port of face.rs) ----------
-function eyeFrame(p, cx, cy, tilt) {
-  const ey = -p.height * 0.08, w = profile(p, ey);
-  return { lx: cx - w * 0.42, rx: cx + w * 0.42, y: cy + ey + tilt, r: Math.min(p.height * 0.085, w * 0.3) };
-}
-function drawEyes(kind, p, cx, cy, tilt, accent, ink) {
-  const f = eyeFrame(p, cx, cy, 0);
-  let s = "";
-  const pair = [[f.lx, -tilt], [f.rx, tilt]];
-  if (kind === 0) {
-    for (const [x, dy] of pair) {
-      const y = f.y + dy;
-      s += `<circle cx='${x.toFixed(1)}' cy='${y.toFixed(1)}' r='${f.r.toFixed(1)}' fill='${ink}'/><circle cx='${(x+f.r*0.32).toFixed(1)}' cy='${(y-f.r*0.35).toFixed(1)}' r='${(f.r*0.3).toFixed(1)}' fill='white' opacity='0.9'/>`;
-    }
-  } else if (kind === 1) {
-    for (const [x, dy] of pair) {
-      const y = f.y + dy, rw = f.r * 1.1, rh = f.r * 1.25;
-      s += `<ellipse cx='${x.toFixed(1)}' cy='${y.toFixed(1)}' rx='${rw.toFixed(1)}' ry='${rh.toFixed(1)}' fill='white' stroke='${accent}' stroke-width='2'/><circle cx='${x.toFixed(1)}' cy='${(y+rh*0.08).toFixed(1)}' r='${(f.r*0.78).toFixed(1)}' fill='${ink}'/><circle cx='${(x+f.r*0.28).toFixed(1)}' cy='${(y-f.r*0.2).toFixed(1)}' r='${(f.r*0.22).toFixed(1)}' fill='white' opacity='0.9'/><path d='M${(x-rw).toFixed(1)} ${(y-rh*0.1).toFixed(1)} A${rw.toFixed(1)} ${rh.toFixed(1)} 0 0 1 ${(x+rw).toFixed(1)} ${(y-rh*0.1).toFixed(1)} L${(x+rw).toFixed(1)} ${(y-rh*0.28).toFixed(1)} A${rw.toFixed(1)} ${(rh*0.9).toFixed(1)} 0 0 0 ${(x-rw).toFixed(1)} ${(y-rh*0.28).toFixed(1)} Z' fill='${accent}' opacity='0.5'/>`;
-    }
-  } else if (kind === 2) {
-    for (const [x, dy] of pair) {
-      const y = f.y + dy;
-      s += `<path d='M${(x-f.r).toFixed(1)} ${(y+f.r*0.2).toFixed(1)} Q${x.toFixed(1)} ${(y-f.r*0.9).toFixed(1)} ${(x+f.r).toFixed(1)} ${(y+f.r*0.2).toFixed(1)}' stroke='${ink}' stroke-width='3.4' fill='none' stroke-linecap='round'/>`;
-    }
-  } else if (kind === 3) {
-    s += `<circle cx='${f.lx.toFixed(1)}' cy='${(f.y-tilt).toFixed(1)}' r='${(f.r*1.25).toFixed(1)}' fill='${ink}'/><circle cx='${(f.lx+f.r*0.4).toFixed(1)}' cy='${(f.y-tilt-f.r*0.44).toFixed(1)}' r='${(f.r*0.36).toFixed(1)}' fill='white' opacity='0.9'/>`;
-    s += `<circle cx='${f.rx.toFixed(1)}' cy='${(f.y+tilt+f.r*0.15).toFixed(1)}' r='${(f.r*0.62).toFixed(1)}' fill='${ink}'/><circle cx='${(f.rx+f.r*0.2).toFixed(1)}' cy='${(f.y+tilt-f.r*0.08).toFixed(1)}' r='${(f.r*0.18).toFixed(1)}' fill='white' opacity='0.9'/>`;
-  } else {
-    for (const [x, dy] of pair) {
-      const y = f.y + dy;
-      s += `<path d='M${(x-f.r*0.92).toFixed(1)} ${(y-f.r*0.25).toFixed(1)} A${f.r.toFixed(1)} ${f.r.toFixed(1)} 0 1 0 ${(x+f.r*0.92).toFixed(1)} ${(y-f.r*0.25).toFixed(1)} Z' fill='${ink}'/><line x1='${(x-f.r*1.05).toFixed(1)}' y1='${(y-f.r*0.3).toFixed(1)}' x2='${(x+f.r*1.05).toFixed(1)}' y2='${(y-f.r*0.3).toFixed(1)}' stroke='${ink}' stroke-width='2.6' stroke-linecap='round'/>`;
-    }
-  }
-  return s;
-}
-function drawMouth(kind, p, cx, cy, accent, ink) {
-  const ey = -p.height * 0.08;
-  const r = Math.min(p.height * 0.085, profile(p, ey) * 0.3);
-  const my = cy + ey + p.height * 0.15;
-  switch (kind) {
-    case 0: return `<path d='M${(cx-r*0.5).toFixed(1)} ${my.toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.45).toFixed(1)} ${(cx+r*0.5).toFixed(1)} ${my.toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
-    case 1: return `<path d='M${(cx-r*0.8).toFixed(1)} ${my.toFixed(1)} Q${(cx-r*0.4).toFixed(1)} ${(my+r*0.55).toFixed(1)} ${cx.toFixed(1)} ${my.toFixed(1)} Q${(cx+r*0.4).toFixed(1)} ${(my+r*0.55).toFixed(1)} ${(cx+r*0.8).toFixed(1)} ${my.toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
-    case 2: return `<path d='M${(cx-r*0.7).toFixed(1)} ${(my-r*0.1).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*1.1).toFixed(1)} ${(cx+r*0.7).toFixed(1)} ${(my-r*0.1).toFixed(1)} Z' fill='#4a2f33' stroke='${accent}' stroke-width='2'/><path d='M${(cx-r*0.35).toFixed(1)} ${(my+r*0.52).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.95).toFixed(1)} ${(cx+r*0.35).toFixed(1)} ${(my+r*0.52).toFixed(1)}' fill='#e88a93'/>`;
-    case 3: return `<path d='M${(cx-r*0.75).toFixed(1)} ${(my+r*0.15).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.5).toFixed(1)} ${(cx+r*0.7).toFixed(1)} ${(my-r*0.1).toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${(cx+r*0.05).toFixed(1)} ${(my+r*0.34).toFixed(1)} L${(cx+r*0.55).toFixed(1)} ${(my+r*0.38).toFixed(1)} L${(cx+r*0.32).toFixed(1)} ${(my-r*0.42).toFixed(1)} Z' fill='white' stroke='${accent}' stroke-width='1.4'/>`;
-    case 4: return `<line x1='${(cx-r*0.55).toFixed(1)}' y1='${my.toFixed(1)}' x2='${(cx+r*0.55).toFixed(1)}' y2='${my.toFixed(1)}' stroke='${accent}' stroke-width='2.6' stroke-linecap='round'/>`;
-    case 5: return `<path d='M${(cx-r*0.6).toFixed(1)} ${my.toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.5).toFixed(1)} ${(cx+r*0.6).toFixed(1)} ${my.toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${(cx-r*0.45).toFixed(1)} ${(my+r*0.12).toFixed(1)} L${(cx-r*0.15).toFixed(1)} ${(my+r*0.14).toFixed(1)} L${(cx-r*0.3).toFixed(1)} ${(my+r*0.62).toFixed(1)} Z' fill='white'/><path d='M${(cx+r*0.15).toFixed(1)} ${(my+r*0.14).toFixed(1)} L${(cx+r*0.45).toFixed(1)} ${(my+r*0.12).toFixed(1)} L${(cx+r*0.3).toFixed(1)} ${(my+r*0.62).toFixed(1)} Z' fill='white'/>`;
-    case 6: return `<ellipse cx='${cx.toFixed(1)}' cy='${(my+r*0.2).toFixed(1)}' rx='${(r*0.3).toFixed(1)}' ry='${(r*0.38).toFixed(1)}' fill='#4a2f33' stroke='${accent}' stroke-width='1.8'/>`;
-    case 7: return `<path d='M${(cx-r*0.55).toFixed(1)} ${(my+r*0.35).toFixed(1)} Q${cx.toFixed(1)} ${(my-r*0.25).toFixed(1)} ${(cx+r*0.55).toFixed(1)} ${(my+r*0.35).toFixed(1)}' stroke='${accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
-    case 8: return `<path d='M${(cx-r*0.75).toFixed(1)} ${(my-r*0.05).toFixed(1)} Q${cx.toFixed(1)} ${(my+r*0.75).toFixed(1)} ${(cx+r*0.75).toFixed(1)} ${(my-r*0.05).toFixed(1)}' stroke='${accent}' stroke-width='2.6' fill='none' stroke-linecap='round'/>`;
-    default: return "";
+function drawMouth(kind, fx, my, r, accent, ink) {
+  switch (+kind) {
+    case 0: return `<path d='M${fx-r*0.5} ${my} Q${fx} ${my+r*0.45} ${fx+r*0.5} ${my}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
+    case 1: return `<path d='M${fx-r*0.8} ${my} Q${fx-r*0.4} ${my+r*0.55} ${fx} ${my} Q${fx+r*0.4} ${my+r*0.55} ${fx+r*0.8} ${my}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
+    case 2: return `<path d='M${fx-r*0.7} ${my-r*0.1} Q${fx} ${my+r*1.1} ${fx+r*0.7} ${my-r*0.1} Z' fill='#4a2f33' stroke='${accent}' stroke-width='2'/><path d='M${fx-r*0.35} ${my+r*0.52} Q${fx} ${my+r*0.95} ${fx+r*0.35} ${my+r*0.52}' fill='#e88a93'/>`;
+    case 3: return `<path d='M${fx-r*0.75} ${my+r*0.15} Q${fx} ${my+r*0.5} ${fx+r*0.7} ${my-r*0.1}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${fx+r*0.05} ${my+r*0.34} L${fx+r*0.55} ${my+r*0.38} L${fx+r*0.32} ${my-r*0.42} Z' fill='white' stroke='${ink}' stroke-width='1.4'/>`;
+    case 4: return `<line x1='${fx-r*0.55}' y1='${my}' x2='${fx+r*0.55}' y2='${my}' stroke='${ink}' stroke-width='2.6' stroke-linecap='round'/>`;
+    case 5: return `<path d='M${fx-r*0.6} ${my} Q${fx} ${my+r*0.5} ${fx+r*0.6} ${my}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${fx-r*0.45} ${my+r*0.12} L${fx-r*0.15} ${my+r*0.14} L${fx-r*0.3} ${my+r*0.62} Z' fill='white'/><path d='M${fx+r*0.15} ${my+r*0.14} L${fx+r*0.45} ${my+r*0.12} L${fx+r*0.3} ${my+r*0.62} Z' fill='white'/>`;
+    case 6: return `<ellipse cx='${fx}' cy='${my+r*0.2}' rx='${r*0.3}' ry='${r*0.38}' fill='#4a2f33' stroke='${ink}' stroke-width='1.8'/>`;
+    default: return `<path d='M${fx-r*0.55} ${my+r*0.35} Q${fx} ${my-r*0.25} ${fx+r*0.55} ${my+r*0.35}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
   }
 }
-function drawBlush(p, cx, cy, color) {
-  const ey = -p.height * 0.08, w = profile(p, ey);
-  const bx = w * 0.62, by = cy + ey + p.height * 0.09, rw = w * 0.14, rh = rw * 0.62;
-  return `<ellipse cx='${(cx-bx).toFixed(1)}' cy='${by.toFixed(1)}' rx='${rw.toFixed(1)}' ry='${rh.toFixed(1)}' fill='${color}' opacity='0.8'/><ellipse cx='${(cx+bx).toFixed(1)}' cy='${by.toFixed(1)}' rx='${rw.toFixed(1)}' ry='${rh.toFixed(1)}' fill='${color}' opacity='0.8'/>`;
-}
-function drawBelly(p, cx, cy, color) {
-  const halfH = p.height / 2, top = -halfH * 0.05, bot = halfH * 0.92, steps = 24;
-  let d = "";
-  for (let i = 0; i <= steps; i++) {
-    const y = top + (bot - top) * (i / steps), x = profile(p, y) * 0.58;
-    d += (i ? "L" : "M") + (cx + x).toFixed(1) + " " + (cy + y).toFixed(1) + " ";
-  }
-  for (let i = steps; i >= 0; i--) {
-    const y = top + (bot - top) * (i / steps), x = profile(p, y) * 0.58;
-    d += "L" + (cx - x).toFixed(1) + " " + (cy + y).toFixed(1) + " ";
-  }
-  return `<path d='${d}Z' fill='${color}'/>`;
-}
-
-// ---------- mood morphs (exact port of mood.rs) ----------
-const MOODS = ["neutral", "working", "happy", "waiting", "blocked", "sad", "sleepy"];
+const MOODS = ["neutral","working","happy","waiting","blocked","sad","sleepy"];
 function moodSpec(m) {
-  switch (m) {
-    case "working": return { lid: 0.22, lidAngle: 4, eyeScale: 0.96, squint: 0.1, brows: "focus", mouth: "pressed", adjunct: "sweat" };
-    case "happy":   return { lid: 0, lidAngle: 0, eyeScale: 1.04, squint: 0.45, brows: null, mouth: "grin", adjunct: null };
-    case "waiting": return { lid: 0, lidAngle: 0, eyeScale: 1.16, squint: 0, brows: "raised", mouth: "o", adjunct: null };
-    case "blocked": return { lid: 0.38, lidAngle: 14, eyeScale: 1.0, squint: 0, brows: "knit", mouth: "pressed", adjunct: null };
-    case "sad":     return { lid: 0.3, lidAngle: -12, eyeScale: 0.97, squint: 0, brows: "worry", mouth: "down", adjunct: null };
-    case "sleepy":  return { lid: 0.72, lidAngle: 0, eyeScale: 1.0, squint: 0, brows: null, mouth: "o", adjunct: "zz" };
-    default:        return { lid: 0, lidAngle: 0, eyeScale: 1.0, squint: 0, brows: null, mouth: "keep", adjunct: null };
-  }
+  return {
+    neutral: { lid:0, ang:0, es:1, sq:0, brows:0, mouth:0, adj:0 },
+    working: { lid:0.22, ang:4, es:0.96, sq:0.1, brows:1, mouth:3, adj:2 },
+    happy:   { lid:0, ang:0, es:1.04, sq:0.45, brows:0, mouth:1, adj:0 },
+    waiting: { lid:0, ang:0, es:1.16, sq:0, brows:2, mouth:2, adj:0 },
+    blocked: { lid:0.38, ang:14, es:1, sq:0, brows:3, mouth:3, adj:0 },
+    sad:     { lid:0.3, ang:-12, es:0.97, sq:0, brows:4, mouth:4, adj:0 },
+    sleepy:  { lid:0.72, ang:0, es:1, sq:0, brows:0, mouth:2, adj:1 },
+  }[m];
 }
 function lidOverlay(x, y, r, lid, angle, bodyFill, outline) {
   if (lid <= 0.01) return "";
-  const cover = r * 1.35, bottom = y - r + 2 * r * lid;
-  return `<g transform='rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})'><rect x='${(x-cover).toFixed(1)}' y='${(bottom-2.6*r).toFixed(1)}' width='${(cover*2).toFixed(1)}' height='${(2.6*r).toFixed(1)}' fill='${bodyFill}'/><line x1='${(x-cover*0.82).toFixed(1)}' y1='${bottom.toFixed(1)}' x2='${(x+cover*0.82).toFixed(1)}' y2='${bottom.toFixed(1)}' stroke='${outline}' stroke-width='2.2' stroke-linecap='round'/></g>`;
+  const cover = r * 1.35, bottom = y - r + 2*r*lid;
+  return `<g transform='rotate(${angle} ${x} ${y})'><rect x='${x-cover}' y='${bottom-2.6*r}' width='${cover*2}' height='${2.6*r}' fill='${bodyFill}'/><line x1='${x-cover*0.82}' y1='${bottom}' x2='${x+cover*0.82}' y2='${bottom}' stroke='${outline}' stroke-width='2.2' stroke-linecap='round'/></g>`;
 }
-function squintOverlay(x, y, r, squint, bodyFill, outline) {
-  if (squint <= 0.01) return "";
-  const top = y + r - 2 * r * squint;
-  return `<path d='M${(x-r*1.2).toFixed(1)} ${(y+r*1.3).toFixed(1)} Q${x.toFixed(1)} ${(top-r*0.4).toFixed(1)} ${(x+r*1.2).toFixed(1)} ${(y+r*1.3).toFixed(1)} L${(x+r*1.2).toFixed(1)} ${(y+r*1.5).toFixed(1)} L${(x-r*1.2).toFixed(1)} ${(y+r*1.5).toFixed(1)} Z' fill='${bodyFill}'/><path d='M${(x-r*1.05).toFixed(1)} ${(y+r*1.05).toFixed(1)} Q${x.toFixed(1)} ${top.toFixed(1)} ${(x+r*1.05).toFixed(1)} ${(y+r*1.05).toFixed(1)}' stroke='${outline}' stroke-width='2.2' fill='none' stroke-linecap='round'/>`;
+function squintOverlay(x, y, r, sq, bodyFill, outline) {
+  if (sq <= 0.01) return "";
+  const top = y + r - 2*r*sq;
+  return `<path d='M${x-r*1.2} ${y+r*1.3} Q${x} ${top-r*0.4} ${x+r*1.2} ${y+r*1.3} L${x+r*1.2} ${y+r*1.5} L${x-r*1.2} ${y+r*1.5} Z' fill='${bodyFill}'/><path d='M${x-r*1.05} ${y+r*1.05} Q${x} ${top} ${x+r*1.05} ${y+r*1.05}' stroke='${outline}' stroke-width='2.2' fill='none' stroke-linecap='round'/>`;
 }
 function drawBrow(kind, x, y, r, side, ink) {
   if (!kind) return "";
-  const by = y - r * 1.7, w = r * 0.95;
-  const t = { focus: [0.1, 0, 0], raised: [-0.15, -0.05, -0.5], knit: [0.55, -0.15, 0.1], worry: [-0.55, 0.15, 0] }[kind];
-  const [innerDy, outerDy, lift] = [t[0] * r, t[1] * r, t[2] * r];
-  return `<line x1='${(x-side*w).toFixed(1)}' y1='${(by+innerDy+lift).toFixed(1)}' x2='${(x+side*w).toFixed(1)}' y2='${(by+outerDy+lift).toFixed(1)}' stroke='${ink}' stroke-width='3.2' stroke-linecap='round'/>`;
+  const by = y - r*1.7, w = r*0.95;
+  const cfg = { 1: [0.1, 0, 0], 2: [-0.15, -0.05, -0.5], 3: [0.55, -0.15, 0.1], 4: [-0.55, 0.15, 0] }[kind];
+  const [innerDy, outerDy, lift] = [cfg[0]*r, cfg[1]*r, cfg[2]*r];
+  return `<line x1='${x - side*w}' y1='${by+innerDy+lift}' x2='${x + side*w}' y2='${by+outerDy+lift}' stroke='${ink}' stroke-width='3.2' stroke-linecap='round'/>`;
 }
-function drawAdjunct(kind, cx, topY, ink) {
-  if (kind === "zz") return `<text x='${(cx+58).toFixed(1)}' y='${(topY+14).toFixed(1)}' font-family='monospace' font-weight='bold' font-size='19' fill='${ink}' opacity='0.75'>z</text><text x='${(cx+74).toFixed(1)}' y='${(topY-2).toFixed(1)}' font-family='monospace' font-weight='bold' font-size='24' fill='${ink}' opacity='0.55'>Z</text>`;
-  if (kind === "sweat") return `<path d='M${(cx+46).toFixed(1)} ${(topY+16).toFixed(1)} Q${(cx+53).toFixed(1)} ${(topY+30).toFixed(1)} ${(cx+46).toFixed(1)} ${(topY+35).toFixed(1)} Q${(cx+39).toFixed(1)} ${(topY+30).toFixed(1)} ${(cx+46).toFixed(1)} ${(topY+16).toFixed(1)} Z' fill='#7fb8e8' opacity='0.85'/>`;
+function drawAdjunct(kind, cx, topY, sc, ink) {
+  if (kind === 1) return `<text x='${cx+68*sc}' y='${topY+16*sc}' font-family='monospace' font-weight='bold' font-size='${22*sc}' fill='${ink}' opacity='0.75'>z</text><text x='${cx+86*sc}' y='${topY-2*sc}' font-family='monospace' font-weight='bold' font-size='${28*sc}' fill='${ink}' opacity='0.55'>Z</text>`;
+  if (kind === 2) return `<path d='M${cx+52*sc} ${topY+18*sc} Q${cx+60*sc} ${topY+34*sc} ${cx+52*sc} ${topY+40*sc} Q${cx+44*sc} ${topY+34*sc} ${cx+52*sc} ${topY+18*sc} Z' fill='#7fb8e8' opacity='0.85'/>`;
   return "";
 }
 
-// ---------- full creature ----------
-function creatureSVG(k, mood) {
-  const spec = moodSpec(mood);
+// ============ full render ============
+let uid = 0;
+function creatureSVG(k, moodName, size) {
+  const dom = k.dom;
+  const spokes = k.spokes.map(s => ({ theta: s.theta, r: s.r * k.radScale, tension: s.tension * k.tenScale }));
+  const raw = sampleOutline(spokes, dom);
+  const meanR = spokes.reduce((a,s) => a + s.r, 0) / spokes.length;
+  const ringRAt = th => {
+    const TAU = Math.PI*2;
+    const t = ((th % TAU) + TAU) % TAU, tm = ((Math.PI - t) % TAU + TAU) % TAU;
+    let bd = 1/0, br = meanR;
+    for (const s of spokes) {
+      const d1 = Math.min(Math.abs(s.theta - t), TAU - Math.abs(s.theta - t));
+      const d2 = Math.min(Math.abs(s.theta - tm), TAU - Math.abs(s.theta - tm));
+      if (Math.min(d1,d2) < bd) { bd = Math.min(d1,d2); br = s.r; }
+    }
+    return br;
+  };
+  const exts = k.exts.slice(0, k.extCount).map(e => ({
+    theta: e.theta, len: e.len * k.extLen, width: e.width * k.extWid,
+    curl: e.curl * k.extCurl, taper: e.taper,
+  }));
+  const extOutlines = [];
+  exts.forEach((e, i) => {
+    const right = extremityOutline(e, ringRAt(e.theta), meanR, false);
+    extOutlines.push([i, right], [i, right.map(p => [-p[0], p[1]])]);
+  });
+  let bx0=1/0, by0=1/0, bx1=-1/0, by1=-1/0;
+  for (const p of raw) { bx0=Math.min(bx0,p[0]); by0=Math.min(by0,p[1]); bx1=Math.max(bx1,p[0]); by1=Math.max(by1,p[1]); }
+  for (const [,pts] of extOutlines) for (const p of pts) { bx0=Math.min(bx0,p[0]); by0=Math.min(by0,p[1]); bx1=Math.max(bx1,p[0]); by1=Math.max(by1,p[1]); }
+  const view = size || 420;
+  const scale = Math.min((view*0.72)/(bx1-bx0 || 1), (view*0.8)/(by1-by0 || 1));
+  const cx = view/2, cy = view/2;
+  const mx = (bx0+bx1)/2, my2 = (by0+by1)/2;
+  const T = p => [cx + (p[0]-mx)*scale, cy + (p[1]-my2)*scale];
+
+  const merged = +k.topology === 0 && extOutlines.length > 0;
+  let outline;
+  if (merged) {
+    const shapes = [raw.filter((_,i) => i % 3 === 0)].concat(extOutlines.map(([,pts]) => pts));
+    outline = mergedOutline(shapes, [bx0,by0,bx1,by1], meanR * 0.16 * k.weld, 110).map(T);
+  } else {
+    outline = raw.map(T);
+  }
+  const [minX, minY, maxX, maxY] = bboxOf(outline);
+  const h = maxY - minY;
   const colors = resolveColors(k.recipe, k.hue);
-  const cx = 120, cy = 116, scale = 0.52;
-  const p = { height: k.height * scale * 1.5, w_top: k.w_top * scale * 1.5, w_bot: k.w_bot * scale * 1.5, n_top: k.n_top, n_bot: k.n_bot, waist: k.waist };
-  let s = "";
-  const halfH = p.height / 2;
-  s += `<ellipse cx='${cx}' cy='${(cy + halfH + 5).toFixed(1)}' rx='${(profile(p, halfH*0.35)*1.1).toFixed(1)}' ry='6' fill='rgba(40,30,50,0.14)'/>`;
-  s += drawBottom(k.bottom, p, cx, cy, colors.part, colors.outline);
-  s += drawTop(k.top, p, cx, cy, colors.part);
-  s += `<path d='${outlinePath(p, cx, cy, 48, k.lean, k.side_bias)}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='2.5'/>`;
-  s += drawBelly(p, cx, cy, colors.belly);
-  s += drawBlush(p, cx, cy, colors.blush);
-  // Eyes with combined identity x mood scale, then mood overlays in eye frame.
-  const f = eyeFrame(p, cx, cy, 0);
-  const totalScale = k.eye_scale * spec.eyeScale;
-  let eyes = drawEyes(k.eyes, p, cx, cy, k.eye_tilt, colors.outline, colors.ink);
-  if (Math.abs(totalScale - 1) > 0.01) {
-    eyes = `<g transform='translate(${cx} ${f.y.toFixed(1)}) scale(${totalScale.toFixed(3)}) translate(${-cx} ${(-f.y).toFixed(1)})'>${eyes}</g>`;
+  const spec = moodSpec(moodName);
+
+  let s = `<svg xmlns='http://www.w3.org/2000/svg' width='${view}' height='${view}' viewBox='0 0 ${view} ${view}'>`;
+  s += `<ellipse cx='${cx}' cy='${maxY+4}' rx='${(maxX-minX)*0.42}' ry='6' fill='rgba(40,30,50,0.14)'/>`;
+  if (!merged) {
+    for (const [ei, pts] of extOutlines) {
+      const fill = +k.topology === 2 ? colors.part : (k.extFills[ei] === 0 ? tone(k.recipe, k.hue, 1) : k.extFills[ei] === 1 ? tone(k.recipe, k.hue, -1) : colors.body);
+      s += `<path d='${pts.map((p,i) => (i?'L':'M') + T(p).map(v=>v.toFixed(1)).join(' ')).join(' ')} Z' fill='${fill}' stroke='${colors.outline}' stroke-width='2.5' stroke-linejoin='round'/>`;
+    }
   }
-  s += eyes;
-  const rr = f.r * totalScale;
-  for (const [x, side] of [[f.lx, -1], [f.rx, 1]]) {
-    const ty = f.y + (side < 0 ? -k.eye_tilt : k.eye_tilt);
-    s += lidOverlay(x, ty, rr, spec.lid, spec.lidAngle * side, colors.body, colors.outline);
-    s += squintOverlay(x, ty, rr, spec.squint, colors.body, colors.outline);
-    s += drawBrow(spec.brows, x, ty, rr, side, colors.ink);
+  const d = outline.map((p,i) => (i?'L':'M') + p.map(v=>v.toFixed(1)).join(' ')).join(' ') + ' Z';
+  const clip = `lab${uid++}`;
+  s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='2.5'/>`;
+  s += `<g clip-path='url(#${clip})'>`;
+
+  if (k.voronoi) {
+    const cellBbox = [minX, minY, maxX, maxY];
+    const scaled = k.sites.map(site => ({ x: cx + site.x*(maxX-minX)/2, y: (minY+maxY)/2 + site.y*(maxY-minY)/2, shade: site.shade }));
+    for (let it = 0; it < 2; it++) {
+      scaled.forEach((site, i) => {
+        const poly = clipCell(scaled, i, cellBbox);
+        if (poly.length >= 3) { const [ccx, ccy] = centroid(poly); site.x = ccx; site.y = ccy; }
+      });
+    }
+    const [light, dark] = mottle(k.recipe, k.hue);
+    scaled.forEach((site, i) => {
+      if (site.shade === 2) return;
+      const poly = clipCell(scaled, i, cellBbox);
+      if (poly.length < 3) return;
+      s += `<path d='${pebblePath(poly, 0.88)}' fill='${site.shade === 0 ? dark : light}'/>`;
+    });
   }
-  // Mood mouth override.
-  let mouthKind = k.mouth;
-  if (spec.mouth === "grin") mouthKind = k.mouth === 2 ? 2 : 8;
-  else if (spec.mouth === "o") mouthKind = 6;
-  else if (spec.mouth === "pressed") mouthKind = 4;
-  else if (spec.mouth === "down") mouthKind = 7;
-  s += drawMouth(mouthKind, p, cx, cy, colors.outline, colors.ink);
-  s += drawAdjunct(spec.adjunct, cx, cy - halfH - 8, colors.ink);
-  return s;
+
+  const p = placeFace(outline);
+  if (p) {
+    const bellyY = minY + h*0.62;
+    const be = extentAt(outline, bellyY);
+    if (be) s += `<ellipse cx='${(be[0]+be[1])/2}' cy='${bellyY + h*0.05}' rx='${(be[1]-be[0])/2*0.62}' ry='${h*0.24}' fill='${colors.belly}'/>`;
+    const ex = p.halfW * 0.44;
+    const f = { lx: p.fx - ex, rx: p.fx + ex, y: p.eyeY, r: p.r };
+    s += `<ellipse cx='${f.lx - p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
+    s += `<ellipse cx='${f.rx + p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
+    let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink);
+    if (Math.abs(spec.es - 1) > 0.01) eyesSvg = `<g transform='translate(${p.fx} ${f.y}) scale(${spec.es}) translate(${-p.fx} ${-f.y})'>${eyesSvg}</g>`;
+    s += eyesSvg;
+    for (const [x, side] of [[f.lx,-1],[f.rx,1]]) {
+      s += squintOverlay(x, f.y, f.r, spec.sq, colors.body, colors.outline);
+      s += lidOverlay(x, f.y, f.r, spec.lid, spec.ang*side, colors.body, colors.outline);
+      s += drawBrow(spec.brows, x, f.y, f.r, side, colors.ink);
+    }
+    const mouthKind = spec.mouth === 0 ? k.mouth : spec.mouth === 1 ? 2 : spec.mouth === 2 ? 6 : spec.mouth === 3 ? 4 : 7;
+    s += drawMouth(mouthKind, p.fx, f.y + p.r*1.9, p.r, colors.outline, colors.ink);
+    s += `</g>`;
+    s += drawAdjunct(spec.adj, cx, minY, h/200, colors.ink);
+  } else {
+    s += `</g>`;
+  }
+  return s + "</svg>";
 }
 
-// ---------- UI wiring ----------
-const SLIDERS = ["height", "w_top", "w_bot", "n_top", "n_bot", "waist", "eye_scale", "lean", "side_bias", "eye_tilt", "hue"];
-const SELECTS = ["top", "bottom", "eyes", "mouth", "recipe"];
+// ============ UI wiring ============
+let state = null;
 let mood = "neutral";
-let pinCount = 0;
+const pins = [];
+const $ = id => document.getElementById(id);
 
-function knobs() {
-  const k = {};
-  for (const id of SLIDERS) k[id] = parseFloat(document.getElementById(id).value);
-  for (const id of SELECTS) k[id] = parseInt(document.getElementById(id).value, 10);
-  return k;
+function knobIds() { return ["spokes","dom","radScale","tenScale","extCount","extLen","extWid","extCurl","weld","hue"]; }
+function syncOutputs() {
+  for (const id of knobIds()) {
+    const el = $(id);
+    if (el.nextElementSibling?.tagName === "OUTPUT") el.nextElementSibling.value = el.value;
+  }
 }
-function setKnobs(k) {
-  for (const id of SLIDERS) if (id in k) document.getElementById(id).value = k[id];
-  for (const id of SELECTS) if (id in k) document.getElementById(id).value = k[id];
+function currentParams() {
+  return {
+    ...state,
+    dom: +$("dom").value,
+    radScale: +$("radScale").value,
+    tenScale: +$("tenScale").value,
+    extCount: +$("extCount").value,
+    extLen: +$("extLen").value,
+    extWid: +$("extWid").value,
+    extCurl: +$("extCurl").value,
+    weld: +$("weld").value,
+    topology: +$("topology").value,
+    voronoi: $("voronoi").checked,
+    recipe: +$("recipe").value,
+    hue: +$("hue").value,
+    eyes: +$("eyes").value,
+    mouth: +$("mouth").value,
+  };
 }
 function render() {
-  const k = knobs();
-  const body = creatureSVG(k, mood);
-  document.getElementById("main").innerHTML = body;
-  for (const el of document.querySelectorAll(".mini")) el.innerHTML = body;
-  for (const id of SLIDERS) {
-    const v = document.getElementById(id).value;
-    document.getElementById(id + "-v").textContent = (+v).toFixed(id === "height" || id === "w_top" || id === "w_bot" || id === "hue" ? 0 : 2);
+  syncOutputs();
+  const k = currentParams();
+  $("view").innerHTML = creatureSVG(k, mood, 420);
+  for (const [id, size] of [["s64",64],["s44",44],["s28",28]]) {
+    $(id).innerHTML = creatureSVG(k, mood, size);
+    $(id).firstChild.style.borderRadius = "6px";
   }
 }
 function loadSeed() {
-  const seed = parseInt(document.getElementById("seed").value, 10) || 0;
-  setKnobs(decode(seed));
+  const seed = parseInt($("seed").value, 10) || 0;
+  state = decodeFull(seed);
+  $("spokes").value = state.spokes.length;
+  $("dom").value = state.dom;
+  $("extCount").value = state.exts.length;
+  $("topology").value = state.topology;
+  $("voronoi").checked = state.voronoi;
+  $("recipe").value = state.recipe;
+  $("hue").value = Math.round(state.hue);
+  $("eyes").value = state.eyes;
+  $("mouth").value = state.mouth;
+  for (const id of ["radScale","tenScale","extLen","extWid","weld"]) $(id).value = 1;
+  $("extCurl").value = 1;
   render();
 }
-document.getElementById("load").addEventListener("click", loadSeed);
-document.getElementById("rand").addEventListener("click", () => {
-  document.getElementById("seed").value = Math.floor(Math.random() * 1e9);
-  loadSeed();
+// spoke-count knob: re-slice or extend the decoded set deterministically
+$("spokes").addEventListener("input", () => {
+  const want = +$("spokes").value;
+  const b = bits(parseInt($("seed").value, 10) * 7 + 13);
+  while (state.spokes.length < want) {
+    const base = (state.spokes.length / want) * Math.PI * 2;
+    state.spokes.push({ theta: base + b.lin(-0.3, 0.3), r: b.lin(0.12, 1.35), tension: b.lin(0.4, 2.6) });
+  }
+  state.spokes.length = want;
+  render();
 });
-for (const id of [...SLIDERS, ...SELECTS]) {
-  document.getElementById(id).addEventListener("input", render);
-}
-const moodsDiv = document.getElementById("moods");
+$("rerollBody").addEventListener("click", () => {
+  const b = bits(Date.now() % 100000);
+  const n = +$("spokes").value;
+  state.spokes = Array.from({length: n}, (_, i) => ({
+    theta: (i/n)*Math.PI*2 + b.lin(-0.45,0.45)*Math.PI*2/n,
+    r: b.lin(0.12, 1.35),
+    tension: b.lin(0.4, 2.6),
+  }));
+  render();
+});
+$("rerollExt").addEventListener("click", () => {
+  const b = bits(Date.now() % 100000 + 7);
+  state.exts = Array.from({length: 3}, () => ({
+    theta: b.lin(Math.PI*0.95, Math.PI*2*1.02), len: b.lin(0.35,1.15),
+    width: b.lin(0.10,0.30), curl: b.lin(-1.3,1.3), taper: b.lin(0.15,0.85),
+  }));
+  state.extFills = state.exts.map(() => b.byte() % 3);
+  render();
+});
+$("rerollSites").addEventListener("click", () => {
+  const b = bits(Date.now() % 100000 + 31);
+  const pairs = 3 + (b.byte() % 4);
+  state.sites = [];
+  for (let i = 0; i < pairs; i++) {
+    const x = b.lin(0.04,1.05), y = b.lin(-1.05,1.05), shade = b.byte() % 3;
+    state.sites.push({x,y,shade},{x:-x,y,shade});
+  }
+  render();
+});
+$("decodeBtn").addEventListener("click", loadSeed);
+$("gachaBtn").addEventListener("click", () => { $("seed").value = Math.floor(Math.random()*99999); loadSeed(); });
+$("seed").addEventListener("keydown", e => { if (e.key === "Enter") loadSeed(); });
+for (const id of knobIds()) $(id).addEventListener("input", render);
+for (const id of ["topology","voronoi","recipe","eyes","mouth"]) $(id).addEventListener("change", render);
+
+const moodsDiv = $("moods");
 for (const m of MOODS) {
-  const b = document.createElement("button");
-  b.textContent = m;
-  b.className = "mood" + (m === mood ? " active" : "");
-  b.addEventListener("click", () => {
+  const btn = document.createElement("button");
+  btn.textContent = m;
+  if (m === mood) btn.classList.add("active");
+  btn.addEventListener("click", () => {
     mood = m;
     for (const x of moodsDiv.children) x.classList.toggle("active", x.textContent === m);
     render();
   });
-  moodsDiv.appendChild(b);
+  moodsDiv.appendChild(btn);
 }
-document.getElementById("pinBtn").addEventListener("click", () => {
-  const k = knobs();
-  const wrap = document.createElement("div");
-  wrap.className = "pin";
-  const label = `pin ${++pinCount} · ${MOODS.includes(mood) ? mood : ""}`;
-  wrap.innerHTML = `<div class="box" title="click to restore"><svg width="140" height="140" viewBox="0 0 240 240">${creatureSVG(k, mood)}</svg></div>${label}`;
-  wrap.querySelector(".box").addEventListener("click", () => { setKnobs(k); render(); });
-  document.getElementById("pins").appendChild(wrap);
+$("pinBtn").addEventListener("click", () => {
+  const k = currentParams();
+  const snapshot = JSON.parse(JSON.stringify(k));
+  const div = document.createElement("div");
+  div.className = "pin";
+  const inner = document.createElement("div");
+  inner.innerHTML = creatureSVG(k, mood, 84);
+  div.appendChild(inner);
+  const label = document.createElement("span");
+  label.textContent = `pin ${pins.length + 1}`;
+  div.appendChild(label);
+  div.addEventListener("click", () => {
+    state = snapshot;
+    for (const id of ["dom","radScale","tenScale","extCount","extLen","extWid","extCurl","weld","hue"]) $(id).value = snapshot[id === "dom" ? "dom" : id] ?? $(id).value;
+    $("topology").value = snapshot.topology; $("voronoi").checked = snapshot.voronoi;
+    $("recipe").value = snapshot.recipe; $("eyes").value = snapshot.eyes; $("mouth").value = snapshot.mouth;
+    render();
+  });
+  pins.push(snapshot);
+  $("pins").appendChild(div);
 });
-document.getElementById("clearPins").addEventListener("click", () => {
-  document.getElementById("pins").innerHTML = "";
-  pinCount = 0;
-});
-// URL params: ?seed=1234&mood=happy — shareable states, and they let the
-// mood path render headlessly (screenshot verification without clicks).
+$("clearPins").addEventListener("click", () => { pins.length = 0; $("pins").innerHTML = ""; });
+
 const params = new URLSearchParams(location.search);
-if (params.has("seed")) document.getElementById("seed").value = params.get("seed");
-if (params.has("mood") && MOODS.includes(params.get("mood"))) {
-  mood = params.get("mood");
-  for (const x of moodsDiv.children) x.classList.toggle("active", x.textContent === mood);
-}
+if (params.has("seed")) $("seed").value = params.get("seed");
+if (params.has("mood") && MOODS.includes(params.get("mood"))) mood = params.get("mood");
 loadSeed();
 </script>
 </body>
