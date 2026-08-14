@@ -527,7 +527,9 @@ function drawMouth(kind, fx, my, r, accent, ink) {
   switch (+kind) {
     case 0: return `<path d='M${fx-r*0.5} ${my} Q${fx} ${my+r*0.45} ${fx+r*0.5} ${my}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
     case 1: return `<path d='M${fx-r*0.8} ${my} Q${fx-r*0.4} ${my+r*0.55} ${fx} ${my} Q${fx+r*0.4} ${my+r*0.55} ${fx+r*0.8} ${my}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/>`;
-    case 2: return `<path d='M${fx-r*0.7} ${my-r*0.1} Q${fx} ${my+r*1.1} ${fx+r*0.7} ${my-r*0.1} Z' fill='#4a2f33' stroke='${accent}' stroke-width='2'/><path d='M${fx-r*0.35} ${my+r*0.52} Q${fx} ${my+r*0.95} ${fx+r*0.35} ${my+r*0.52}' fill='#e88a93'/>`;
+    // Tongue inscribed in the mouth quadratic (chord 0.30r, peak 0.46r):
+    // deeper control points poke out below the lip. Mirrors Rust face.rs.
+    case 2: return `<path d='M${fx-r*0.7} ${my-r*0.1} Q${fx} ${my+r*1.1} ${fx+r*0.7} ${my-r*0.1} Z' fill='#4a2f33' stroke='${accent}' stroke-width='2'/><path d='M${fx-r*0.35} ${my+r*0.30} Q${fx} ${my+r*0.62} ${fx+r*0.35} ${my+r*0.30} Z' fill='#e88a93'/>`;
     case 3: return `<path d='M${fx-r*0.75} ${my+r*0.15} Q${fx} ${my+r*0.5} ${fx+r*0.7} ${my-r*0.1}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${fx+r*0.05} ${my+r*0.34} L${fx+r*0.55} ${my+r*0.38} L${fx+r*0.32} ${my-r*0.42} Z' fill='white' stroke='${ink}' stroke-width='1.4'/>`;
     case 4: return `<line x1='${fx-r*0.55}' y1='${my}' x2='${fx+r*0.55}' y2='${my}' stroke='${ink}' stroke-width='2.6' stroke-linecap='round'/>`;
     case 5: return `<path d='M${fx-r*0.6} ${my} Q${fx} ${my+r*0.5} ${fx+r*0.6} ${my}' stroke='${ink}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M${fx-r*0.45} ${my+r*0.12} L${fx-r*0.15} ${my+r*0.14} L${fx-r*0.3} ${my+r*0.62} Z' fill='white'/><path d='M${fx+r*0.15} ${my+r*0.14} L${fx+r*0.45} ${my+r*0.12} L${fx+r*0.3} ${my+r*0.62} Z' fill='white'/>`;

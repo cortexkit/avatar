@@ -161,10 +161,15 @@ pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -
             "<path d='M{:.1} {my:.1} Q{:.1} {:.1} {cx:.1} {my:.1} Q{:.1} {:.1} {:.1} {my:.1}' stroke='{accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/>",
             cx - r * 0.8, cx - r * 0.4, my + r * 0.55, cx + r * 0.4, my + r * 0.55, cx + r * 0.8,
         ),
+        // Tongue is INSCRIBED in the mouth's own quadratic: the mouth's
+        // lower edge midpoint sits at +0.5r and reaches y=0.35r at x=±0.35r,
+        // so the tongue chord (0.30r) and peak (mid 0.46r) stay strictly
+        // inside — a tongue drawn deeper pokes out below the lip (Ufuk's
+        // lab find; TOG clipped instead, geometry beats a clip here).
         MouthKind::OpenHappy => format!(
-            "<path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1} Z' fill='#4a2f33' stroke='{accent}' stroke-width='2'/><path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1}' fill='#e88a93'/>",
+            "<path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1} Z' fill='#4a2f33' stroke='{accent}' stroke-width='2'/><path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1} Z' fill='#e88a93'/>",
             cx - r * 0.7, my - r * 0.1, my + r * 1.1, cx + r * 0.7, my - r * 0.1,
-            cx - r * 0.35, my + r * 0.52, my + r * 0.95, cx + r * 0.35, my + r * 0.52,
+            cx - r * 0.35, my + r * 0.30, my + r * 0.62, cx + r * 0.35, my + r * 0.30,
         ),
         MouthKind::Snaggle => format!(
             "<path d='M{:.1} {:.1} Q{cx:.1} {:.1} {:.1} {:.1}' stroke='{accent}' stroke-width='2.4' fill='none' stroke-linecap='round'/><path d='M{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} Z' fill='white' stroke='{accent}' stroke-width='1.4'/>",
