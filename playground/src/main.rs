@@ -72,6 +72,7 @@ fn decode_full(seed: u64) -> Creature {
     }
 }
 
+#[derive(Clone, Copy)]
 struct FacePlacement {
     fx: f64,
     eye_y: f64,
@@ -99,7 +100,17 @@ fn place_face(outline: &[(f64, f64)]) -> Option<FacePlacement> {
     const MARGIN: f64 = 1.22;
     let r_cap = h * 0.085 * 1.15;
     let r_floor = h * 0.028;
+    // Two-tier search (both rules mined from TOG's face engine):
+    // 1. face.tsx places the face only where the MOUTH also fits below it
+    //    (its mouth-finder repositions centerY above the found mouth rect) —
+    //    so mouth-fit joins the scoring here: the drawn mouth's extremes
+    //    (widest family reaches ±0.8r, deepest +0.62r below the mouth line
+    //    at eye_y + 2.71r) must sit inside the silhouette.
+    // 2. face.tsx clamps the face UP to a minimum rather than skipping it —
+    //    a creature must ALWAYS have a face, so eyes-only placement is the
+    //    guaranteed fallback when no candidate also fits a mouth.
     let mut best: Option<(f64, FacePlacement)> = None;
+    let mut best_eyes_only: Option<(f64, FacePlacement)> = None;
     for yi in 0..=18 {
         let y = min_y + h * (0.20 + 0.026 * yi as f64);
         let Some((l, rgt)) = wild::extent_at(outline, y) else {
@@ -125,21 +136,26 @@ fn place_face(outline: &[(f64, f64)]) -> Option<FacePlacement> {
             // pull toward the canonical eye band (~34% down).
             let band_penalty = ((y - (min_y + h * 0.34)) / h).abs() * 0.25;
             let score = r * (1.0 + 0.22 * ipd_ratio) * (1.0 - band_penalty);
-            if best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
-                best = Some((
-                    score,
-                    FacePlacement {
-                        fx,
-                        eye_y: y,
-                        half_w: span / 2.0,
-                        ipd: ex,
-                        r,
-                    },
-                ));
+            let candidate = FacePlacement {
+                fx,
+                eye_y: y,
+                half_w: span / 2.0,
+                ipd: ex,
+                r,
+            };
+            if best_eyes_only.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
+                best_eyes_only = Some((score, candidate));
+            }
+            let mouth_y = y + r * 2.71;
+            let mouth_ok = poly.sdf(fx - r * 0.8, mouth_y) < -1.0
+                && poly.sdf(fx + r * 0.8, mouth_y) < -1.0
+                && poly.sdf(fx, mouth_y + r * 0.62) < -1.0;
+            if mouth_ok && best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
+                best = Some((score, candidate));
             }
         }
     }
-    best.map(|(_, p)| p)
+    best.or(best_eyes_only).map(|(_, p)| p)
 }
 
 fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
@@ -486,6 +502,19 @@ fn run_checker(n: u64) {
         .iter()
         .map(|d| -d - p.r)
         .fold(f64::MAX, f64::min);
+        // Mouth-fit (TOG rule): drawn mouth extremes inside the silhouette.
+        let mouth_y = p.eye_y + p.r * 2.71;
+        let mouth_breach = [
+            poly.sdf(p.fx - p.r * 0.8, mouth_y),
+            poly.sdf(p.fx + p.r * 0.8, mouth_y),
+            poly.sdf(p.fx, mouth_y + p.r * 0.62),
+        ]
+        .iter()
+        .fold(f64::MIN, |a: f64, &d| a.max(d));
+        if mouth_breach > 0.0 {
+            println!("seed {seed}: mouth breaches outline by {:.2}", mouth_breach);
+            violations += 1;
+        }
         if clearance < 0.0 {
             println!("seed {seed}: eye disc breaches outline by {:.2}", -clearance);
             violations += 1;

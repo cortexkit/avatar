@@ -481,7 +481,9 @@ function placeFace(outline) {
   const h = maxY - minY;
   const sparse = outline.filter((_, i) => i % 2 === 0);
   const MARGIN = 1.22, rCap = h * 0.085 * 1.15, rFloor = h * 0.028;
-  let best = null;
+  // Mouth-fit joins the scoring (TOG rule: face goes only where the mouth
+  // also fits); eyes-only is the guaranteed fallback — always a face.
+  let best = null, bestEyesOnly = null;
   for (let yi = 0; yi <= 18; yi++) {
     const y = minY + h * (0.20 + 0.026 * yi);
     const e = extentAt(outline, y);
@@ -496,10 +498,14 @@ function placeFace(outline) {
       if (r < rFloor) continue;
       const bandPenalty = Math.abs((y - (minY + h * 0.34)) / h) * 0.25;
       const score = r * (1 + 0.22 * ipdRatio) * (1 - bandPenalty);
-      if (!best || score > best.score) best = { score, fx, eyeY: y, halfW: span/2, ipd: ex, r };
+      const cand = { score, fx, eyeY: y, halfW: span/2, ipd: ex, r };
+      if (!bestEyesOnly || score > bestEyesOnly.score) bestEyesOnly = cand;
+      const my = y + r * 2.71;
+      const mouthOk = polySDF(sparse, fx - r*0.8, my) < -1 && polySDF(sparse, fx + r*0.8, my) < -1 && polySDF(sparse, fx, my + r*0.62) < -1;
+      if (mouthOk && (!best || score > best.score)) best = cand;
     }
   }
-  return best;
+  return best || bestEyesOnly;
 }
 // Pupils are always `pupil` (dark); `ink` is line-work only (closed arcs,
 // lid crease). On dark bodies `sclera` discs back each open eye — a light

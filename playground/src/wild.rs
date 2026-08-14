@@ -187,26 +187,21 @@ fn cubic_extremes(p0: f64, c1: f64, c2: f64, p3: f64) -> [f64; 4] {
         v * v * v * p0 + 3.0 * v * v * t * c1 + 3.0 * v * t * t * c2 + t * t * t * p3
     };
     let mut out = [p0, p3, p0, p3];
-    let mut slot = 2;
+    let mut roots: Vec<f64> = Vec::with_capacity(2);
     if a.abs() < 1e-12 {
         if b.abs() > 1e-12 {
-            let t = -c / b;
-            if t > 0.0 && t < 1.0 {
-                out[slot] = eval(t);
-                slot += 1;
-            }
+            roots.push(-c / b);
         }
     } else {
         let disc = b * b - 4.0 * a * c;
         if disc >= 0.0 {
             let sq = disc.sqrt();
-            for t in [(-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a)] {
-                if t > 0.0 && t < 1.0 && slot < 4 {
-                    out[slot] = eval(t);
-                    slot += 1;
-                }
-            }
+            roots.push((-b + sq) / (2.0 * a));
+            roots.push((-b - sq) / (2.0 * a));
         }
+    }
+    for (slot, t) in roots.into_iter().filter(|t| *t > 0.0 && *t < 1.0).enumerate() {
+        out[2 + slot.min(1)] = eval(t);
     }
     out
 }
