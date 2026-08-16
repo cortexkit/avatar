@@ -22,7 +22,7 @@
 //!   Options: --size N (default 400), --mood M (default neutral).
 
 use avatar_genome::{decode, derive_genome, SeatIdentity};
-use avatar_svg::{render_svg, Mood, Q32, RenderParams};
+use avatar_svg::{render_svg, Mood, RenderParams, Q32};
 
 fn mood_from(name: &str) -> Result<Mood, String> {
     Ok(match name {
@@ -181,9 +181,8 @@ mod tests {
 
     #[test]
     fn manifest_scan_reads_ids_and_ignores_unknown_keys() {
-        let ids = manifest_ids(
-            r#"[{"agent":"AVA","stable_id":"pj-1"},{"stable_id": "pj-2","x":1}]"#,
-        );
+        let ids =
+            manifest_ids(r#"[{"agent":"AVA","stable_id":"pj-1"},{"stable_id": "pj-2","x":1}]"#);
         assert_eq!(ids, vec!["pj-1", "pj-2"]);
     }
 }
