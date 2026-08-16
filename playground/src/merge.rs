@@ -146,26 +146,34 @@ pub fn merged_outline(
         used[start] = true;
         loop {
             let tail = *chain.last().unwrap();
-            let mut extended = false;
+            // NEAREST candidate wins, with lowest index as the tiebreak —
+            // not "first within eps". Both rules are deterministic, but at a
+            // saddle where two segments qualify, first-by-index chains into
+            // an arbitrary branch while nearest follows the contour. The
+            // tiebreak is pinned because ports must chain identically:
+            // squared distances compare exactly in fixed point (no sqrt
+            // needed for an ordering), so this rule survives the port.
+            let eps2 = eps * eps;
+            let mut best: Option<(f64, usize, bool)> = None;
             for (idx, seg) in segs.iter().enumerate() {
                 if used[idx] {
                     continue;
                 }
-                let d0 = ((seg.0 .0 - tail.0).powi(2) + (seg.0 .1 - tail.1).powi(2)).sqrt();
-                let d1 = ((seg.1 .0 - tail.0).powi(2) + (seg.1 .1 - tail.1).powi(2)).sqrt();
-                if d0 < eps {
-                    chain.push(seg.1);
-                    used[idx] = true;
-                    extended = true;
-                    break;
-                }
-                if d1 < eps {
-                    chain.push(seg.0);
-                    used[idx] = true;
-                    extended = true;
-                    break;
+                let d0 = (seg.0 .0 - tail.0).powi(2) + (seg.0 .1 - tail.1).powi(2);
+                let d1 = (seg.1 .0 - tail.0).powi(2) + (seg.1 .1 - tail.1).powi(2);
+                let (d, head_end) = if d0 <= d1 { (d0, true) } else { (d1, false) };
+                if d < eps2 && best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
+                    best = Some((d, idx, head_end));
                 }
             }
+            let extended = match best {
+                Some((_, idx, head_end)) => {
+                    chain.push(if head_end { segs[idx].1 } else { segs[idx].0 });
+                    used[idx] = true;
+                    true
+                }
+                None => false,
+            };
             if !extended {
                 break;
             }
@@ -175,6 +183,9 @@ pub fn merged_outline(
                 break; // closed
             }
         }
+        // Strict `>` pins the tiebreak on equal length: the EARLIEST loop in
+        // grid-scan order wins. Ports iterate the same order, so they select
+        // the same loop.
         if chain.len() > best_loop.len() {
             best_loop = chain;
         }

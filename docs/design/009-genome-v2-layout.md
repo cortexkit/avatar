@@ -136,6 +136,45 @@ region — mutable via era events once the era store ships. Same
 blake3-XOF fill discipline; identity-core/v2 domain string unchanged
 (the derivation contract is independent of genome layout).
 
+## Portability spike (run before committing to this layout)
+
+The wild pipeline adds machinery v1 never had — SDF fields, smooth-min
+welds, marching squares, Lloyd relaxation, arc-length resampling — and
+the freeze promises three byte-identical implementations of all of it.
+`playground/src/bin/fixedspike.rs` answers whether that promise is
+keepable, measured rather than assumed:
+
+| Probe | Result |
+| --- | --- |
+| integer sqrt vs `f64::sqrt`, [0.001, 90000] | max error 1.9e-9 (Q32.32 ulp 2.3e-10) |
+| SDF over a real body, 3600 probes | max divergence 1.5e-8 units; **0** inside/outside disagreements |
+| smooth-min weld, 6400 pairs | max divergence 3.6e-10 units |
+| marching-squares sign tests, 6400 grid nodes | **0** branch flips |
+
+The one new primitive is **square root**, and it is exactly integer: a
+binary restoring algorithm with a fixed 64-step loop, so there is no
+convergence-count variance to diverge between languages. Divergence
+everywhere else is ulp-scale, four orders below a milliunit, and — the
+load-bearing result — **no sign test flips**, so marching squares takes
+identical branches and the extracted contour has identical topology.
+The field is the same field.
+
+The spike's real value was the risks it found that are NOT arithmetic:
+
+1. **Segment chaining tiebreak.** The contour chainer took the *first*
+   candidate within eps. Deterministic, but arbitrary at saddles. Now
+   nearest-with-lowest-index, compared on SQUARED distances so the
+   ordering needs no sqrt and survives the port exactly.
+2. **Longest-loop tiebreak.** Equal-length loops resolve to the
+   earliest in grid-scan order (strict `>`), now stated rather than
+   incidental.
+3. **Lloyd centroid** needs the Q32 multiply's 128-bit intermediate —
+   already solved in v1 (Swift limbs, JS BigInt), so it is a port task,
+   not a design risk.
+
+Verdict: this layout is portable. Note 010 inherits the sqrt primitive
+and both tiebreak rules as normative.
+
 ## What this note is NOT
 
 Not a phenotype schema (that is 010, written at freeze), not value
