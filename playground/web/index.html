@@ -200,7 +200,18 @@ function decodeFull(seed) {
   const topology = b.byte() % 3;
   const voronoi = (b.byte() % 5) < 2;
   const bellyVariant = b.byte() % 4; // trailing read; earlier fields stable
-  return { spokes, exts, extFills, sites, recipe, hue, eyes, mouth, topology, voronoi, bellyVariant, dom: 0.32 };
+  // Face-parameter block (mirrors Rust FaceStyle): per-creature proportion
+  // and resting posture. Without it the whole population shared 30 faces,
+  // since two creatures with the same eye+mouth archetype rendered
+  // identically. eyeWonk decodes but is dormant in both renderers.
+  const eyeAspect = b.lin(0.80, 1.28);
+  const eyeWonk = b.lin(0.0, 0.20);
+  const mouthW = b.lin(0.75, 1.30);
+  const mouthD = b.lin(0.70, 1.35);
+  const browRoll = b.byte() % 8;
+  const brow = browRoll <= 1 ? 1 : browRoll === 2 ? 2 : browRoll === 3 ? 3 : 0;
+  return { spokes, exts, extFills, sites, recipe, hue, eyes, mouth, topology, voronoi, bellyVariant,
+           eyeAspect, eyeWonk, mouthW, mouthD, brow, dom: 0.32 };
 }
 
 // ============ wild body (fold-mirror + Catmull-Rom + domestication) ============
@@ -579,7 +590,7 @@ function bboxOf(outline) {
 }
 // SDF-verified placement (mirrors Rust place_face): both eye centers must
 // have interior depth for the disc plus 22% margin; search y-band x spacing.
-function placeFace(outline) {
+function placeFace(outline, mouthW = 1, mouthD = 1) {
   const [,minY,,maxY] = bboxOf(outline);
   const h = maxY - minY;
   const sparse = outline.filter((_, i) => i % 2 === 0);
@@ -603,8 +614,10 @@ function placeFace(outline) {
       const score = r * (1 + 0.22 * ipdRatio) * (1 - bandPenalty);
       const cand = { score, fx, eyeY: y, halfW: span/2, ipd: ex, r };
       if (!bestEyesOnly || score > bestEyesOnly.score) bestEyesOnly = cand;
+      // Mouth extents scale with the creature's own mouth (mirrors Rust).
       const my = y + r * 2.71;
-      const mouthOk = polySDF(sparse, fx - r*0.8, my) < -1 && polySDF(sparse, fx + r*0.8, my) < -1 && polySDF(sparse, fx, my + r*0.62) < -1;
+      const half = r * 0.8 * mouthW, deep = r * 0.62 * mouthD;
+      const mouthOk = polySDF(sparse, fx - half, my) < -1 && polySDF(sparse, fx + half, my) < -1 && polySDF(sparse, fx, my + deep) < -1;
       if (mouthOk && (!best || score > best.score)) best = cand;
     }
   }
@@ -767,7 +780,7 @@ function creatureSVG(k, moodName, size) {
   s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='1.5'/>`;
   s += `<g clip-path='url(#${clip})'>`;
 
-  const p = placeFace(outline);
+  const p = placeFace(outline, k.mouthW ?? 1, k.mouthD ?? 1);
   // Record the placement invariants for the readout: the same quantities
   // the Rust `--check` sweep asserts, so what the lab shows and what the
   // gate enforces can never drift into two different truths.
@@ -779,11 +792,13 @@ function creatureSVG(k, moodName, size) {
         -polySDF(sparse, p.fx - p.ipd, p.eyeY) - p.r,
         -polySDF(sparse, p.fx + p.ipd, p.eyeY) - p.r);
       const sep = 2*p.ipd - 2*p.r*1.45;
+      // Measured at the creature's own mouth scale, same as the gate.
       const my = p.eyeY + p.r*2.71;
+      const mhalf = p.r*0.8*(k.mouthW ?? 1), mdeep = p.r*0.62*(k.mouthD ?? 1);
       const mouthClear = Math.min(
-        -polySDF(sparse, p.fx - p.r*0.8, my),
-        -polySDF(sparse, p.fx + p.r*0.8, my),
-        -polySDF(sparse, p.fx, my + p.r*0.62));
+        -polySDF(sparse, p.fx - mhalf, my),
+        -polySDF(sparse, p.fx + mhalf, my),
+        -polySDF(sparse, p.fx, my + mdeep));
       lastMetrics = { placed: true, eyeClear, sep, mouthClear, r: p.r, pts: outline.length };
     }
   }
@@ -833,7 +848,13 @@ function creatureSVG(k, moodName, size) {
     s += `<ellipse cx='${f.lx - p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
     s += `<ellipse cx='${f.rx + p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
     let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink, colors.pupil, colors.sclera);
-    if (Math.abs(spec.es - 1) > 0.01) eyesSvg = `<g transform='translate(${p.fx} ${f.y}) scale(${spec.es}) translate(${-p.fx} ${-f.y})'>${eyesSvg}</g>`;
+    // Eye aspect as min-scaling: both factors <= 1, so an eye can only
+    // shrink inside the placed radius the invariants were proved for.
+    const asp = k.eyeAspect ?? 1;
+    const ax = asp >= 1 ? 1/asp : 1, ay = asp >= 1 ? 1 : asp;
+    const esx = ax * spec.es, esy = ay * spec.es;
+    if (Math.abs(esx - 1) > 0.005 || Math.abs(esy - 1) > 0.005)
+      eyesSvg = `<g transform='translate(${p.fx} ${f.y}) scale(${esx.toFixed(3)} ${esy.toFixed(3)}) translate(${-p.fx} ${-f.y})'>${eyesSvg}</g>`;
     s += eyesSvg;
     // Archetype-aware mood expression (mirrors Rust): lids/squints are
     // disc-eye concepts — suppressed on closed-arc eyes, only sleepy-scale
@@ -845,10 +866,19 @@ function creatureSVG(k, moodName, size) {
       const ey = k.eyes == 3 && side > 0 ? f.y + f.r*0.15 : f.y;
       if (doSquint) s += squintOverlay(x, ey, er, spec.sq, colors.body, colors.outline);
       if (doLid) s += lidOverlay(x, ey, er, spec.lid, spec.ang*side, colors.body, colors.outline);
-      s += drawBrow(spec.brows, x, f.y, f.r, side, colors.ink);
+      // Mood brows win; otherwise the creature's RESTING brow shows.
+      const brows = spec.brows === 0 ? (k.brow ?? 0) : spec.brows;
+      s += drawBrow(brows, x, f.y, f.r, side, colors.ink);
     }
     const mouthKind = spec.mouth === 0 ? k.mouth : spec.mouth === 1 ? 2 : spec.mouth === 2 ? 6 : spec.mouth === 3 ? 4 : 7;
-    s += drawMouth(mouthKind, p.fx, f.y + p.r*1.9, p.r, colors.outline, colors.ink);
+    const my = f.y + p.r*1.9;
+    let mouthSvg = drawMouth(mouthKind, p.fx, my, p.r, colors.outline, colors.ink);
+    // Mouth proportion; the placement search already tested fit at exactly
+    // these factors, so a wide mouth moved the face rather than overflowing.
+    const mw = k.mouthW ?? 1, md = k.mouthD ?? 1;
+    if (Math.abs(mw - 1) > 0.02 || Math.abs(md - 1) > 0.02)
+      mouthSvg = `<g transform='translate(${p.fx} ${my}) scale(${mw.toFixed(3)} ${md.toFixed(3)}) translate(${-p.fx} ${-my})'>${mouthSvg}</g>`;
+    s += mouthSvg;
     s += `</g>`;
     s += drawAdjunct(spec.adj, cx, minY, h/200, colors.ink);
   } else {

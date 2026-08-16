@@ -43,6 +43,7 @@ pub fn name(m: Mood) -> &'static str {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[derive(PartialEq, Eq)]
 pub enum Brows {
     None,
     /// Flat, slightly lowered: concentration.

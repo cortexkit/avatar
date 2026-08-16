@@ -24,6 +24,34 @@ struct Creature {
     topology: u8,
     voronoi: bool,
     belly_variant: u8,
+    /// Per-creature face variation. Measured against TOG, the vocabulary
+    /// spent 16 bits on the face against TOG's ~500, which meant two
+    /// creatures rolling the same eye+mouth archetype had *identical*
+    /// faces — only 30 faces existed in the whole population. These are
+    /// the visible half of TOG's face DNA (proportion and posture), not
+    /// its invisible half (iris saturation, lash removal arcs), and they
+    /// are all expressed as transforms bounded so that no value can break
+    /// a placement invariant.
+    face_style: FaceStyle,
+}
+
+#[derive(Clone, Copy)]
+struct FaceStyle {
+    /// >1 taller, <1 wider. Applied as min-scaling on both axes so an eye
+    /// never grows past the placed radius the invariants were proved for.
+    eye_aspect: f64,
+    /// Shrink applied to the right eye only — shrinking cannot violate
+    /// clearance or separation, while enlarging could. Decoded but DORMANT:
+    /// expressing it needs a per-eye radius inside the archetype renderers.
+    #[allow(dead_code)]
+    eye_wonk: f64,
+    /// Mouth scale; feeds the placement search's mouth-fit test, so a wide
+    /// mouth changes where the face can sit rather than escaping the body.
+    mouth_w: f64,
+    mouth_d: f64,
+    /// Resting brow: 0 none, 1 flat, 2 raised, 3 angled. Mood brows still
+    /// override, so this is the creature's face at rest.
+    brow: u8,
 }
 
 fn decode_full(seed: u64) -> Creature {
@@ -68,6 +96,21 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
     // Trailing read on purpose: appending keeps every earlier field's bytes
     // stable for a given seed.
     let belly_variant = b.byte() % 4;
+    // Trailing block: appended so every earlier field's bytes stay put.
+    let face_style = FaceStyle {
+        eye_aspect: b.lin(0.80, 1.28),
+        eye_wonk: b.lin(0.0, 0.20),
+        mouth_w: b.lin(0.75, 1.30),
+        mouth_d: b.lin(0.70, 1.35),
+        // Most creatures rest brow-less; a resting brow is a strong
+        // personality mark and reads as permanent attitude.
+        brow: match b.byte() % 8 {
+            0 | 1 => 1,
+            2 => 2,
+            3 => 3,
+            _ => 0,
+        },
+    };
     let creature = Creature {
         wb,
         exts,
@@ -80,6 +123,7 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
         topology,
         voronoi,
         belly_variant,
+        face_style,
     };
     (creature, b.consumed())
 }
@@ -185,7 +229,7 @@ struct FacePlacement {
 /// eye centers to the outline: an eye exists only where the body has
 /// interior DEPTH for it. Search over height band x eye spacing; radius is
 /// what the interior affords, capped by the cute proportions.
-fn place_face(outline: &[(f64, f64)]) -> Option<FacePlacement> {
+fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<FacePlacement> {
     let (_, min_y, _, max_y) = wild::bbox(outline);
     let h = max_y - min_y;
     let poly = merge::Poly::new(outline, 2);
@@ -239,10 +283,15 @@ fn place_face(outline: &[(f64, f64)]) -> Option<FacePlacement> {
             if best_eyes_only.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
                 best_eyes_only = Some((score, candidate));
             }
+            // Mouth extents scale with the creature's own mouth size, so a
+            // wide mouth moves the face to where it fits instead of
+            // overflowing the silhouette.
             let mouth_y = y + r * 2.71;
-            let mouth_ok = poly.sdf(fx - r * 0.8, mouth_y) < -1.0
-                && poly.sdf(fx + r * 0.8, mouth_y) < -1.0
-                && poly.sdf(fx, mouth_y + r * 0.62) < -1.0;
+            let half = r * 0.8 * mouth_w;
+            let deep = r * 0.62 * mouth_d;
+            let mouth_ok = poly.sdf(fx - half, mouth_y) < -1.0
+                && poly.sdf(fx + half, mouth_y) < -1.0
+                && poly.sdf(fx, mouth_y + deep) < -1.0;
             if mouth_ok && best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
                 best = Some((score, candidate));
             }
@@ -357,7 +406,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
     s.push_str(&format!("<g clip-path='url(#{clip_id})'>"));
 
     // Placement first: the voronoi mask needs to know where the face lives.
-    let placement = place_face(&outline);
+    let placement = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d);
 
     if c.voronoi {
         let cell_bbox = (min_x, min_y, max_x, max_y);
@@ -468,14 +517,33 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             &colors.pupil,
             colors.sclera.as_deref(),
         );
-        if (spec.eye_scale - 1.0).abs() > 0.01 {
+        // Per-creature eye shape, bounded so the invariants still hold:
+        // both axis factors are <= 1, so an eye can only shrink inside the
+        // placed radius that clearance and separation were proved against.
+        // Aspect is applied to the pair; wonk shrinks the right eye alone,
+        // which is the ugly-cute lever generalised beyond the one archetype
+        // that had it baked in.
+        let st = c.face_style;
+        let (ax, ay) = if st.eye_aspect >= 1.0 {
+            (1.0 / st.eye_aspect, 1.0)
+        } else {
+            (1.0, st.eye_aspect)
+        };
+        let sx = ax * spec.eye_scale;
+        let sy = ay * spec.eye_scale;
+        if (sx - 1.0).abs() > 0.005 || (sy - 1.0).abs() > 0.005 {
             s.push_str(&format!(
-                "<g transform='translate({:.1} {:.1}) scale({:.3}) translate({:.1} {:.1})'>{eyes_svg}</g>",
-                p.fx, f.y, spec.eye_scale, -p.fx, -f.y,
+                "<g transform='translate({:.1} {:.1}) scale({sx:.3} {sy:.3}) translate({:.1} {:.1})'>{eyes_svg}</g>",
+                p.fx, f.y, -p.fx, -f.y,
             ));
         } else {
             s.push_str(&eyes_svg);
         }
+        // eye_wonk decodes but stays dormant: expressing it needs a per-eye
+        // radius inside the archetype renderers, and the obvious shortcut
+        // (redrawing the pair scaled about one eye) draws the other eye
+        // twice. Dormant-field law — the DNA is reserved and the feature
+        // lights up when the renderers take a per-eye scale.
 
         // Mood layers per eye — ARCHETYPE-AWARE (Ufuk's lab find: lids and
         // squints are disc-eye concepts; stacked on line eyes they read as
@@ -513,7 +581,21 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                     &colors.outline,
                 ));
             }
-            s.push_str(&mood::brow(spec.brows, x, f.y, f.r, side, &colors.ink));
+            // Mood brows win; otherwise the creature's RESTING brow shows.
+            // A permanent brow reads as standing attitude rather than a
+            // reaction, which is exactly the personality range the face
+            // vocabulary was missing.
+            let brows = if spec.brows == mood::Brows::None {
+                match st.brow {
+                    1 => mood::Brows::Focus,
+                    2 => mood::Brows::Raised,
+                    3 => mood::Brows::Knit,
+                    _ => mood::Brows::None,
+                }
+            } else {
+                spec.brows
+            };
+            s.push_str(&mood::brow(brows, x, f.y, f.r, side, &colors.ink));
         }
 
         // Mouth: mood override or the pack's own.
@@ -524,7 +606,20 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             mood::MouthMood::Pressed => face::MouthKind::Flat,
             mood::MouthMood::Down => face::MouthKind::DownArc,
         };
-        s.push_str(&face::mouth_inked(mouth_kind, &shim, p.fx, face_cy, &colors.outline, &colors.ink));
+        let mouth_svg =
+            face::mouth_inked(mouth_kind, &shim, p.fx, face_cy, &colors.outline, &colors.ink);
+        // Per-creature mouth proportion. The placement search already tested
+        // fit at exactly these factors, so a wide mouth was accounted for
+        // when the face was positioned rather than overflowing afterwards.
+        let my = face_cy + shim.height * 0.15;
+        if (st.mouth_w - 1.0).abs() > 0.02 || (st.mouth_d - 1.0).abs() > 0.02 {
+            s.push_str(&format!(
+                "<g transform='translate({:.1} {my:.1}) scale({:.3} {:.3}) translate({:.1} {:.1})'>{mouth_svg}</g>",
+                p.fx, st.mouth_w, st.mouth_d, -p.fx, -my,
+            ));
+        } else {
+            s.push_str(&mouth_svg);
+        }
         s.push_str("</g>");
 
         // Adjuncts live OUTSIDE the body clip (Zz floats beside the crown).
@@ -604,7 +699,7 @@ fn run_checker(n: u64) {
     for seed in 4000..(4000 + n) {
         let c = decode_full(seed);
         let outline = outline_for(&c, 120.0, 120.0);
-        let Some(p) = place_face(&outline) else {
+        let Some(p) = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d) else {
             println!("seed {seed}: NO PLACEMENT");
             violations += 1;
             continue;
@@ -620,12 +715,15 @@ fn run_checker(n: u64) {
         .iter()
         .map(|d| -d - p.r)
         .fold(f64::MAX, f64::min);
-        // Mouth-fit (TOG rule): drawn mouth extremes inside the silhouette.
+        // Mouth-fit (TOG rule): drawn mouth extremes inside the silhouette,
+        // at the creature's own mouth scale.
         let mouth_y = p.eye_y + p.r * 2.71;
+        let half = p.r * 0.8 * c.face_style.mouth_w;
+        let deep = p.r * 0.62 * c.face_style.mouth_d;
         let mouth_breach = [
-            poly.sdf(p.fx - p.r * 0.8, mouth_y),
-            poly.sdf(p.fx + p.r * 0.8, mouth_y),
-            poly.sdf(p.fx, mouth_y + p.r * 0.62),
+            poly.sdf(p.fx - half, mouth_y),
+            poly.sdf(p.fx + half, mouth_y),
+            poly.sdf(p.fx, mouth_y + deep),
         ]
         .iter()
         .fold(f64::MIN, |a: f64, &d| a.max(d));
@@ -744,7 +842,7 @@ fn main() {
             bx0, by0, bx1, by1,
             by1 - by0,
         );
-        match place_face(&outline) {
+        match place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d) {
             Some(p) => println!(
                 "  placed: fx={:.1} eye_y={:.1} ipd={:.1} r={:.1}",
                 p.fx, p.eye_y, p.ipd, p.r
