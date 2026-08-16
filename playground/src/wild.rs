@@ -40,7 +40,12 @@ pub struct WildBody {
 /// points after mirroring) — more point information than TOG's 1024-bit
 /// region, per the redesign direction.
 pub fn decode(b: &mut Bits) -> WildBody {
-    let spoke_count = 5 + (b.byte() % 9) as usize; // 5..=13
+    // 5..=16 half-side spokes (10..=32 ring points). Widened from 5..=13
+    // with budget recovered from the surface region: silhouette is the
+    // channel humans discriminate first, so it should be the best-funded
+    // one — the inverse of TOG/v1, which spent its bits on face micro-detail
+    // that avatar sizes cannot resolve.
+    let spoke_count = 5 + (b.byte() % 12) as usize;
     let _legacy = b.byte(); // was the mirror flag; kept so seeds stay stable
     let mut spokes = Vec::with_capacity(spoke_count);
     let n = spoke_count as f64;
@@ -81,7 +86,9 @@ pub struct Extremity {
 
 /// Decode 0..=3 extremity PAIRS (mirrored with the body).
 pub fn decode_extremities(b: &mut Bits) -> Vec<Extremity> {
-    let count = (b.byte() % 4) as usize;
+    // 0..=4 pairs (was 0..=3): limbs proved the strongest species-level
+    // lever in grid 8, so recovered budget buys one more pair.
+    let count = (b.byte() % 5) as usize;
     let mut out = Vec::with_capacity(count);
     for _ in 0..count {
         // Anchor in the upper-and-side band (SVG y-down: PI..TAU is the
@@ -421,6 +428,68 @@ fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -
         })
         .count();
     out
+}
+
+/// Distance from the ring origin to the outline along `theta`, taking the
+/// NEAREST crossing.
+///
+/// Extremity roots used the nearest spoke's raw radius, but the rendered
+/// outline is the post-domestication curve — smoothing, the concavity
+/// floor and tension all move it, and where the curve fell inside the raw
+/// radius the root landed outside the body and the limb rendered detached
+/// (seed 5012). Measuring the actual outline is the only way a graft can
+/// be guaranteed covered; nearest crossing keeps the root inside even on
+/// concave, self-crossing shapes.
+pub fn radius_along(outline: &[(f64, f64)], theta: f64) -> Option<f64> {
+    let (dx, dy) = (theta.cos(), theta.sin());
+    let n = outline.len();
+    let mut best: Option<f64> = None;
+    for i in 0..n {
+        let (x1, y1) = outline[i];
+        let (x2, y2) = outline[(i + 1) % n];
+        let (ex, ey) = (x2 - x1, y2 - y1);
+        // Solve p1 + s*e = t*d for s in [0,1], t > 0.
+        let den = dx * ey - dy * ex;
+        if den.abs() < 1e-12 {
+            continue;
+        }
+        let s = (dx * y1 - dy * x1) / den;
+        if !(0.0..=1.0).contains(&s) {
+            continue;
+        }
+        let px = x1 + ex * s;
+        let py = y1 + ey * s;
+        let t = if dx.abs() > dy.abs() { px / dx } else { py / dy };
+        if t > 1e-9 && best.map(|b| t < b).unwrap_or(true) {
+            best = Some(t);
+        }
+    }
+    best
+}
+
+/// ALL horizontal spans of the outline at height `y`, left to right.
+///
+/// A concave body crosses a scanline more than twice, and a walk that takes
+/// the widest span at each height can hop between disjoint masses — which
+/// renders as horizontal striping when consecutive samples land on
+/// different legs. Callers that walk a band need every span so they can
+/// stay on one of them.
+pub fn extents_at(outline: &[(f64, f64)], y: f64) -> Vec<(f64, f64)> {
+    let mut xs: Vec<f64> = Vec::new();
+    let n = outline.len();
+    for i in 0..n {
+        let (x1, y1) = outline[i];
+        let (x2, y2) = outline[(i + 1) % n];
+        if (y1 <= y && y2 > y) || (y2 <= y && y1 > y) {
+            let t = (y - y1) / (y2 - y1);
+            xs.push(x1 + (x2 - x1) * t);
+        }
+    }
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs.chunks(2)
+        .filter(|c| c.len() == 2)
+        .map(|c| (c[0], c[1]))
+        .collect()
 }
 
 /// Horizontal extents of the outline at height `y` (for face mounting):

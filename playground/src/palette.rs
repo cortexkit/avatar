@@ -53,11 +53,16 @@ pub fn mottle(recipe: usize, h: f64) -> (String, String) {
 /// 0 = classic near-white, 1 = lighter same-hue tone, 2 = warm cream,
 /// 3 = soft accent tint. Dark gravitas keeps its luminous register.
 pub fn belly_fill(recipe: usize, h: f64, variant: u8) -> String {
+    // Every variant stays anchored to the creature's own hue. A fixed warm
+    // hue read as a foreign patch on cool bodies — a near-white cream blob
+    // on a green creature looks like a hole punched in it (seed 5033) — so
+    // "warm" is now a bounded shift of the body hue rather than a constant.
+    let warm = h + warm_shift(h);
     if recipe == 3 {
         return match variant % 4 {
             0 => hsl(h + 6.0, 45.0, 48.0),
             1 => hsl(h, 40.0, 38.0),
-            2 => hsl(45.0, 30.0, 55.0),
+            2 => hsl(warm, 30.0, 55.0),
             _ => hsl(h + 24.0, 42.0, 50.0),
         };
     }
@@ -68,12 +73,29 @@ pub fn belly_fill(recipe: usize, h: f64, variant: u8) -> String {
         4 => (24.0, 62.0),
         _ => (28.0, 88.0),
     };
+    // Lightness is a LIFT of the body tone, never an absolute near-white.
+    // A fixed 93% lightness is a gentle highlight on a pale body and a stark
+    // hole on a mid-tone one (seed 5033: white patch on mid-green read as a
+    // puncture). Relative lift keeps the belly reading as the creature's own
+    // underside at every body value.
+    // Saturation stays near the body's too. Lightness alone was not enough:
+    // a strongly desaturated patch reads as grey-white however modest its
+    // lift, which is the other half of why a belly can look like a hole
+    // rather than an underside.
     match variant % 4 {
-        0 => hsl(h, s * 0.42, 93.0),
-        1 => hsl(h, s * 0.72, (l + 14.0).min(94.0)),
-        2 => hsl(45.0, 38.0, 91.0),
-        _ => hsl(h + 28.0, s * 0.5, (l + 10.0).min(92.0)),
+        0 => hsl(h, s * 0.66, (l + 13.0).min(94.0)),
+        1 => hsl(h, s * 0.82, (l + 9.0).min(94.0)),
+        2 => hsl(warm, s * 0.6, (l + 11.0).min(94.0)),
+        _ => hsl(h + 28.0, s * 0.62, (l + 8.0).min(92.0)),
     }
+}
+
+/// Bounded hue nudge toward warm (45 deg), along the shorter arc and capped
+/// at 30 deg. Warmth becomes a family resemblance instead of a jump to a
+/// hue the creature does not otherwise wear.
+fn warm_shift(h: f64) -> f64 {
+    let delta = (45.0 - h.rem_euclid(360.0) + 540.0).rem_euclid(360.0) - 180.0;
+    delta.clamp(-30.0, 30.0)
 }
 
 /// Tone variant of the body color: same hue, one shade step lighter

@@ -44,14 +44,14 @@
   <div class="hint">Seeds 4000+ match committed grid-10 cells. Knobs override the decoded genome; sliders marked ×1 are multipliers on decoded values.</div>
 
   <h2>Body</h2>
-  <div class="row"><label>spokes</label><input type="range" id="spokes" min="5" max="13" step="1"><output></output></div>
+  <div class="row"><label>spokes</label><input type="range" id="spokes" min="5" max="16" step="1"><output></output></div>
   <div class="row"><label>domestication</label><input type="range" id="dom" min="0" max="1" step="0.01"><output></output></div>
   <div class="row"><label>radius ×</label><input type="range" id="radScale" min="0.5" max="1.5" step="0.01" value="1"><output></output></div>
   <div class="row"><label>tension ×</label><input type="range" id="tenScale" min="0.4" max="1.6" step="0.01" value="1"><output></output></div>
   <div class="row"><button id="rerollBody">reroll body</button></div>
 
   <h2>Extremities</h2>
-  <div class="row"><label>pairs</label><input type="range" id="extCount" min="0" max="3" step="1"><output></output></div>
+  <div class="row"><label>pairs</label><input type="range" id="extCount" min="0" max="4" step="1"><output></output></div>
   <div class="row"><label>length ×</label><input type="range" id="extLen" min="0.4" max="1.8" step="0.01" value="1"><output></output></div>
   <div class="row"><label>width ×</label><input type="range" id="extWid" min="0.4" max="1.8" step="0.01" value="1"><output></output></div>
   <div class="row"><label>curl ×</label><input type="range" id="extCurl" min="-1.6" max="1.6" step="0.01" value="1"><output></output></div>
@@ -153,7 +153,9 @@ function bits(seed) {
 // ============ genome decode (mirrors grid-10 decode_full byte order) ============
 function decodeFull(seed) {
   const b = bits(seed);
-  const spokeCount = 5 + (b.byte() % 9);
+  // 5..=16 spokes: silhouette is the best-funded channel now (budget moved
+  // over from the surface region). Mirrors Rust wild::decode.
+  const spokeCount = 5 + (b.byte() % 12);
   b.byte(); // legacy mirror flag slot
   const spokes = [];
   for (let i = 0; i < spokeCount; i++) {
@@ -161,7 +163,7 @@ function decodeFull(seed) {
     const jitter = b.lin(-0.45, 0.45) * Math.PI * 2 / spokeCount;
     spokes.push({ theta: base + jitter, r: b.lin(0.12, 1.35), tension: b.lin(0.4, 2.6) });
   }
-  const extCount = b.byte() % 4;
+  const extCount = b.byte() % 5; // 0..=4 pairs: limbs are the species lever
   const exts = [];
   for (let i = 0; i < extCount; i++) {
     exts.push({
@@ -173,11 +175,20 @@ function decodeFull(seed) {
     });
   }
   // 8..=13 pairs, sparse shading (2-in-4 skip): hide spots, not tiling.
+  // Sites GENERATED from a 16-bit seed rather than stored (24 genome bits
+  // instead of 200-320) — Lloyd relaxation evens them anyway, so their
+  // exact stored positions never earned their cost. Mirrors Rust.
   const pairCount = 8 + (b.byte() % 6);
+  // Same domain constant as Rust surface::decode_sites — a different XOR
+  // here would silently give the lab and the sheets different mottle for
+  // the same seed, which is exactly the cross-renderer drift the corpus
+  // exists to prevent.
+  const siteSeed = (BigInt((b.byte() << 8) | b.byte())) ^ 0x5175726661636501n;
+  const r = bits(siteSeed);
   const sites = [];
   for (let i = 0; i < pairCount; i++) {
-    const x = b.lin(0.04, 1.05), y = b.lin(-1.05, 1.05);
-    const s3 = b.byte() % 4, shade = s3 === 0 ? 0 : s3 === 1 ? 1 : 2;
+    const x = r.lin(0.04, 1.05), y = r.lin(-1.05, 1.05);
+    const s3 = r.byte() % 4, shade = s3 === 0 ? 0 : s3 === 1 ? 1 : 2;
     sites.push({ x, y, shade }, { x: -x, y, shade });
   }
   const rsel = b.byte() % 8;
@@ -464,21 +475,72 @@ function resolveColors(recipe, h) {
 }
 // Opaque belly variants (mirrors Rust palette::belly_fill): opacity let the
 // voronoi bleed through; opaque is immune by construction.
+// Belly is a LIFT of the body tone, hue-anchored and still chromatic.
+// Absolute near-white plus heavy desaturation read as a hole punched in
+// mid-tone bodies; a fixed warm hue read as a foreign patch on cool ones.
+// Mirrors Rust palette::belly_fill.
+function warmShift(h) {
+  const d = ((45 - ((h % 360) + 360) % 360 + 540) % 360) - 180;
+  return Math.max(-30, Math.min(30, d));
+}
+// All horizontal spans at height y (concave bodies cross a scanline more
+// than twice). Mirrors Rust wild::extents_at.
+function extentsAt(outline, y) {
+  const xs = [];
+  for (let i = 0; i < outline.length; i++) {
+    const [x1,y1] = outline[i], [x2,y2] = outline[(i+1) % outline.length];
+    if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y)) xs.push(x1 + (x2-x1) * (y-y1)/(y2-y1));
+  }
+  xs.sort((a,b) => a-b);
+  const out = [];
+  for (let i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i+1]]);
+  return out;
+}
+function bellyPatch(outline, topY, scale) {
+  const [fx0, fy0, fx1, fy1] = bboxOf(outline);
+  const bottom = fy1 - (fy1 - topY) * 0.06;
+  if (bottom <= topY) return [];
+  const steps = 40, left = [], right = [];
+  let anchor = null;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = topY + (bottom - topY) * t;
+    const spans = extentsAt(outline, y);
+    if (!spans.length) continue;
+    let span;
+    if (anchor === null) {
+      span = spans.reduce((a,b) => (b[1]-b[0] > a[1]-a[0] ? b : a));
+    } else {
+      span = spans.reduce((a,b) =>
+        Math.abs((b[0]+b[1])/2 - anchor) < Math.abs((a[0]+a[1])/2 - anchor) ? b : a);
+    }
+    const cx = (span[0] + span[1]) / 2;
+    anchor = cx;
+    const hw = (span[1]-span[0]) / 2 * scale * Math.sqrt(t) * (1 - 0.3*t*t*t);
+    left.push([cx - hw, y]); right.push([cx + hw, y]);
+  }
+  if (left.length < 3) return [];
+  const poly = left.concat(right.reverse());
+  const [bx0, by0, bx1, by1] = bboxOf(poly);
+  if (bx1-bx0 < (fx1-fx0)*0.10 || by1-by0 < (fy1-fy0)*0.08) return [];
+  return poly;
+}
 function bellyFill(recipe, h, variant) {
+  const warm = h + warmShift(h);
   if (+recipe === 3) {
     switch (variant % 4) {
       case 0: return hsl(h+6, 45, 48);
       case 1: return hsl(h, 40, 38);
-      case 2: return hsl(45, 30, 55);
+      case 2: return hsl(warm, 30, 55);
       default: return hsl(h+24, 42, 50);
     }
   }
   const [s, l] = { 0: [66,82], 2: [78,64], 4: [24,62] }[+recipe] || [28,88];
   switch (variant % 4) {
-    case 0: return hsl(h, s*0.42, 93);
-    case 1: return hsl(h, s*0.72, Math.min(94, l+14));
-    case 2: return hsl(45, 38, 91);
-    default: return hsl(h+28, s*0.5, Math.min(92, l+10));
+    case 0: return hsl(h, s*0.66, Math.min(94, l+13));
+    case 1: return hsl(h, s*0.82, Math.min(94, l+9));
+    case 2: return hsl(warm, s*0.6, Math.min(94, l+11));
+    default: return hsl(h+28, s*0.62, Math.min(92, l+8));
   }
 }
 function tone(recipe, h, dir) {
@@ -641,16 +703,25 @@ function creatureSVG(k, moodName, size) {
   const spokes = k.spokes.map(s => ({ theta: s.theta, r: s.r * k.radScale, tension: s.tension * k.tenScale }));
   const raw = sampleOutline(spokes, dom);
   const meanR = spokes.reduce((a,s) => a + s.r, 0) / spokes.length;
+  // Root radius from the ACTUAL post-domestication outline (nearest ray
+  // crossing), not the nearest raw spoke: smoothing moves the curve inward
+  // and roots that trusted the raw radius floated free of the body.
+  // Mirrors Rust wild::radius_along.
   const ringRAt = th => {
-    const TAU = Math.PI*2;
-    const t = ((th % TAU) + TAU) % TAU, tm = ((Math.PI - t) % TAU + TAU) % TAU;
-    let bd = 1/0, br = meanR;
-    for (const s of spokes) {
-      const d1 = Math.min(Math.abs(s.theta - t), TAU - Math.abs(s.theta - t));
-      const d2 = Math.min(Math.abs(s.theta - tm), TAU - Math.abs(s.theta - tm));
-      if (Math.min(d1,d2) < bd) { bd = Math.min(d1,d2); br = s.r; }
+    const dx = Math.cos(th), dy = Math.sin(th);
+    let best = null;
+    for (let i = 0; i < raw.length; i++) {
+      const [x1,y1] = raw[i], [x2,y2] = raw[(i+1) % raw.length];
+      const ex = x2-x1, ey = y2-y1;
+      const den = dx*ey - dy*ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const sPar = (dx*y1 - dy*x1) / den;
+      if (sPar < 0 || sPar > 1) continue;
+      const px = x1 + ex*sPar, py = y1 + ey*sPar;
+      const t = Math.abs(dx) > Math.abs(dy) ? px/dx : py/dy;
+      if (t > 1e-9 && (best === null || t < best)) best = t;
     }
-    return br;
+    return best === null ? meanR : best;
   };
   const exts = k.exts.slice(0, k.extCount).map(e => ({
     theta: e.theta, len: e.len * k.extLen, width: e.width * k.extWid,
@@ -748,9 +819,14 @@ function creatureSVG(k, moodName, size) {
     if (masked) s += `</g>`;
   }
   if (p) {
-    const bellyY = minY + h*0.62;
-    const be = extentAt(outline, bellyY);
-    if (be) s += `<ellipse cx='${(be[0]+be[1])/2}' cy='${bellyY + h*0.05}' rx='${(be[1]-be[0])/2*0.62}' ry='${h*0.24}' fill='${bellyFill(k.recipe, k.hue, k.bellyVariant ?? 0)}'/>`;
+    // Belly follows the body's own width profile down the band, staying on
+    // one mass, with a sqrt ramp closing the crown to a point. Mirrors Rust
+    // belly_patch — an ellipse read as a ball on lumpy bodies and a smear
+    // across split legs.
+    const bellyPts = bellyPatch(outline, p.eyeY + p.r*3.4, 0.72);
+    if (bellyPts.length >= 3) {
+      s += `<path d='${bellyPts.map((q,i) => (i?'L':'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ')} Z' fill='${bellyFill(k.recipe, k.hue, k.bellyVariant ?? 0)}'/>`;
+    }
     // The search-chosen ipd IS the spacing (it may have pulled eyes inward
     // off thin side masses) — never re-derive from halfW.
     const f = { lx: p.fx - p.ipd, rx: p.fx + p.ipd, y: p.eyeY, r: p.r };

@@ -27,6 +27,12 @@ struct Creature {
 }
 
 fn decode_full(seed: u64) -> Creature {
+    decode_full_counted(seed).0
+}
+
+/// Decode plus the bytes it actually consumed. One decode path, so a DNA
+/// measurement can never drift from the decoder it claims to measure.
+fn decode_full_counted(seed: u64) -> (Creature, usize) {
     let mut b = genome::Bits::new(seed);
     let wb = wild::decode(&mut b);
     let exts = wild::decode_extremities(&mut b);
@@ -62,7 +68,7 @@ fn decode_full(seed: u64) -> Creature {
     // Trailing read on purpose: appending keeps every earlier field's bytes
     // stable for a given seed.
     let belly_variant = b.byte() % 4;
-    Creature {
+    let creature = Creature {
         wb,
         exts,
         ext_fills,
@@ -74,7 +80,89 @@ fn decode_full(seed: u64) -> Creature {
         topology,
         voronoi,
         belly_variant,
+    };
+    (creature, b.consumed())
+}
+
+/// Belly patch: the body outline scaled toward a low anchor, then clipped
+/// to the region below `top_y`. Following the silhouette keeps the patch
+/// organic on any body shape, and the inward scale guarantees it never
+/// touches the outline.
+fn belly_patch(outline: &[(f64, f64)], top_y: f64, scale: f64) -> Vec<(f64, f64)> {
+    let (_, _, _, max_y) = wild::bbox(outline);
+    let bottom = max_y - (max_y - top_y) * 0.06;
+    if bottom <= top_y {
+        return Vec::new();
     }
+    // Walk the body's own WIDTH PROFILE down the belly band — the blob
+    // generator's approach, generalised to wild silhouettes. Three earlier
+    // shapes failed because they were foreign geometry laid over the body: a
+    // fixed ellipse (a ball on lumpy bodies, a smear across split legs), a
+    // horizontal clip (flat top edge), and a wide ellipse clip (still flat).
+    // A profile walk borrows every horizontal from the creature, and the
+    // sqrt ramp closes the top to a point so there is no top edge at all.
+    // extent_at returns the widest span at each height, so on a split body
+    // the patch follows one mass instead of bridging the gap.
+    let steps = 40;
+    let mut left = Vec::with_capacity(steps + 1);
+    let mut right = Vec::with_capacity(steps + 1);
+    // Follow ONE mass down the band: start on the widest span, then at each
+    // step take the span whose centre is nearest the previous one. Taking
+    // the widest at every height lets the walk hop between legs, and the
+    // resulting zig-zag polygon renders as horizontal striping.
+    let mut anchor: Option<f64> = None;
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let y = top_y + (bottom - top_y) * t;
+        let spans = wild::extents_at(outline, y);
+        if spans.is_empty() {
+            continue;
+        }
+        let (l, r) = match anchor {
+            None => *spans
+                .iter()
+                .max_by(|a, b| (a.1 - a.0).partial_cmp(&(b.1 - b.0)).unwrap())
+                .unwrap(),
+            Some(prev) => *spans
+                .iter()
+                .min_by(|a, b| {
+                    let da = ((a.0 + a.1) / 2.0 - prev).abs();
+                    let db = ((b.0 + b.1) / 2.0 - prev).abs();
+                    da.partial_cmp(&db).unwrap()
+                })
+                .unwrap(),
+        };
+        let cx = (l + r) / 2.0;
+        anchor = Some(cx);
+        // sqrt ramp: rounded crown. Cubic pull-in at the base keeps the
+        // patch clear of the silhouette where the body narrows to feet.
+        let hw = (r - l) / 2.0 * scale * t.sqrt() * (1.0 - 0.3 * t * t * t);
+        left.push((cx - hw, y));
+        right.push((cx + hw, y));
+    }
+    if left.len() < 3 {
+        return Vec::new();
+    }
+    left.extend(right.into_iter().rev());
+    // Suppression, TOG's rule: a feature too small to read should not be
+    // drawn. Kept deliberately tight — an earlier, broader version deleted
+    // perfectly good bellies (seed 5000) while chasing a defect that turned
+    // out to be a colour problem, not a size one.
+    let (bx0, by0, bx1, by1) = wild::bbox(&left);
+    let (fx0, fy0, fx1, fy1) = wild::bbox(outline);
+    if bx1 - bx0 < (fx1 - fx0) * 0.10 || by1 - by0 < (fy1 - fy0) * 0.08 {
+        return Vec::new();
+    }
+    left
+}
+
+/// Monotonic id source for SVG defs. Local ids in one document must be
+/// unique; deriving them from content invites collisions that render as
+/// silent visual corruption rather than as errors.
+fn next_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 #[derive(Clone, Copy)]
@@ -170,21 +258,12 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
 
     let raw = wild::build_raw(&c.wb, dom);
     let mean_r = c.wb.spokes.iter().map(|s| s.r).sum::<f64>() / c.wb.spokes.len() as f64;
-    let ring_r_at = |theta: f64| -> f64 {
-        let t = theta.rem_euclid(std::f64::consts::TAU);
-        let tm = (std::f64::consts::PI - t).rem_euclid(std::f64::consts::TAU);
-        c.wb
-            .spokes
-            .iter()
-            .map(|s| {
-                let d1 = (s.theta - t).abs().min(std::f64::consts::TAU - (s.theta - t).abs());
-                let d2 = (s.theta - tm).abs().min(std::f64::consts::TAU - (s.theta - tm).abs());
-                (d1.min(d2), s.r)
-            })
-            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-            .map(|(_, r)| r)
-            .unwrap_or(mean_r)
-    };
+    // Root radius measured on the ACTUAL post-domestication outline, not on
+    // the nearest raw spoke: smoothing moves the curve inward, and roots
+    // that trusted the raw radius floated outside the body (seed 5012's
+    // detached limbs).
+    let ring_r_at =
+        |theta: f64| -> f64 { wild::radius_along(&raw.pts, theta).unwrap_or(mean_r) };
 
     let ext_outlines: Vec<(usize, Vec<(f64, f64)>)> = c
         .exts
@@ -262,11 +341,15 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         d.push_str(&format!("{cmd}{:.2} {:.2} ", p.0, p.1));
     }
     d.push('Z');
-    // Unique per CELL: hue+mood collided across cells (two same-hue
-    // creatures in one sheet), and url(#) resolves document-wide to the
-    // FIRST match — seed 4009's face was clipped by another creature's
-    // body path and vanished. Position is the one per-cell invariant.
-    let clip_id = format!("g10x{:.0}y{:.0}m{}", cx, cy, m as u8);
+    // Unique per DRAW, from a process counter. url(#) resolves
+    // document-wide to the first match, so any id derived from creature
+    // content or cell position collides as soon as two draws share it:
+    // hue+mood collided across same-hue cells, and position collided the
+    // moment the review renderer drew every creature at local (120,120)
+    // and moved them with an outer transform — 40 creatures clipped by the
+    // first one's silhouette. A counter cannot collide by construction,
+    // which is the only property this id actually needs.
+    let clip_id = format!("c{}", next_id());
     s.push_str(&format!(
         "<defs><clipPath id='{clip_id}'><path d='{d}'/></clipPath></defs><path d='{d}' fill='{}' stroke='{}' stroke-width='1.5'/>",
         colors.body, colors.outline,
@@ -331,14 +414,27 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
     // placement: lids and squints in body color, on-demand brows, mouth
     // override, eye scale, adjuncts).
     if let Some(p) = placement {
-        let belly_y = min_y + h * 0.62;
-        if let Some((blx, brx)) = wild::extent_at(&outline, belly_y) {
-            let bw2 = (brx - blx) / 2.0 * 0.62;
+        // Belly follows the BODY, not an ellipse: the outline shrunk toward
+        // a lower anchor and cut off above the belly line. A fixed ellipse
+        // fits only ellipse-shaped bodies — it read as a ball stuck on a
+        // lumpy body (seed 5001) and as a smear across the gap between two
+        // legs (seed 5022). Shrinking the silhouette itself cannot produce
+        // either: the patch is always the creature's own shape.
+        let belly_top = p.eye_y + p.r * 3.4;
+        let belly = belly_patch(&outline, belly_top, 0.72);
+        if belly.len() >= 3 {
+            let mut d = String::new();
+            for (i, q) in belly.iter().enumerate() {
+                d.push_str(&format!(
+                    "{}{:.1} {:.1} ",
+                    if i == 0 { 'M' } else { 'L' },
+                    q.0,
+                    q.1
+                ));
+            }
+            d.push('Z');
             s.push_str(&format!(
-                "<ellipse cx='{:.1}' cy='{:.1}' rx='{bw2:.1}' ry='{:.1}' fill='{}'/>",
-                (blx + brx) / 2.0,
-                belly_y + h * 0.05,
-                h * 0.24,
+                "<path d='{d}' fill='{}'/>",
                 palette::belly_fill(c.recipe, c.hue, c.belly_variant),
             ));
         }
@@ -459,21 +555,10 @@ fn outline_for(c: &Creature, cx: f64, cy: f64) -> Vec<(f64, f64)> {
     let dom = 0.32;
     let raw = wild::build_raw(&c.wb, dom);
     let mean_r = c.wb.spokes.iter().map(|s| s.r).sum::<f64>() / c.wb.spokes.len() as f64;
-    let ring_r_at = |theta: f64| -> f64 {
-        let t = theta.rem_euclid(std::f64::consts::TAU);
-        let tm = (std::f64::consts::PI - t).rem_euclid(std::f64::consts::TAU);
-        c.wb
-            .spokes
-            .iter()
-            .map(|s| {
-                let d1 = (s.theta - t).abs().min(std::f64::consts::TAU - (s.theta - t).abs());
-                let d2 = (s.theta - tm).abs().min(std::f64::consts::TAU - (s.theta - tm).abs());
-                (d1.min(d2), s.r)
-            })
-            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-            .map(|(_, r)| r)
-            .unwrap_or(mean_r)
-    };
+    // Must match draw_full exactly — a checker that rebuilds the geometry
+    // differently is measuring a creature nobody renders.
+    let ring_r_at =
+        |theta: f64| -> f64 { wild::radius_along(&raw.pts, theta).unwrap_or(mean_r) };
     let ext_outlines: Vec<Vec<(f64, f64)>> = c
         .exts
         .iter()
@@ -587,15 +672,7 @@ fn main() {
         let (mut min_b, mut max_b, mut total) = (usize::MAX, 0usize, 0usize);
         let n = 2000u64;
         for seed in 4000..(4000 + n) {
-            let mut b = genome::Bits::new(seed);
-            let wb = wild::decode(&mut b);
-            let exts = wild::decode_extremities(&mut b);
-            let _sites = surface::decode_sites(&mut b);
-            for _ in 0..(5 + exts.len()) {
-                b.byte();
-            }
-            let _ = wb;
-            let c = b.consumed();
+            let c = decode_full_counted(seed).1;
             min_b = min_b.min(c);
             max_b = max_b.max(c);
             total += c;
@@ -604,6 +681,54 @@ fn main() {
         println!("  min {min_b} bytes ({} bits)", min_b * 8);
         println!("  max {max_b} bytes ({} bits)", max_b * 8);
         println!("  mean {:.1} bytes ({:.0} bits)", total as f64 / n as f64, total as f64 / n as f64 * 8.0);
+        return;
+    }
+    // --review START N: high-fidelity contact sheet at 400px cells, 4 per
+    // row. The 240px grid cells hide face-level defects (the tongue and
+    // snaggle bugs both survived several sheet reviews and were caught only
+    // when someone looked at one creature big). Review resolution has to
+    // match the defect scale.
+    if let Some(i) = args.iter().position(|a| a == "--review") {
+        let start: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
+        let n: usize = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(40);
+        let cell = 400.0_f64;
+        let pad = 8.0;
+        let cols = 4usize;
+        let rows = n.div_ceil(cols);
+        let w = pad + cols as f64 * (cell + pad);
+        let h = pad + rows as f64 * (cell + pad);
+        let mut svg = format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{w:.0}' height='{h:.0}' viewBox='0 0 {w:.0} {h:.0}'><rect width='100%' height='100%' fill='#141318'/>"
+        );
+        for k in 0..n {
+            let seed = start + k as u64;
+            let c = decode_full(seed);
+            let col = k % cols;
+            let row = k / cols;
+            let x0 = pad + col as f64 * (cell + pad);
+            let y0 = pad + row as f64 * (cell + pad);
+            svg.push_str(&format!(
+                "<rect x='{x0:.1}' y='{y0:.1}' width='{cell}' height='{cell}' rx='14' fill='#efe9e4'/>"
+            ));
+            // draw_full centres on (cx, cy) with its own 172-unit scale, so
+            // scale the whole group up to fill the review cell.
+            let s = cell / 240.0;
+            svg.push_str(&format!(
+                "<g transform='translate({:.1} {:.1}) scale({s:.4})'>{}</g>",
+                x0 + cell / 2.0 - 120.0 * s,
+                y0 + cell / 2.0 - 120.0 * s,
+                draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+            ));
+            svg.push_str(&format!(
+                "<text x='{:.1}' y='{:.1}' font-family='monospace' font-size='13' fill='#8f8a96'>#{seed}</text>",
+                x0 + 10.0,
+                y0 + 20.0,
+            ));
+        }
+        svg.push_str("</svg>");
+        std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");
+        std::fs::write("/tmp/ava-playground/review.svg", &svg).expect("write");
+        println!("review: {n} creatures from seed {start} -> /tmp/ava-playground/review.svg ({w:.0}x{h:.0})");
         return;
     }
     if let Some(i) = args.iter().position(|a| a == "--inspect") {

@@ -27,14 +27,25 @@ pub fn decode_sites(b: &mut Bits) -> Vec<Site> {
     // that every edge was a long straight chord — zoomed review read them as
     // crumpled-paper facets, not mottle. Smaller cells + sparser shading
     // (most cells skipped, shade 2 dominant) reads as hide spots.
+    //
+    // Sites are GENERATED from a 16-bit seed rather than stored per-site.
+    // Storing them cost 200-320 genome bits — more than the whole body
+    // silhouette in some genomes — to place a mottle that is subtle at full
+    // size and invisible at 28px. Perceptual weight should decide bit
+    // budget, so the region is now 24 bits and the recovered budget buys
+    // spokes and limb pairs. Lloyd relaxation evens the sites afterwards
+    // anyway, which is exactly why their exact stored positions were never
+    // worth their cost.
     let pairs = 8 + (b.byte() % 6) as usize;
+    let seed = ((b.byte() as u64) << 8) | b.byte() as u64;
+    let mut r = Bits::new(seed ^ 0x5175_7266_6163_6501);
     let mut sites = Vec::with_capacity(pairs * 2);
     for _ in 0..pairs {
-        let x = b.lin(0.04, 1.05);
-        let y = b.lin(-1.05, 1.05);
+        let x = r.lin(0.04, 1.05);
+        let y = r.lin(-1.05, 1.05);
         // Shade roles reweighted: 0/1 (dark/light mottle) each 1-in-4, skip
         // 2-in-4 — spots scattered on hide, not wall-to-wall tiling.
-        let shade = match b.byte() % 4 {
+        let shade = match r.byte() % 4 {
             0 => 0,
             1 => 1,
             _ => 2,
