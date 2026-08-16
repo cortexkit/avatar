@@ -10,13 +10,20 @@ use crate::face::{EyeKind, MouthKind};
 use crate::parts::{BottomPart, TopPart};
 
 /// splitmix64: tiny, seedable, good-enough bit source for the playground.
-pub struct Bits(u64);
+/// Counts bytes served so decoders can report their real DNA appetite.
+pub struct Bits(u64, usize);
 
 impl Bits {
     pub fn new(seed: u64) -> Self {
-        Bits(seed)
+        Bits(seed, 0)
+    }
+    /// Bytes served so far — the decoder's actual consumption, as opposed to
+    /// the region map's allocation.
+    pub fn consumed(&self) -> usize {
+        self.1
     }
     pub fn byte(&mut self) -> u8 {
+        self.1 += 1;
         self.0 = self.0.wrapping_add(0x9e3779b97f4a7c15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);

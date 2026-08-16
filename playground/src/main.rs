@@ -579,6 +579,33 @@ fn main() {
         run_checker(n);
         return;
     }
+    // --dna reports the pipeline's real DNA appetite: bytes actually served
+    // to the decoder per creature, plus the entropy the vocabulary can carry.
+    // Allocation (note 009's region map) and consumption are different
+    // numbers, and only the second one shapes a creature.
+    if args.iter().any(|a| a == "--dna") {
+        let (mut min_b, mut max_b, mut total) = (usize::MAX, 0usize, 0usize);
+        let n = 2000u64;
+        for seed in 4000..(4000 + n) {
+            let mut b = genome::Bits::new(seed);
+            let wb = wild::decode(&mut b);
+            let exts = wild::decode_extremities(&mut b);
+            let _sites = surface::decode_sites(&mut b);
+            for _ in 0..(5 + exts.len()) {
+                b.byte();
+            }
+            let _ = wb;
+            let c = b.consumed();
+            min_b = min_b.min(c);
+            max_b = max_b.max(c);
+            total += c;
+        }
+        println!("consumed per creature over {n} seeds:");
+        println!("  min {min_b} bytes ({} bits)", min_b * 8);
+        println!("  max {max_b} bytes ({} bits)", max_b * 8);
+        println!("  mean {:.1} bytes ({:.0} bits)", total as f64 / n as f64, total as f64 / n as f64 * 8.0);
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--inspect") {
         let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
         let c = decode_full(seed);
