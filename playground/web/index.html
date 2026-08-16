@@ -23,6 +23,10 @@
   #sizes { display: flex; gap: 14px; margin-top: 14px; align-items: flex-end; }
   .mini { text-align: center; font-size: 10px; color: #8f8a96; }
   .mini > div { background: #efe9e4; border-radius: 6px; margin-bottom: 3px; }
+  #metrics { margin-top: 14px; font-size: 11px; font-family: monospace; min-height: 15px; }
+  #metrics .ok { color: #7bbf87; } #metrics .warn { color: #d6b25e; }
+  #metrics .bad { color: #e2726e; } #metrics .dim, .dim { color: #7a7580; }
+  #sweeprow { margin-top: 8px; display: flex; gap: 8px; align-items: center; font-size: 11px; }
   #pins { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
   .pin { width: 84px; cursor: pointer; text-align: center; font-size: 10px; color: #8f8a96; }
   .pin > div { background: #efe9e4; border-radius: 8px; }
@@ -113,11 +117,19 @@
     <div class="mini"><div id="s44"></div>44</div>
     <div class="mini"><div id="s28"></div>28</div>
   </div>
+  <div id="metrics"></div>
+  <div id="sweeprow">
+    <button id="sweep50">stress 50</button>
+    <button id="sweep300">stress 300</button>
+    <span class="dim">runs the placement invariants over random seeds</span>
+  </div>
   <div id="pins"></div>
 </div>
 
 <script>
 "use strict";
+// Latest placement invariants, recorded by creatureSVG at full size.
+let lastMetrics = null;
 window.addEventListener("error", e => {
   const v = document.getElementById("view");
   if (v) v.innerHTML = `<pre style='color:#c33;font-size:11px;padding:12px;white-space:pre-wrap'>${e.message}\n${e.filename}:${e.lineno}</pre>`;
@@ -685,6 +697,25 @@ function creatureSVG(k, moodName, size) {
   s += `<g clip-path='url(#${clip})'>`;
 
   const p = placeFace(outline);
+  // Record the placement invariants for the readout: the same quantities
+  // the Rust `--check` sweep asserts, so what the lab shows and what the
+  // gate enforces can never drift into two different truths.
+  if (size >= 200) {
+    if (!p) lastMetrics = { placed: false };
+    else {
+      const sparse = outline.filter((_, i) => i % 2 === 0);
+      const eyeClear = Math.min(
+        -polySDF(sparse, p.fx - p.ipd, p.eyeY) - p.r,
+        -polySDF(sparse, p.fx + p.ipd, p.eyeY) - p.r);
+      const sep = 2*p.ipd - 2*p.r*1.45;
+      const my = p.eyeY + p.r*2.71;
+      const mouthClear = Math.min(
+        -polySDF(sparse, p.fx - p.r*0.8, my),
+        -polySDF(sparse, p.fx + p.r*0.8, my),
+        -polySDF(sparse, p.fx, my + p.r*0.62));
+      lastMetrics = { placed: true, eyeClear, sep, mouthClear, r: p.r, pts: outline.length };
+    }
+  }
 
   if (k.voronoi) {
     const cellBbox = [minX, minY, maxX, maxY];
@@ -763,6 +794,21 @@ function syncOutputs() {
     if (el.nextElementSibling?.tagName === "OUTPUT") el.nextElementSibling.value = el.value;
   }
 }
+/// Pure-genome params: a decode with every knob at identity, which is what
+/// the Rust `--check` sweep measures. The renderer consumes knob-merged
+/// params, so a raw decode would render as NaN geometry — the sweep must
+/// speak the renderer's input shape or it measures nothing.
+function paramsFromSeed(seed) {
+  const d = decodeFull(seed);
+  return {
+    ...d,
+    dom: d.dom,
+    radScale: 1, tenScale: 1,
+    extCount: d.exts.length,
+    extLen: 1, extWid: 1, extCurl: 1,
+    weld: 1,
+  };
+}
 function currentParams() {
   return {
     ...state,
@@ -790,6 +836,51 @@ function render() {
     $(id).innerHTML = creatureSVG(k, mood, size);
     $(id).firstChild.style.borderRadius = "6px";
   }
+  showMetrics();
+}
+function showMetrics() {
+  const el = $("metrics");
+  const m = lastMetrics;
+  if (!m) { el.textContent = ""; return; }
+  if (!m.placed) { el.innerHTML = "<b class='bad'>NO FACE PLACEMENT</b>"; return; }
+  // Clearances get a warn band (tight is worth noticing). Eye gap does NOT:
+  // the radius is capped BY the spacing, so gap 0.00 is the designed
+  // equilibrium and the common case — flagging it amber would train the eye
+  // to ignore the colour.
+  const cell = (label, v, warnBand) => {
+    const cls = v < 0 ? "bad" : warnBand && v < 1.5 ? "warn" : "ok";
+    return `<span class='${cls}'>${label} ${v.toFixed(2)}</span>`;
+  };
+  el.innerHTML = [
+    cell("eye clear", m.eyeClear, true),
+    cell("eye gap", m.sep, false),
+    cell("mouth clear", m.mouthClear, true),
+    `<span class='dim'>r ${m.r.toFixed(1)} · ${m.pts} pts</span>`,
+  ].join(" · ");
+}
+/// Self-serve stress sweep: runs the same invariants over N random seeds
+/// in the browser, so a suspicion can be turned into a population number
+/// without leaving the lab.
+function stressSweep(n) {
+  const el = $("metrics");
+  const bad = [];
+  let tightest = Infinity, tightestSeed = 0;
+  const base = Math.floor(Math.random() * 900000);
+  for (let i = 0; i < n; i++) {
+    const seed = base + i;
+    creatureSVG(paramsFromSeed(seed), "neutral", 420);
+    const m = lastMetrics;
+    if (!m.placed) { bad.push(`${seed}: no face`); continue; }
+    const worst = Math.min(m.eyeClear, m.sep, m.mouthClear);
+    // Same tolerance the Rust checker uses: the eye gap is exactly zero
+    // whenever the spacing cap binds, so float epsilon must not read as a
+    // violation. Two instruments, one rule.
+    if (worst < -1e-9) bad.push(`${seed}: ${worst.toFixed(2)}`);
+    if (worst < tightest) { tightest = worst; tightestSeed = seed; }
+  }
+  el.innerHTML = bad.length
+    ? `<b class='bad'>${bad.length}/${n} violations</b> · ${bad.slice(0,6).join(", ")}`
+    : `<b class='ok'>${n}/${n} clean</b> <span class='dim'>· tightest ${tightest.toFixed(2)} at seed ${tightestSeed} (type it in to inspect)</span>`;
 }
 function loadSeed() {
   const seed = parseInt($("seed").value, 10) || 0;
@@ -888,10 +979,18 @@ $("pinBtn").addEventListener("click", () => {
   $("pins").appendChild(div);
 });
 $("clearPins").addEventListener("click", () => { pins.length = 0; $("pins").innerHTML = ""; });
+$("sweep50").addEventListener("click", () => stressSweep(50));
+$("sweep300").addEventListener("click", () => stressSweep(300));
 
 const params = new URLSearchParams(location.search);
 if (params.has("seed")) $("seed").value = params.get("seed");
 if (params.has("mood") && MOODS.includes(params.get("mood"))) mood = params.get("mood");
+// ?stress=N runs the sweep on load — a shareable "prove it" link, and the
+// path headless screenshots exercise.
+if (params.has("stress")) {
+  const n = Math.max(1, Math.min(2000, parseInt(params.get("stress"), 10) || 50));
+  setTimeout(() => stressSweep(n), 0);
+}
 loadSeed();
 </script>
 </body>
