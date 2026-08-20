@@ -82,41 +82,64 @@ fn eye_frame(bp: &BodyParams, cx: f64, cy: f64, tilt: f64) -> EyeFrame {
     }
 }
 
-pub fn eyes(kind: EyeKind, bp: &BodyParams, cx: f64, cy: f64, tilt: f64, accent: &str) -> String {
+/// Draws an eye pair. `wonk` shrinks the RIGHT eye only (0 = a matched
+/// pair): mismatched eyes are the strongest ugly-cute signal in the whole
+/// vocabulary, and before this it existed only as the `Uneven` archetype's
+/// hardcoded 1.25/0.62 pair — one creature in five could be asymmetric and
+/// the rest could not. Shrinking is the safe direction: an eye that only
+/// gets smaller cannot breach the clearance or separation the placement
+/// search proved for the full radius.
+pub fn eyes(
+    kind: EyeKind,
+    bp: &BodyParams,
+    cx: f64,
+    cy: f64,
+    tilt: f64,
+    accent: &str,
+    wonk: f64,
+) -> String {
     let f = eye_frame(bp, cx, cy, tilt);
+    // Per-side radius factor. Uneven is exempt: it is asymmetric by
+    // construction, and compounding a second asymmetry on it reads as a
+    // rendering fault rather than as character.
+    let kl = wonk_factor(kind, wonk, false);
+    let kr = wonk_factor(kind, wonk, true);
     let mut s = String::new();
     match kind {
         EyeKind::DotShine => {
-            for (x, dy) in [(f.lx, -tilt), (f.rx, tilt)] {
+            for (x, dy, k) in [(f.lx, -tilt, kl), (f.rx, tilt, kr)] {
                 let y = f.y + dy;
+                let r = f.r * k;
                 s.push_str(&format!(
-                    "<circle cx='{x:.1}' cy='{y:.1}' r='{:.1}' fill='#241f26'/><circle cx='{:.1}' cy='{:.1}' r='{:.1}' fill='white' opacity='0.9'/>",
-                    f.r, x + f.r * 0.32, y - f.r * 0.35, f.r * 0.3,
+                    "<circle cx='{x:.1}' cy='{y:.1}' r='{r:.1}' fill='#241f26'/><circle cx='{:.1}' cy='{:.1}' r='{:.1}' fill='white' opacity='0.9'/>",
+                    x + r * 0.32, y - r * 0.35, r * 0.3,
                 ));
             }
         }
         EyeKind::Lidded => {
-            for (x, dy) in [(f.lx, -tilt), (f.rx, tilt)] {
+            for (x, dy, k) in [(f.lx, -tilt, kl), (f.rx, tilt, kr)] {
                 let y = f.y + dy;
-                let rw = f.r * 1.1;
-                let rh = f.r * 1.25;
+                let r = f.r * k;
+                let rw = r * 1.1;
+                let rh = r * 1.25;
                 // Iris centered and large (looking AT you, not down), lid a
                 // thin top sliver instead of a heavy shade.
                 s.push_str(&format!(
                     "<ellipse cx='{x:.1}' cy='{y:.1}' rx='{rw:.1}' ry='{rh:.1}' fill='white' stroke='{accent}' stroke-width='2'/><circle cx='{x:.1}' cy='{:.1}' r='{:.1}' fill='#241f26'/><circle cx='{:.1}' cy='{:.1}' r='{:.1}' fill='white' opacity='0.9'/><path d='M{:.1} {:.1} A{rw:.1} {rh:.1} 0 0 1 {:.1} {:.1} L{:.1} {:.1} A{rw:.1} {:.1} 0 0 0 {:.1} {:.1} Z' fill='{accent}' opacity='0.5'/>",
-                    y + rh * 0.08, f.r * 0.78,
-                    x + f.r * 0.28, y - f.r * 0.2, f.r * 0.22,
+                    y + rh * 0.08, r * 0.78,
+                    x + r * 0.28, y - r * 0.2, r * 0.22,
                     x - rw, y - rh * 0.1, x + rw, y - rh * 0.1,
                     x + rw, y - rh * 0.28, rh * 0.9, x - rw, y - rh * 0.28,
                 ));
             }
         }
         EyeKind::HappyArc => {
-            for (x, dy) in [(f.lx, -tilt), (f.rx, tilt)] {
+            for (x, dy, k) in [(f.lx, -tilt, kl), (f.rx, tilt, kr)] {
                 let y = f.y + dy;
+                let r = f.r * k;
                 s.push_str(&format!(
                     "<path d='M{:.1} {:.1} Q{x:.1} {:.1} {:.1} {:.1}' stroke='#241f26' stroke-width='3.4' fill='none' stroke-linecap='round'/>",
-                    x - f.r, y + f.r * 0.2, y - f.r * 0.9, x + f.r, y + f.r * 0.2,
+                    x - r, y + r * 0.2, y - r * 0.9, x + r, y + r * 0.2,
                 ));
             }
         }
@@ -131,21 +154,43 @@ pub fn eyes(kind: EyeKind, bp: &BodyParams, cx: f64, cy: f64, tilt: f64, accent:
             ));
         }
         EyeKind::HalfLid => {
-            for (x, dy) in [(f.lx, -tilt), (f.rx, tilt)] {
+            for (x, dy, k) in [(f.lx, -tilt, kl), (f.rx, tilt, kr)] {
                 let y = f.y + dy;
+                let r = f.r * k;
                 // Flat-topped circle: dot clipped by a lid rectangle drawn in body fill
                 // is overkill here; a chord-topped path sells it.
                 s.push_str(&format!(
                     "<path d='M{:.1} {:.1} A{:.1} {:.1} 0 1 0 {:.1} {:.1} Z' fill='#241f26'/><line x1='{:.1}' y1='{:.1}' x2='{:.1}' y2='{:.1}' stroke='#241f26' stroke-width='2.6' stroke-linecap='round'/>",
-                    x - f.r * 0.92, y - f.r * 0.25,
-                    f.r, f.r,
-                    x + f.r * 0.92, y - f.r * 0.25,
-                    x - f.r * 1.05, y - f.r * 0.3, x + f.r * 1.05, y - f.r * 0.3,
+                    x - r * 0.92, y - r * 0.25,
+                    r, r,
+                    x + r * 0.92, y - r * 0.25,
+                    x - r * 1.05, y - r * 0.3, x + r * 1.05, y - r * 0.3,
                 ));
             }
         }
     }
     s
+}
+
+/// Per-side eye radius factor. `wonk` is SIGNED: positive shrinks the right
+/// eye, negative the left. An unsigned shrink would put every wonky
+/// creature's smaller eye on the same side, which across a fleet reads as a
+/// renderer quirk rather than as individual character — the same reason
+/// TOG's hardcoded left-big/right-small `Uneven` pair could never feel like
+/// per-creature variation.
+///
+/// Exposed so mood overlays (lids, squints) and the sclera backing land on
+/// the radius the archetype actually drew; an overlay sized for the full
+/// radius floats free of a shrunk eye.
+pub fn wonk_factor(kind: EyeKind, wonk: f64, right: bool) -> f64 {
+    if matches!(kind, EyeKind::Uneven) {
+        return 1.0;
+    }
+    let shrinks_right = wonk >= 0.0;
+    if right != shrinks_right {
+        return 1.0;
+    }
+    (1.0 - wonk.abs()).clamp(0.55, 1.0)
 }
 
 pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -> String {
@@ -221,26 +266,35 @@ pub fn eyes_inked(
     ink: &str,
     pupil: &str,
     sclera: Option<&str>,
+    wonk: f64,
 ) -> String {
     let f = eye_frame(bp, cx, cy, tilt);
     let mut s = String::new();
     if let Some(sc) = sclera {
         // Sclera per OPEN-eye archetype; HappyArc is a stroke, not a disc.
-        // Radii track each archetype's drawn pupil footprint plus a rim.
+        // Radii track each archetype's drawn pupil footprint plus a rim,
+        // INCLUDING the wonk shrink — a full-size backing behind a shrunk
+        // eye would show as a light halo on one side only.
+        let (kl, kr) = (
+            wonk_factor(kind, wonk, false),
+            wonk_factor(kind, wonk, true),
+        );
         match kind {
             EyeKind::DotShine => {
-                for x in [f.lx, f.rx] {
+                for (x, k) in [(f.lx, kl), (f.rx, kr)] {
                     s.push_str(&format!(
                         "<circle cx='{x:.1}' cy='{:.1}' r='{:.1}' fill='{sc}'/>",
-                        f.y, f.r * 1.22,
+                        f.y,
+                        f.r * k * 1.22,
                     ));
                 }
             }
             EyeKind::HalfLid => {
-                for x in [f.lx, f.rx] {
+                for (x, k) in [(f.lx, kl), (f.rx, kr)] {
                     s.push_str(&format!(
                         "<circle cx='{x:.1}' cy='{:.1}' r='{:.1}' fill='{sc}'/>",
-                        f.y, f.r * 1.18,
+                        f.y,
+                        f.r * k * 1.18,
                     ));
                 }
             }
@@ -259,9 +313,10 @@ pub fn eyes_inked(
         }
     }
     // Line-work archetypes (closed arcs) take ink; pupil fills take pupil.
+    let drawn = eyes(kind, bp, cx, cy, tilt, accent, wonk);
     let body = match kind {
-        EyeKind::HappyArc => eyes(kind, bp, cx, cy, tilt, accent).replace("#241f26", ink),
-        _ => eyes(kind, bp, cx, cy, tilt, accent).replace("#241f26", pupil),
+        EyeKind::HappyArc => drawn.replace("#241f26", ink),
+        _ => drawn.replace("#241f26", pupil),
     };
     s.push_str(&body);
     s

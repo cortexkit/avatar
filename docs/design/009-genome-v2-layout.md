@@ -99,7 +99,7 @@ Ink discipline (render law, recorded here because palette carries it):
 | --- | --- | --- |
 | 0 | `eye_kind` | mod 5 (dot-shine/lidded/happy-arc/uneven/half-lid) |
 | 1 | `eye_aspect` | EASE_LINEAR → Q [0.80, 1.28]; applied as MIN-scaling (both axis factors ≤ 1) so an eye can only shrink inside its proved radius |
-| 2 | `eye_wonk` | EASE_LINEAR → Q [0, 0.20] right-eye shrink. DORMANT: needs a per-eye radius inside the archetype renderers |
+| 2 | `eye_wonk` | EASE_LINEAR → Q [-0.20, 0.20] SIGNED one-eye shrink (negative = left, positive = right). Live: the archetype renderers take a per-side radius. Signed on purpose — an unsigned shrink puts every wonky creature's smaller eye on the same side, which fleet-wide reads as a renderer quirk rather than character. `Uneven` is exempt, being asymmetric by construction |
 | 3 | `mouth_kind` | mod 6 (arc/cat-ω/open-happy/snaggle/flat/fangs) |
 | 4 | `mouth_width` | EASE_LINEAR → Q [0.75, 1.30]; feeds the placement fit test |
 | 5 | `mouth_depth` | EASE_LINEAR → Q [0.70, 1.35]; feeds the placement fit test |

@@ -40,10 +40,10 @@ struct FaceStyle {
     /// >1 taller, <1 wider. Applied as min-scaling on both axes so an eye
     /// never grows past the placed radius the invariants were proved for.
     eye_aspect: f64,
-    /// Shrink applied to the right eye only — shrinking cannot violate
-    /// clearance or separation, while enlarging could. Decoded but DORMANT:
-    /// expressing it needs a per-eye radius inside the archetype renderers.
-    #[allow(dead_code)]
+    /// Signed one-eye shrink (negative = left, positive = right). Shrinking
+    /// cannot violate clearance or separation, while enlarging could. Live:
+    /// the archetype renderers take a per-side radius, so mismatched eyes
+    /// are available to every archetype instead of only to `Uneven`.
     eye_wonk: f64,
     /// Mouth scale; feeds the placement search's mouth-fit test, so a wide
     /// mouth changes where the face can sit rather than escaping the body.
@@ -99,7 +99,9 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
     // Trailing block: appended so every earlier field's bytes stay put.
     let face_style = FaceStyle {
         eye_aspect: b.lin(0.80, 1.28),
-        eye_wonk: b.lin(0.0, 0.20),
+        // SIGNED: negative shrinks the left eye, positive the right, so the
+        // smaller eye is not always on the same side fleet-wide.
+        eye_wonk: b.lin(-0.20, 0.20),
         mouth_w: b.lin(0.75, 1.30),
         mouth_d: b.lin(0.70, 1.35),
         // Most creatures rest brow-less; a resting brow is a strong
@@ -516,6 +518,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             &colors.ink,
             &colors.pupil,
             colors.sclera.as_deref(),
+            c.face_style.eye_wonk,
         );
         // Per-creature eye shape, bounded so the invariants still hold:
         // both axis factors are <= 1, so an eye can only shrink inside the
@@ -562,10 +565,16 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             _ => (true, true),
         };
         for (x, side) in [(f.lx, -1.0), (f.rx, 1.0)] {
+            // Overlays land on the radius the archetype actually DREW,
+            // including the wonk shrink; an overlay sized for the full
+            // radius floats free of a shrunk eye.
             let (er, ey) = match c.eyes {
                 face::EyeKind::Uneven if side < 0.0 => (f.r * 1.25, f.y),
                 face::EyeKind::Uneven => (f.r * 0.62, f.y + f.r * 0.15),
-                _ => (f.r, f.y),
+                _ => (
+                    f.r * face::wonk_factor(c.eyes, c.face_style.eye_wonk, side > 0.0),
+                    f.y,
+                ),
             };
             if do_squint {
                 s.push_str(&mood::squint_overlay(x, ey, er, spec.squint, &colors.body, &colors.outline));
