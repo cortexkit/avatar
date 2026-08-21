@@ -838,6 +838,65 @@ fn main() {
         println!("review: {n} creatures from seed {start} -> /tmp/ava-playground/review.svg ({w:.0}x{h:.0})");
         return;
     }
+    // --moods SEED..: 7 moods across the given seeds at review resolution.
+    // The face block (resting brows) and eye wonk both landed after the last
+    // mood check, and both interact with mood: a resting brow competes with
+    // the mood brow for the same strokes, and a shrunk eye changes what a
+    // lid or squint has to cover. Grid-resolution cells cannot show either.
+    if let Some(i) = args.iter().position(|a| a == "--moods") {
+        let seeds: Vec<u64> = args[i + 1..]
+            .iter()
+            .filter_map(|v| v.parse().ok())
+            .take(5)
+            .collect();
+        let seeds = if seeds.is_empty() {
+            vec![5000, 5003, 5009, 5011]
+        } else {
+            seeds
+        };
+        let cell = 330.0_f64;
+        let pad = 6.0;
+        let moods = mood::ALL;
+        let w = pad + moods.len() as f64 * (cell + pad);
+        let h = pad + seeds.len() as f64 * (cell + pad) + 22.0;
+        let mut svg = format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{w:.0}' height='{h:.0}' viewBox='0 0 {w:.0} {h:.0}'><rect width='100%' height='100%' fill='#141318'/>"
+        );
+        for (mi, m) in moods.iter().enumerate() {
+            svg.push_str(&format!(
+                "<text x='{:.1}' y='16' font-family='monospace' font-size='13' fill='#8f8a96'>{}</text>",
+                pad + mi as f64 * (cell + pad) + 8.0,
+                mood::name(*m),
+            ));
+        }
+        for (si, &seed) in seeds.iter().enumerate() {
+            let c = decode_full(seed);
+            for (mi, m) in moods.iter().enumerate() {
+                let x0 = pad + mi as f64 * (cell + pad);
+                let y0 = 22.0 + pad + si as f64 * (cell + pad);
+                svg.push_str(&format!(
+                    "<rect x='{x0:.1}' y='{y0:.1}' width='{cell}' height='{cell}' rx='12' fill='#efe9e4'/>"
+                ));
+                let s = cell / 240.0;
+                svg.push_str(&format!(
+                    "<g transform='translate({:.1} {:.1}) scale({s:.4})'>{}</g>",
+                    x0 + cell / 2.0 - 120.0 * s,
+                    y0 + cell / 2.0 - 120.0 * s,
+                    draw_full(&c, *m, 120.0, 120.0),
+                ));
+                svg.push_str(&format!(
+                    "<text x='{:.1}' y='{:.1}' font-family='monospace' font-size='11' fill='#8f8a96'>#{seed}</text>",
+                    x0 + 8.0,
+                    y0 + 16.0,
+                ));
+            }
+        }
+        svg.push_str("</svg>");
+        std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");
+        std::fs::write("/tmp/ava-playground/moods.svg", &svg).expect("write");
+        println!("moods: {} seeds x 7 -> /tmp/ava-playground/moods.svg ({w:.0}x{h:.0})", seeds.len());
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--inspect") {
         let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
         let c = decode_full(seed);
