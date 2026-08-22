@@ -18,6 +18,27 @@ cd "$(dirname "$0")/.."
 RUST_ONLY=0
 [[ "${1:-}" == "--rust-only" ]] && RUST_ONLY=1
 
+# --self-test proves the toolchain-drift guard CAN fire, by re-running this
+# script against a stub rustup that reports stable behind. A guard that has
+# never fired is indistinguishable from a guard that cannot fire: it would
+# join the family of green signals that are true about the wrong thing,
+# which is the exact failure it exists to catch.
+if [[ "${1:-}" == "--self-test" ]]; then
+  stub=$(mktemp -d)
+  printf '%s\n' '#!/usr/bin/env bash' \
+    '[[ "$1" == "check" ]] && { echo "stable-stub - Update available : 1.0.0 -> 2.0.0"; exit 0; }' \
+    'exit 0' > "$stub/rustup"
+  chmod +x "$stub/rustup"
+  if PATH="$stub:$PATH" "$0" --rust-only >/dev/null 2>&1; then
+    printf '\033[31mself-test FAILED\033[0m: drift guard stayed silent on a stale stub\n'
+    rm -rf "$stub"
+    exit 1
+  fi
+  rm -rf "$stub"
+  printf '\033[32mself-test ok\033[0m: drift guard fires when stable is behind\n'
+  exit 0
+fi
+
 FAILED=()
 run() {
   local name="$1"
