@@ -37,6 +37,23 @@ run() {
 # Same property CI checks with its before/after snapshot: did the build
 # rewrite a tracked file? Compared against a snapshot rather than against
 # an empty tree, so a dirty working copy does not make it fire.
+# CI installs dtolnay/rust-toolchain@stable, which FLOATS. A local stable
+# that has fallen behind runs an older lint set, so this script can report
+# every gate green while CI fails on a lint that did not exist locally —
+# which is exactly what happened with clippy's chunks_exact lint: local
+# 1.97.1 knew nothing about it, CI's 1.98.0 rejected the build. Mirroring
+# CI's commands is not enough; the toolchain is part of the gate.
+#
+# This is a hard gate rather than a warning: if stable has moved, CI is
+# already running rules this machine cannot see, so "green" here would be
+# a measurement of the wrong thing.
+if rustup check 2>/dev/null | grep -q '^stable-.*Update available'; then
+  printf '\033[31m▸ toolchain drift\033[0m: CI uses floating @stable and yours is behind.\n'
+  rustup check | grep '^stable-'
+  printf '  run: rustup update stable\n'
+  exit 1
+fi
+
 tree_before=$(git status --porcelain | sort)
 
 run "fmt"             cargo fmt --all -- --check

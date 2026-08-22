@@ -20,14 +20,18 @@ impl Genome {
         }
 
         let mut bytes = [0; GENOME_BYTES];
-        for (index, pair) in hex.as_bytes().chunks_exact(2).enumerate() {
-            let high = hex_nibble(pair[0]).ok_or(GenomeError::InvalidHexDigit {
+        // as_chunks gives fixed-size arrays, so the nibble reads are
+        // bounds-checked at compile time rather than indexed at runtime.
+        // The length check above guarantees the remainder is empty.
+        let (pairs, _) = hex.as_bytes().as_chunks::<2>();
+        for (index, &[hi, lo]) in pairs.iter().enumerate() {
+            let high = hex_nibble(hi).ok_or(GenomeError::InvalidHexDigit {
                 index: index * 2,
-                byte: pair[0],
+                byte: hi,
             })?;
-            let low = hex_nibble(pair[1]).ok_or(GenomeError::InvalidHexDigit {
+            let low = hex_nibble(lo).ok_or(GenomeError::InvalidHexDigit {
                 index: index * 2 + 1,
-                byte: pair[1],
+                byte: lo,
             })?;
             bytes[index] = high << 4 | low;
         }
