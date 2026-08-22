@@ -5,7 +5,7 @@
 //!   sheet 2 (grid10-moods.svg): 4 cast seeds x all 7 moods on wild bodies.
 //!   sheet 3 (grid10-strip.svg): natural-size 36px cells — icon legibility.
 
-use ava_playground::{body, face, genome, merge, mood, palette, surface, wild};
+use ava_playground::{body, coverage, face, genome, merge, mood, palette, surface, wild};
 
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
@@ -169,14 +169,19 @@ fn belly_patch(outline: &[(f64, f64)], top_y: f64, scale: f64) -> Vec<(f64, f64)
                 .iter()
                 .max_by(|a, b| (a.1 - a.0).partial_cmp(&(b.1 - b.0)).unwrap())
                 .unwrap(),
-            Some(prev) => *spans
-                .iter()
-                .min_by(|a, b| {
-                    let da = ((a.0 + a.1) / 2.0 - prev).abs();
-                    let db = ((b.0 + b.1) / 2.0 - prev).abs();
-                    da.partial_cmp(&db).unwrap()
-                })
-                .unwrap(),
+            Some(prev) => {
+                if spans.len() > 1 {
+                    coverage::hit(&coverage::COUNTERS.belly_span_switch);
+                }
+                *spans
+                    .iter()
+                    .min_by(|a, b| {
+                        let da = ((a.0 + a.1) / 2.0 - prev).abs();
+                        let db = ((b.0 + b.1) / 2.0 - prev).abs();
+                        da.partial_cmp(&db).unwrap()
+                    })
+                    .unwrap()
+            }
         };
         let cx = (l + r) / 2.0;
         anchor = Some(cx);
@@ -197,6 +202,7 @@ fn belly_patch(outline: &[(f64, f64)], top_y: f64, scale: f64) -> Vec<(f64, f64)
     let (bx0, by0, bx1, by1) = wild::bbox(&left);
     let (fx0, fy0, fx1, fy1) = wild::bbox(outline);
     if bx1 - bx0 < (fx1 - fx0) * 0.10 || by1 - by0 < (fy1 - fy0) * 0.08 {
+        coverage::hit(&coverage::COUNTERS.belly_suppressed);
         return Vec::new();
     }
     left
@@ -221,6 +227,9 @@ struct FacePlacement {
     /// not re-derive spacing from half_w.
     ipd: f64,
     r: f64,
+    /// Whether the winning candidate also fits a mouth. False only on the
+    /// fallback path, where the mouth is then NOT drawn.
+    mouth_fits: bool,
 }
 
 /// Widest-band scan with eye-fit shrink (the EVM-free findRect).
@@ -247,7 +256,18 @@ fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<Face
     //    at eye_y + 2.71r) must sit inside the silhouette.
     // 2. face.tsx clamps the face UP to a minimum rather than skipping it —
     //    a creature must ALWAYS have a face, so eyes-only placement is the
-    //    guaranteed fallback when no candidate also fits a mouth.
+    //    guaranteed fallback when no candidate also fits a mouth. The
+    //    fallback is EYES ONLY in the literal sense: it reports
+    //    mouth_fits=false and the renderer draws no mouth. Drawing one
+    //    anyway would emit geometry outside the silhouette, which the
+    //    invariant checker correctly calls a violation — so the fallback
+    //    would have produced output its own gate rejects. A creature with
+    //    eyes and no mouth is a creature; a mouth hanging off the body is a
+    //    defect. (Coverage note: unreached across 4000 seeds, because the
+    //    search tries four eye spacings and the mouth scales with the
+    //    radius, so some candidate almost always fits. It is kept as a
+    //    safety net for vocabulary changes, and the contradiction is fixed
+    //    now rather than discovered the day it first fires in three ports.)
     let mut best: Option<(f64, FacePlacement)> = None;
     let mut best_eyes_only: Option<(f64, FacePlacement)> = None;
     for yi in 0..=18 {
@@ -281,9 +301,16 @@ fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<Face
                 half_w: span / 2.0,
                 ipd: ex,
                 r,
+                mouth_fits: true,
             };
             if best_eyes_only.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
-                best_eyes_only = Some((score, candidate));
+                best_eyes_only = Some((
+                    score,
+                    FacePlacement {
+                        mouth_fits: false,
+                        ..candidate
+                    },
+                ));
             }
             // Mouth extents scale with the creature's own mouth size, so a
             // wide mouth moves the face to where it fits instead of
@@ -298,6 +325,9 @@ fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<Face
                 best = Some((score, candidate));
             }
         }
+    }
+    if best.is_none() && best_eyes_only.is_some() {
+        coverage::hit(&coverage::COUNTERS.placement_fallback);
     }
     best.or(best_eyes_only).map(|(_, p)| p)
 }
@@ -615,8 +645,14 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             mood::MouthMood::Pressed => face::MouthKind::Flat,
             mood::MouthMood::Down => face::MouthKind::DownArc,
         };
-        let mouth_svg =
-            face::mouth_inked(mouth_kind, &shim, p.fx, face_cy, &colors.outline, &colors.ink);
+        // No mouth on the fallback path: the placement search could not fit
+        // one inside the silhouette, so drawing it would put geometry
+        // outside the body.
+        let mouth_svg = if p.mouth_fits {
+            face::mouth_inked(mouth_kind, &shim, p.fx, face_cy, &colors.outline, &colors.ink)
+        } else {
+            String::new()
+        };
         // Per-creature mouth proportion. The placement search already tested
         // fit at exactly these factors, so a wide mouth was accounted for
         // when the face was positioned rather than overflowing afterwards.
@@ -736,7 +772,8 @@ fn run_checker(n: u64) {
         ]
         .iter()
         .fold(f64::MIN, |a: f64, &d| a.max(d));
-        if mouth_breach > 0.0 {
+        // Only meaningful when a mouth is actually drawn.
+        if p.mouth_fits && mouth_breach > 0.0 {
             println!("seed {seed}: mouth breaches outline by {:.2}", mouth_breach);
             violations += 1;
         }
@@ -850,6 +887,70 @@ fn main() {
     // that actually ships. Rendered at natural size and magnified with
     // nearest-neighbour, because a thumbnailed 400px render is a different
     // picture from a real 28px one.
+    // --coverage N: which divergence-prone branches a seed range reaches,
+    // and the smallest seed set that reaches all of them. This is the
+    // corpus-selection instrument note 011 asks for: with three ports of
+    // branch-heavy geometry, a vector set that never reaches a saddle or
+    // the placement fallback cannot catch a port that gets them wrong, and
+    // "the corpus looks representative" is not evidence.
+    if let Some(i) = args.iter().position(|a| a == "--coverage") {
+        let n: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(500);
+        let labels: Vec<&str> = coverage::snapshot().iter().map(|(l, _)| *l).collect();
+
+        // Per-seed branch signature, so selection can be greedy rather than
+        // guessed. Rendering is what exercises the geometry, so each seed is
+        // drawn and discarded.
+        let mut sigs: Vec<(u64, Vec<bool>)> = Vec::new();
+        let mut totals = vec![0usize; labels.len()];
+        for seed in 4000..(4000 + n) {
+            coverage::reset();
+            let c = decode_full(seed);
+            let _ = draw_full(&c, mood::Mood::Neutral, 120.0, 120.0);
+            let hits: Vec<bool> = coverage::snapshot().iter().map(|(_, v)| *v > 0).collect();
+            for (t, h) in totals.iter_mut().zip(hits.iter()) {
+                *t += usize::from(*h);
+            }
+            sigs.push((seed, hits));
+        }
+
+        println!("branch reach over {n} seeds:");
+        for (label, total) in labels.iter().zip(totals.iter()) {
+            let pct = *total as f64 / n as f64 * 100.0;
+            let mark = if *total == 0 { "UNREACHED" } else { "" };
+            println!("  {label:<30} {total:>4} seeds ({pct:>5.1}%) {mark}");
+        }
+
+        // Greedy set cover: fewest seeds that together touch every branch
+        // that is reachable at all.
+        let mut remaining: Vec<usize> = (0..labels.len()).filter(|i| totals[*i] > 0).collect();
+        let mut chosen: Vec<u64> = Vec::new();
+        while !remaining.is_empty() {
+            let best = sigs
+                .iter()
+                .map(|(seed, hits)| {
+                    let gain = remaining.iter().filter(|i| hits[**i]).count();
+                    (gain, *seed, hits)
+                })
+                .max_by_key(|(gain, seed, _)| (*gain, std::cmp::Reverse(*seed)));
+            match best {
+                Some((gain, seed, hits)) if gain > 0 => {
+                    chosen.push(seed);
+                    remaining.retain(|i| !hits[*i]);
+                }
+                _ => break,
+            }
+        }
+        println!(
+            "\nminimal covering set ({} seeds): {}",
+            chosen.len(),
+            chosen
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--icons") {
         let start: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
         let n: usize = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(12);

@@ -1,6 +1,7 @@
 //! Library view of the playground so probe binaries can reuse the modules.
 pub mod body;
 pub mod face;
+pub mod coverage;
 pub mod genome;
 pub mod merge;
 pub mod mood;

@@ -128,6 +128,7 @@ pub fn merged_outline(
             if pts_on_edges.len() == 2 {
                 segs.push((pts_on_edges[0], pts_on_edges[1]));
             } else if pts_on_edges.len() == 4 {
+                crate::coverage::hit(&crate::coverage::COUNTERS.saddle);
                 segs.push((pts_on_edges[0], pts_on_edges[1]));
                 segs.push((pts_on_edges[2], pts_on_edges[3]));
             }
@@ -155,6 +156,7 @@ pub fn merged_outline(
             // needed for an ordering), so this rule survives the port.
             let eps2 = eps * eps;
             let mut best: Option<(f64, usize, bool)> = None;
+            let mut candidates = 0usize;
             for (idx, seg) in segs.iter().enumerate() {
                 if used[idx] {
                     continue;
@@ -162,9 +164,15 @@ pub fn merged_outline(
                 let d0 = (seg.0 .0 - tail.0).powi(2) + (seg.0 .1 - tail.1).powi(2);
                 let d1 = (seg.1 .0 - tail.0).powi(2) + (seg.1 .1 - tail.1).powi(2);
                 let (d, head_end) = if d0 <= d1 { (d0, true) } else { (d1, false) };
-                if d < eps2 && best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
-                    best = Some((d, idx, head_end));
+                if d < eps2 {
+                    candidates += 1;
+                    if best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
+                        best = Some((d, idx, head_end));
+                    }
                 }
+            }
+            if candidates > 1 {
+                crate::coverage::hit(&crate::coverage::COUNTERS.chain_tiebreak);
             }
             let extended = match best {
                 Some((_, idx, head_end)) => {

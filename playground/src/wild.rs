@@ -142,7 +142,12 @@ pub fn extremity_outline(e: &Extremity, ring_r: f64, mean_r: f64, mirror: bool) 
     } else {
         f64::MAX
     };
-    let base_w = (e.width * mean_r).min(curvature_cap);
+    let base_w = if e.width * mean_r > curvature_cap {
+        crate::coverage::hit(&crate::coverage::COUNTERS.curvature_clamp);
+        curvature_cap
+    } else {
+        e.width * mean_r
+    };
     let mut left = Vec::with_capacity(steps + 1);
     let mut right = Vec::with_capacity(steps + 1);
     for (i, &(x, y)) in spine.iter().enumerate() {

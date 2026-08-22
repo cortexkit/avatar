@@ -77,6 +77,50 @@ parity is proved on the serializer.
    web and possibly iOS the generator without a port, which would make
    A affordable again for exactly the consumers B was meant to help.
 
+## Corpus coverage is now measured, not argued
+
+Option A's stated risk was that a port getting one tiebreak wrong fails
+only on the genomes reaching that branch, so corpus coverage "has to be
+argued about rather than assumed". `cargo run --bin grid -- --coverage
+N` replaces the argument: it counts the divergence-prone branches a
+seed range reaches and greedy-solves the smallest seed set covering
+them.
+
+Over 4000 seeds:
+
+| Branch | Reach |
+| --- | ---: |
+| belly span switch (stay on one mass across a split body) | 67.6% |
+| chain tiebreak (two segments within eps) | 26.6% |
+| belly suppressed (too small to read) | 8.8% |
+| marching-squares saddle (ambiguous 4-crossing cell) | 8.4% |
+| extremity curvature clamp (capsule would self-cross) | **0.5%** |
+| placement eyes-only fallback | **0%** |
+
+Two results that change how the v2 corpus gets built:
+
+1. **The curvature clamp is reached by 1 seed in 200.** An 18-vector
+   corpus sampled at random has roughly a 9% chance of containing one.
+   A port that clamps differently would pass a plausible-looking corpus
+   and fail in production. Vectors must be SELECTED by branch coverage,
+   not sampled — the greedy set covers every reachable branch in 2
+   seeds, so this costs nothing.
+2. **The eyes-only placement fallback is unreachable** across 4000
+   seeds, because the search tries four eye spacings and the mouth
+   scales with the radius, so some candidate almost always fits.
+   Inspecting why exposed a latent contradiction: the fallback drew a
+   mouth the search had just failed to fit, which the invariant checker
+   would have flagged as a breach. The fallback would have produced
+   output its own gate rejects — invisible only because it never fires.
+   Fixed: the fallback now reports `mouth_fits = false` and the renderer
+   draws no mouth. A creature with eyes and no mouth is a creature; a
+   mouth hanging off the body is a defect.
+
+The second one is the argument for doing this before the freeze rather
+than after: under Option A that contradiction would have been
+implemented three times, tested by nothing, and discovered the first
+day a vocabulary change made the branch reachable.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The
