@@ -843,6 +843,49 @@ fn main() {
     // mood check, and both interact with mood: a resting brow competes with
     // the mood brow for the same strokes, and a shrunk eye changes what a
     // lid or squint has to cover. Grid-resolution cells cannot show either.
+    // --icons START N: legibility strip at THREE natural sizes (28/36/48).
+    // Law 1 says identity survives at icon size, and the strip that proved
+    // it predates the face block, eye wonk, the belly rework and the
+    // voronoi change — so the law is currently unproven on the vocabulary
+    // that actually ships. Rendered at natural size and magnified with
+    // nearest-neighbour, because a thumbnailed 400px render is a different
+    // picture from a real 28px one.
+    if let Some(i) = args.iter().position(|a| a == "--icons") {
+        let start: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
+        let n: usize = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(12);
+        let sizes = [28.0_f64, 36.0, 48.0];
+        let pitch = 56.0;
+        let w = 8.0 + n as f64 * pitch;
+        let h = 8.0 + sizes.iter().map(|s| s + 10.0).sum::<f64>();
+        let mut svg = format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{w:.0}' height='{h:.0}' viewBox='0 0 {w:.0} {h:.0}'><rect width='100%' height='100%' fill='#1c1a20'/>"
+        );
+        let mut y = 6.0;
+        for size in sizes {
+            for j in 0..n {
+                let c = decode_full(start + j as u64);
+                let x0 = 6.0 + j as f64 * pitch;
+                svg.push_str(&format!(
+                    "<rect x='{x0:.1}' y='{y:.1}' width='{size}' height='{size}' rx='{:.1}' fill='#efe9e4'/>",
+                    size / 6.0,
+                ));
+                // draw_full works in a 240-unit cell; scale that to `size`.
+                let k = size / 240.0;
+                svg.push_str(&format!(
+                    "<g transform='translate({:.2} {:.2}) scale({k:.4})'>{}</g>",
+                    x0 + size / 2.0 - 120.0 * k,
+                    y + size / 2.0 - 120.0 * k,
+                    draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                ));
+            }
+            y += size + 10.0;
+        }
+        svg.push_str("</svg>");
+        std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");
+        std::fs::write("/tmp/ava-playground/icons.svg", &svg).expect("write");
+        println!("icons: {n} creatures from {start} at 28/36/48px -> /tmp/ava-playground/icons.svg ({w:.0}x{h:.0})");
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--moods") {
         let seeds: Vec<u64> = args[i + 1..]
             .iter()
