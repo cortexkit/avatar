@@ -374,11 +374,26 @@ function mergedOutline(shapes, bbox, weld, res) {
     for (;;) {
       const tail = chain[chain.length - 1];
       let ext = false;
+      // NEAREST candidate wins, lowest index breaks ties — not "first
+      // within eps". Both are deterministic, but at a saddle where two
+      // segments qualify, first-by-index chains into an arbitrary branch
+      // while nearest follows the contour. Rust pinned this during the
+      // fixed-point spike; the lab kept the old rule and produced visibly
+      // different merged silhouettes until scripts/drift-check.sh caught
+      // it. Squared distances, so the ordering needs no sqrt.
+      let bestIdx = -1, bestD = Infinity, bestHead = false;
       for (let idx = 0; idx < segs.length; idx++) {
         if (used[idx]) continue;
         const s = segs[idx];
-        if (Math.hypot(s[0][0]-tail[0], s[0][1]-tail[1]) < eps) { chain.push(s[1]); used[idx] = true; ext = true; break; }
-        if (Math.hypot(s[1][0]-tail[0], s[1][1]-tail[1]) < eps) { chain.push(s[0]); used[idx] = true; ext = true; break; }
+        const d0 = (s[0][0]-tail[0])**2 + (s[0][1]-tail[1])**2;
+        const d1 = (s[1][0]-tail[0])**2 + (s[1][1]-tail[1])**2;
+        const d = Math.min(d0, d1);
+        if (d < eps*eps && d < bestD) { bestD = d; bestIdx = idx; bestHead = d0 <= d1; }
+      }
+      if (bestIdx >= 0) {
+        chain.push(bestHead ? segs[bestIdx][1] : segs[bestIdx][0]);
+        used[bestIdx] = true;
+        ext = true;
       }
       if (!ext) break;
       const h = chain[0], t2 = chain[chain.length - 1];
@@ -612,8 +627,9 @@ function placeFace(outline, mouthW = 1, mouthD = 1) {
       if (r < rFloor) continue;
       const bandPenalty = Math.abs((y - (minY + h * 0.34)) / h) * 0.25;
       const score = r * (1 + 0.22 * ipdRatio) * (1 - bandPenalty);
-      const cand = { score, fx, eyeY: y, halfW: span/2, ipd: ex, r };
-      if (!bestEyesOnly || score > bestEyesOnly.score) bestEyesOnly = cand;
+      const cand = { score, fx, eyeY: y, halfW: span/2, ipd: ex, r, mouthFits: true };
+      if (!bestEyesOnly || score > bestEyesOnly.score)
+        bestEyesOnly = { ...cand, mouthFits: false };
       // Mouth extents scale with the creature's own mouth (mirrors Rust).
       const my = y + r * 2.71;
       const half = r * 0.8 * mouthW, deep = r * 0.62 * mouthD;
@@ -621,6 +637,9 @@ function placeFace(outline, mouthW = 1, mouthD = 1) {
       if (mouthOk && (!best || score > best.score)) best = cand;
     }
   }
+  // The fallback is eyes-only in the literal sense: no candidate fit a
+  // mouth, so no mouth is drawn. Drawing one would place geometry outside
+  // the silhouette — output the invariant checker rejects. Mirrors Rust.
   return best || bestEyesOnly;
 }
 // Pupils are always `pupil` (dark); `ink` is line-work only (closed arcs,
@@ -761,7 +780,11 @@ function creatureSVG(k, moodName, size) {
   for (const p of raw) { bx0=Math.min(bx0,p[0]); by0=Math.min(by0,p[1]); bx1=Math.max(bx1,p[0]); by1=Math.max(by1,p[1]); }
   for (const [,pts] of extOutlines) for (const p of pts) { bx0=Math.min(bx0,p[0]); by0=Math.min(by0,p[1]); bx1=Math.max(bx1,p[0]); by1=Math.max(by1,p[1]); }
   const view = size || 420;
-  const scale = Math.min((view*0.72)/(bx1-bx0 || 1), (view*0.8)/(by1-by0 || 1));
+  // EXACTLY canonical's fit: Rust scales into 172x198 of a 240-unit cell,
+  // i.e. 0.71667 and 0.825 of the frame. The lab had 0.72 and 0.8, so every
+  // creature here was a slightly different shape from the one the corpus
+  // will pin — a review instrument showing a near-miss of the real thing.
+  const scale = Math.min((view*(172/240))/(bx1-bx0 || 1), (view*(198/240))/(by1-by0 || 1));
   const cx = view/2, cy = view/2;
   const mx = (bx0+bx1)/2, my2 = (by0+by1)/2;
   const T = p => [cx + (p[0]-mx)*scale, cy + (p[1]-my2)*scale];
@@ -770,7 +793,9 @@ function creatureSVG(k, moodName, size) {
   let outline;
   if (merged) {
     const shapes = [raw.filter((_,i) => i % 3 === 0)].concat(extOutlines.map(([,pts]) => pts));
-    outline = mergedOutline(shapes, [bx0,by0,bx1,by1], meanR * 0.16 * k.weld, 110).map(T);
+    // Resolution 130 matches Rust. A coarser grid is a different contour,
+    // not a faster one: marching squares changes shape with resolution.
+    outline = mergedOutline(shapes, [bx0,by0,bx1,by1], meanR * 0.16 * k.weld, 130).map(T);
   } else {
     outline = raw.map(T);
   }
@@ -811,7 +836,27 @@ function creatureSVG(k, moodName, size) {
         -polySDF(sparse, p.fx - mhalf, my),
         -polySDF(sparse, p.fx + mhalf, my),
         -polySDF(sparse, p.fx, my + mdeep));
-      lastMetrics = { placed: true, eyeClear, sep, mouthClear, r: p.r, pts: outline.length };
+      // On the fallback path no mouth is drawn, so its clearance is not a
+      // property of the render — report it as satisfied rather than as a
+      // breach of geometry that does not exist.
+      lastMetrics = {
+        placed: true,
+        eyeClear,
+        sep,
+        mouthClear: p.mouthFits === false ? Infinity : mouthClear,
+        r: p.r,
+        pts: outline.length,
+        // Probe fields: the canonical geometry line, so the two renderers
+        // can be diffed rather than assumed to agree.
+        probe: {
+          spokes: k.spokes.length, exts: extOutlines.length / 2,
+          topo: +k.topology, vor: k.voronoi ? 1 : 0,
+          pts: outline.length, bbox: [minX, minY, maxX, maxY],
+          fx: p.fx, eyeY: p.eyeY, ipd: p.ipd, r: p.r,
+          mouthFits: p.mouthFits === false ? 0 : 1,
+          belly: 0, // filled in below, once the patch is built
+        },
+      };
     }
   }
 
@@ -851,6 +896,7 @@ function creatureSVG(k, moodName, size) {
     // belly_patch — an ellipse read as a ball on lumpy bodies and a smear
     // across split legs.
     const bellyPts = bellyPatch(outline, p.eyeY + p.r*3.4, 0.72);
+    if (lastMetrics && lastMetrics.probe) lastMetrics.probe.belly = bellyPts.length;
     if (bellyPts.length >= 3) {
       s += `<path d='${bellyPts.map((q,i) => (i?'L':'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ')} Z' fill='${bellyFill(k.recipe, k.hue, k.bellyVariant ?? 0)}'/>`;
     }
@@ -886,7 +932,9 @@ function creatureSVG(k, moodName, size) {
     }
     const mouthKind = spec.mouth === 0 ? k.mouth : spec.mouth === 1 ? 2 : spec.mouth === 2 ? 6 : spec.mouth === 3 ? 4 : 7;
     const my = f.y + p.r*1.9;
-    let mouthSvg = drawMouth(mouthKind, p.fx, my, p.r, colors.outline, colors.ink);
+    let mouthSvg = p.mouthFits === false
+      ? ""
+      : drawMouth(mouthKind, p.fx, my, p.r, colors.outline, colors.ink);
     // Mouth proportion; the placement search already tested fit at exactly
     // these factors, so a wide mouth moved the face rather than overflowing.
     const mw = k.mouthW ?? 1, md = k.mouthD ?? 1;
@@ -1107,6 +1155,30 @@ if (params.has("seed")) $("seed").value = params.get("seed");
 if (params.has("mood") && MOODS.includes(params.get("mood"))) mood = params.get("mood");
 // ?stress=N runs the sweep on load — a shareable "prove it" link, and the
 // path headless screenshots exercise.
+// ?probe=SEED emits the same canonical geometry line the Rust --probe
+// prints, so scripts/drift-check.sh can diff the two renderers instead of
+// assuming they agree. Written into the DOM for --dump-dom to read.
+if (params.has("probe")) {
+  const seed = parseInt(params.get("probe"), 10) || 0;
+  // Render at the canonical 240-unit cell so the numbers are comparable
+  // with Rust --probe, which works in that cell.
+  creatureSVG(paramsFromSeed(seed), "neutral", 240);
+  const m = lastMetrics;
+  const f1 = v => v.toFixed(1);
+  let line;
+  if (!m || !m.placed) {
+    line = `seed=${seed} NO-PLACEMENT`;
+  } else {
+    const q = m.probe;
+    line = `seed=${seed} spokes=${q.spokes} exts=${q.exts} topo=${q.topo}`
+      + ` vor=${q.vor} pts=${q.pts}`
+      + ` bbox=${q.bbox.map(f1).join(",")}`
+      + ` face=${f1(q.fx)},${f1(q.eyeY)},${f1(q.ipd)},${f1(q.r)},${q.mouthFits}`
+      + ` belly=${q.belly}`;
+  }
+  document.body.innerHTML = `<pre id="probe">${line}</pre>`;
+  throw new Error("probe-done"); // stop the normal render path
+}
 if (params.has("stress")) {
   const n = Math.max(1, Math.min(2000, parseInt(params.get("stress"), 10) || 50));
   setTimeout(() => stressSweep(n), 0);

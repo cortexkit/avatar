@@ -893,6 +893,45 @@ fn main() {
     // branch-heavy geometry, a vector set that never reaches a saddle or
     // the placement fallback cannot catch a port that gets them wrong, and
     // "the corpus looks representative" is not evidence.
+    // --probe SEED: one canonical line of derived geometry for a seed.
+    // The lab's ?probe=SEED emits the same line from the JS twin, so the
+    // two renderers can be diffed instead of trusted. Semantic metrics
+    // rather than raw SVG, because number formatting differs between the
+    // languages and would drown real divergence in noise.
+    //
+    // This exists because a Rust-only fix (the eyes-only fallback drawing a
+    // mouth) sat un-mirrored in the lab and was caught by hand. The lab is
+    // what Ufuk reviews; if it drifts from canonical, the review is of the
+    // wrong thing — the same family as every other instrument that was true
+    // about something else.
+    if let Some(i) = args.iter().position(|a| a == "--probe") {
+        let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
+        let c = decode_full(seed);
+        let outline = outline_for(&c, 120.0, 120.0);
+        let (bx0, by0, bx1, by1) = wild::bbox(&outline);
+        let p = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d);
+        let belly = p
+            .map(|pl| belly_patch(&outline, pl.eye_y + pl.r * 3.4, 0.72).len())
+            .unwrap_or(0);
+        println!(
+            "seed={seed} spokes={} exts={} topo={} vor={} pts={} bbox={:.1},{:.1},{:.1},{:.1} face={} belly={}",
+            c.wb.spokes.len(),
+            c.exts.len(),
+            c.topology,
+            u8::from(c.voronoi),
+            outline.len(),
+            bx0, by0, bx1, by1,
+            match p {
+                Some(pl) => format!(
+                    "{:.1},{:.1},{:.1},{:.1},{}",
+                    pl.fx, pl.eye_y, pl.ipd, pl.r, u8::from(pl.mouth_fits)
+                ),
+                None => "none".to_owned(),
+            },
+            belly,
+        );
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--coverage") {
         let n: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(500);
         let labels: Vec<&str> = coverage::snapshot().iter().map(|(l, _)| *l).collect();
