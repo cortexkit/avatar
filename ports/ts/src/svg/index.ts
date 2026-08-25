@@ -10,5 +10,6 @@
 
 export { renderBodySvg, renderSvg, RenderError, CANVAS_UNITS } from "./svg";
 export type { Mood, RenderParams } from "./svg";
+export { CLASSIC, DispatchError, renderSvgFor } from "./dispatch";
 export { bodyGeometry } from "./geometry";
 export type { BodyGeometry } from "./geometry";
