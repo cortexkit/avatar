@@ -24,16 +24,24 @@
 use avatar_genome::{decode, derive_genome, SeatIdentity};
 use avatar_svg::{render_svg, Mood, RenderParams, Q32};
 
-/// The canonical avatar type for genomes this binary mints. It pins the
-/// genome LAYOUT — which byte ranges mean what — and travels with the genome
-/// on the registry row. The creature redesign ships as a distinct type with
-/// a re-minted genome, not as a version bump over these bits.
-const AVATAR_TYPE: &str = "creature.v1";
+/// The avatar TYPE: which procedural representation renders the genome.
+/// Types are different representations OF THE SAME GENOME behind one
+/// shared interface — the same bits depicted in another style, not another
+/// creature. The type also pins the genome LAYOUT, since a representation
+/// reading different byte ranges could not be a depiction of those bits.
+///
+/// Named for its character rather than a number on purpose: a row reading
+/// `type=creature.v1, version=2` invites the reader to assume one of the
+/// two is wrong, when they are independent axes. The creature redesign in
+/// flight becomes its own type (`creature.wild`), not a version bump.
+const AVATAR_TYPE: &str = "creature.classic";
 
-/// Generator version: how the bits of a given layout render. Distinct from
-/// the type because a mapping change (the point-count floor, v1 to v2)
-/// alters every rendered creature without moving a single field offset — so
-/// a version can never stand in for a layout.
+/// The generation VERSION of that type, which exists for one purpose: fixing
+/// bugs in procedural generation without silently changing anybody's face.
+/// A stored version is authoritative for rendering — a renderer must draw a
+/// row at the version the row names, not at its own newest — and moving a
+/// row to a newer version is an explicit, consented act. That is what makes
+/// old generation paths a permanent obligation rather than dead code.
 const AVATAR_VERSION: u32 = 2;
 
 fn mood_from(name: &str) -> Result<Mood, String> {
@@ -286,7 +294,7 @@ mod tests {
         // hashes an opaque string, so length must not matter.
         assert_eq!(genomes[2].len(), 2048);
 
-        assert!(first.contains("\"avatar_type\":\"creature.v1\""));
+        assert!(first.contains("\"avatar_type\":\"creature.classic\""));
         assert!(first.contains("\"avatar_version\":2"));
     }
 
