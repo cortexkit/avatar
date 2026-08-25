@@ -13,6 +13,7 @@
 
 mod brows;
 mod build;
+mod dispatch;
 pub mod experimental;
 mod eyes;
 mod face;
@@ -35,6 +36,7 @@ mod voronoi {
 pub use avatar_phenotype::{Bam16, Rgb, Q32};
 
 pub use build::build_render_tree;
+pub use dispatch::{render_tree_for, DispatchError, CLASSIC};
 pub use geometry::{body_geometry, BodyGeometry};
 pub use serialize::serialize_svg;
 pub use svg::{render_body_svg, render_svg, Mood, RenderError, RenderParams};
