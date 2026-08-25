@@ -1,0 +1,98 @@
+# Design note 012 — Changing what a creature looks like
+
+Status: NORMATIVE procedure. Written after the operator ruled the
+type/version semantics on 2026-08-25, because the library accepted an
+obligation that nothing described how to discharge.
+
+## The rule this exists to protect
+
+**An Alfonso's face does not change unless someone decided it should.**
+
+Everything below follows from that one sentence. A stored row names its
+`avatar_type` and `avatar_version`; the library renders at those, never
+at its own newest. So changing rendered output is not something that
+happens by editing code — it is something that happens when a row moves,
+and a row moves only by consent.
+
+## Which change is this? Three kinds, and only one is a version bump
+
+| You want to | That is | Existing rows |
+| --- | --- | --- |
+| Fix a bug in a type's generation | version bump | keep their old face until upgraded |
+| Offer a different depiction of the same genome | **new type** | untouched |
+| Change the genome layout | **new type** (needs its own genome) | untouched |
+
+The middle row is the one people get wrong. A redesign that makes
+creatures look different is NOT a version bump, however much better it
+is. It is a new type, and it reaches an agent when someone chooses it.
+The wild-creature redesign in flight is `creature.wild`, not
+`creature.classic` v3, for exactly this reason — and that is what
+removed the flag day where every avatar in the fleet would have changed
+at once.
+
+A version bump is for when the generation is WRONG: a spline that
+self-crosses, an eye placed outside a silhouette, a mouth that renders
+off the body. Something a user would call a defect rather than a style.
+
+## Bumping a version
+
+1. **Add an arm; do not edit one.** In `crates/avatar-svg/src/dispatch.rs`
+   the version match gets a new arm. The old arm stays, forever, because
+   rows still name it. Deleting it silently changes the faces of every
+   row that has not upgraded — the precise failure this note exists to
+   prevent. Old generation paths are a permanent obligation; treat them
+   like published API, not like dead code.
+2. **Mint corpus vectors for the new version alongside the old.** The
+   old version's vectors are not replaced. Byte-identity for version N
+   must remain provable after version N+1 exists, or nothing enforces
+   step 1.
+3. **RENDER AND LOOK before committing the re-mint.** Non-negotiable,
+   and the reason is that verification derived from a spec cannot catch
+   a bug in that spec: the ports' byte-parity chains to whatever the
+   canonical mint produced, so a wrong mint propagates to every language
+   as agreement. `cargo run --bin grid -- --review` and
+   `--icons` exist for this; look at the sheet, at icon size too.
+4. **Port the new arm to Swift and TS.** Dispatch is per-language; a
+   version that renders in Rust and errors in Swift is a row that draws
+   on one surface and blanks on another.
+5. **Announce the upgrade path, not the change.** Nobody's face moves on
+   deploy. Rows move when the operator or the agent chooses, through
+   prefrontal's gated op.
+
+## Adding a type
+
+1. Pick a name for its **character, not a number**: `creature.classic`,
+   `creature.wild`. Numbered type names collide with the version axis
+   and make a reader assume one of the two columns is wrong.
+2. Declare its genome layout size. The registry's deposit gate enforces
+   it fail-closed, so a wrong-length genome is refused rather than
+   rendered as a partial creature.
+3. Implement its dispatch arm in all three languages, plus corpus
+   vectors. Unknown types must keep erroring cleanly on older clients —
+   that path is what makes shipping a type safe while phones lag.
+4. If the layout differs from an existing type, existing agents need a
+   **new genome** to wear it. That is a deliberate re-deposit, never an
+   automatic migration.
+
+## What a client does with a version or type it does not know
+
+Draws nothing. Not a default creature, not a previous version's
+rendering, not a placeholder shaped like an avatar. A confidently wrong
+face is worse than an empty slot precisely because it looks right:
+nothing fails, and two surfaces disagree about who an agent is while
+both appear healthy.
+
+Unknown type or version is a NORMAL state — a client older than a row is
+routine in a fleet with independently-versioned surfaces — and is not
+worth reporting. A wrong-length genome is not normal: the deposit gate
+should have refused it, so that one is a bug worth raising.
+
+## Never
+
+- Never fix a generation bug by editing an existing version's arm.
+- Never re-run a genome seed manifest as a repair path: it would
+  overwrite re-rolls and take the operator's choice away silently.
+  Seeding applies only where a row has no genome.
+- Never key a cache or derived artifact by agent id. A re-roll changes
+  the genome under a stable id, so id-keyed entries serve the previous
+  creature forever with nothing failing.

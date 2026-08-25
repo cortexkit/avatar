@@ -198,3 +198,45 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod extent_tests {
+    use super::*;
+
+    #[test]
+    fn extent_matches_the_coordinates_primitives_actually_use() {
+        // Pins the relationship a consumer relies on. If a future change made
+        // canvas and coordinates agree, or diverge by a different factor,
+        // extent() would start lying and every geometry consumer would draw
+        // at the wrong scale while looking plausible.
+        let genome = avatar_genome::derive_genome(&avatar_genome::SeatIdentity::Registered {
+            project_id: "agent_extent_probe".to_owned(),
+        });
+        let tree = render_tree_for(&genome, CLASSIC, CLASSIC_VERSION, Mood::Neutral)
+            .expect("classic v2 renders");
+
+        let mut max_seen = 0_i64;
+        for primitive in &tree.primitives {
+            if let crate::tree::Shape::Path { segments, .. } = &primitive.shape {
+                for segment in segments {
+                    if let crate::tree::Segment::LineTo { x, y }
+                    | crate::tree::Segment::MoveTo { x, y } = segment
+                    {
+                        max_seen = max_seen.max(*x).max(*y);
+                    }
+                }
+            }
+        }
+
+        assert!(
+            max_seen > tree.extent() / 4,
+            "geometry should span the extent"
+        );
+        assert!(
+            max_seen <= tree.extent(),
+            "geometry must not exceed the declared extent: {max_seen} > {}",
+            tree.extent()
+        );
+        assert_eq!(tree.extent(), 1_000_000, "classic canvas is 10_000 units");
+    }
+}

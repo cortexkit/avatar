@@ -3,9 +3,26 @@
 
 /// A complete avatar drawing in painter's order.
 public struct RenderTree: Equatable {
+    /// The square canvas edge in SVG USER UNITS — the serializer's viewBox.
+    ///
+    /// **Not the unit primitive coordinates are expressed in.** Those are
+    /// 100x finer; normalise with ``extent``, never with this. Dividing
+    /// geometry by `canvas` produces a drawing 100x too large, which looks
+    /// like a plausible zoomed-in avatar rather than an error.
     public var canvas: UInt32
     public var background: Rgb?
     public var primitives: [Primitive]
+
+    /// The coordinate extent primitives span, on both axes, from zero.
+    ///
+    /// The divisor a geometry consumer wants: multiply a coordinate by the
+    /// target edge length and divide by this to place it in a view. Exposed
+    /// as a value so no consumer has to rediscover the factor by reading the
+    /// SVG serializer.
+    public var extent: Int64 { Int64(canvas) * RenderTree.coordinatesPerCanvasUnit }
+
+    /// Primitive coordinates carry two more decimal places than the canvas.
+    public static let coordinatesPerCanvasUnit: Int64 = 100
 
     public init(canvas: UInt32, background: Rgb?, primitives: [Primitive]) {
         self.canvas = canvas

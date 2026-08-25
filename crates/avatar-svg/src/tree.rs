@@ -11,13 +11,37 @@ use crate::fixed::q32_mul;
 /// A complete avatar drawing in painter's order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderTree {
-    /// The square canvas edge in SVG user units.
+    /// The square canvas edge in SVG USER UNITS — the serializer's viewBox.
+    ///
+    /// **This is not the unit primitive coordinates are expressed in.** Those
+    /// are 100x finer; divide them by [`RenderTree::extent`], never by this.
+    /// Normalising geometry by `canvas` yields a drawing 100x too large,
+    /// which on most surfaces looks like a plausible zoomed-in avatar rather
+    /// than an error — an iOS consumer hit exactly that and had to read the
+    /// serializer to find the factor.
     pub canvas: u32,
     /// Optional background drawn behind every primitive.
     pub background: Option<Rgb>,
     /// Independently drawable geometry in painter's order.
     pub primitives: Vec<Primitive>,
 }
+
+impl RenderTree {
+    /// The coordinate extent primitives span, on both axes, from zero.
+    ///
+    /// This is the divisor a geometry consumer wants: multiply by a target
+    /// edge length and divide by this to map a primitive into a view. It is
+    /// exposed as a value rather than left to callers to derive, because the
+    /// alternative is every consumer rediscovering the factor by reading the
+    /// SVG serializer.
+    pub fn extent(&self) -> i64 {
+        i64::from(self.canvas) * COORDS_PER_CANVAS_UNIT
+    }
+}
+
+/// Primitive coordinates carry two more decimal places than the SVG canvas,
+/// which is what the serializer divides out when it formats a path.
+pub const COORDS_PER_CANVAS_UNIT: i64 = 100;
 
 /// One independently drawable item with its fully resolved transform chain.
 #[derive(Clone, Debug, PartialEq, Eq)]

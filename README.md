@@ -29,6 +29,35 @@ The Swift package's primary API is a flat, pre-resolved **render tree**
 (SwiftUI draws it without parsing SVG); SVG is a serializer over the
 same tree.
 
+## Consuming from Swift
+
+```swift
+.package(url: "https://github.com/cortexkit/avatar.git", from: "...")
+
+let tree = try renderTree(genome: genome, type: row.type,
+                          version: row.version, mood: mood)
+for primitive in tree.primitives { /* walk into SwiftUI Path */ }
+```
+
+Two things that have bitten a consumer, both worth reading before you
+write the walk:
+
+- **There is no top-level `Sources/`.** The manifest is hoisted to the
+  repository root because SwiftPM only consumes a git dependency whose
+  manifest sits at the clone root, while the sources stay in
+  `ports/swift/` beside the other ports. A first look at `Sources/`
+  finds nothing and reads as "this library has no such API" — it is a
+  layout artefact, not absence.
+- **Normalise coordinates by `tree.extent`, never by `tree.canvas`.**
+  Primitive coordinates are 100× finer than the SVG canvas units, so
+  dividing by `canvas` draws an avatar 100× too large — which looks like
+  a plausible zoom rather than a bug.
+
+Rendering honours the version stored on the row rather than the
+library's newest, and an unknown type or version throws rather than
+falling back: see `docs/design/012` for why drawing nothing is the
+required behaviour.
+
 ## Documents
 
 - `docs/charter.md` — design space, TOG inheritance, chartering constraints
