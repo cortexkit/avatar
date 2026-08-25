@@ -121,6 +121,44 @@ than after: under Option A that contradiction would have been
 implemented three times, tested by nothing, and discovered the first
 day a vocabulary change made the branch reachable.
 
+## The type ruling changes the arithmetic (2026-08-25)
+
+This brief was written when the redesign was understood as a
+generator_version bump: the wild pipeline would REPLACE the classic
+creature, so porting cost was "port the new thing once".
+
+The operator has since ruled that types are different representations
+of the same genome, and that a change of depiction is a NEW TYPE rather
+than a version bump. So the redesign ships as `creature.wild`
+alongside `creature.classic`, which keeps its faces. That is better for
+users — nobody's avatar changes without them choosing it — and it
+removes the flag day. It also changes this decision materially, in a
+direction the brief did not consider.
+
+**Under Option A, every type is implemented in every language, forever.**
+Not once: forever, because classic does not retire when wild arrives.
+Today that is ~800 new lines of branch-heavy geometry times three
+languages, on top of the classic paths already there. The next type
+multiplies by three again. Old versions of each type are permanent
+obligations too (note 012), so the matrix is types x versions x
+languages and it only grows.
+
+**Under Option B it does not multiply.** A new type is implemented once
+in canonical Rust; the ports gain nothing, because they implement the
+serializer over whatever tree arrives. Types become a canonical-side
+concern and the port surface stays fixed no matter how many exist.
+
+That is a stronger argument for B than anything in the original brief,
+and it arrived from the product model rather than from engineering
+taste. It does not settle the question — offline DNA-to-creature is
+still A's real advantage, and question 1 below is still the one that
+decides — but the cost side is now visibly super-linear where it looked
+linear before.
+
+Worth noting what the ruling does NOT change: `creature.classic` is
+already ported three ways and shipping, so B would not be a rewrite of
+what exists. It is a decision about where the NEXT type lands.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The
