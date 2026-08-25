@@ -65,10 +65,46 @@ parity is proved on the serializer.
   further; Option A keeps a capability no shipped consumer currently
   uses.
 
+## The deciding question changed (2026-08-25, second update)
+
+Question 1 below was the one I said would settle this. **The stored-genome
+architecture retired it.** No client derives a creature from an id any
+more: the registry stores the genome, the wire delivers it, and clients
+render what they are given. "Offline DNA → creature with no host" is not
+a capability anyone is asking for, so A's headline advantage over B is
+gone.
+
+But B does not win by default, because the same architecture sharpened
+what B actually costs. A client holding genome bytes still has to turn
+them into pixels. Under B it cannot, on its own — it needs a tree, and a
+tree is mood-specific, so serving trees over the wire means either seven
+trees per agent or a round trip on every mood change, against 1 KiB that
+covers all moods forever. Nobody should want that wire.
+
+So the real fork, stated properly at last:
+
+> **A** — each language implements each type's generator natively.
+> **B** — one Rust generator, embedded on every platform via FFI or WASM,
+> with ports reduced to drawing the tree it produces.
+
+B was never "ask the host"; it was always "one implementation, linked
+everywhere". That makes the deciding question a platform question rather
+than a product one:
+
+**Can every consumer platform embed a Rust core, or does some surface need
+a native implementation?** iOS can link Rust. The web can take WASM. A
+future surface that cannot is what would force A.
+
+The cost asymmetry from the type ruling still stands and now bears fully
+on this: under A, types x versions x languages grows forever; under B,
+a new type is written once and every platform gets it by upgrading a
+linked core.
+
 ## What I would want to know before choosing
 
-1. Does any planned consumer need offline DNA → creature with no host?
-   If yes, A. If no, B is the cheaper truth.
+1. ~~Does any planned consumer need offline DNA → creature with no
+   host?~~ RETIRED — no client derives at all under the stored-genome
+   model. Superseded by the platform question above.
 2. Is the tree a stable enough contract to be the parity boundary? It
    has changed twice already (rev 1 → rev 2 after the corpus
    inventory), which is evidence against freezing it early and evidence
