@@ -60,6 +60,30 @@ final class DispatchAndCacheTests: XCTestCase {
         XCTAssertEqual(cache.count, 0)
     }
 
+    func testCacheSurvivesConcurrentUse() throws {
+        // The cache is documented as callable from any thread because a list
+        // view prefetches avatars off the main queue. An untested concurrency
+        // claim is worth nothing, so this hammers the same instance from many
+        // threads across several keys: without the lock, the dictionary
+        // mutations race and this crashes or corrupts rather than failing an
+        // assertion politely.
+        let cache = RenderTreeCache(capacity: 4)
+        let genome = try genome()
+        let moods: [Mood] = [.neutral, .happy, .working, .blocked]
+        let expected = try moods.map {
+            try renderTree(genome: genome, type: classicAvatarType, version: 2, mood: $0)
+        }
+
+        DispatchQueue.concurrentPerform(iterations: 200) { iteration in
+            let index = iteration % moods.count
+            let tree = try? cache.renderTree(
+                genome: genome, type: classicAvatarType, version: 2, mood: moods[index])
+            XCTAssertEqual(tree, expected[index])
+        }
+
+        XCTAssertEqual(cache.count, moods.count)
+    }
+
     func testCacheIncludesMoodInItsKey() throws {
         let cache = RenderTreeCache(capacity: 3)
         let genome = try genome()
