@@ -133,9 +133,23 @@ Charter constraint #4. The partition is **by region**:
   versions through its domain string (v1→v2), independently of
   `generator_version`: a derivation change alters which DNA a seat
   gets, not what any DNA renders as.
-  The identity input is the **entorhinal registration ID** (the
+  The identity input is **the registry's authoritative id for the
+  SEAT**, not for its project. Ruled 2026-08-23 when ALF's fleet-row op
+  surfaced the ambiguity: the derivation takes an opaque string and
+  cannot tell which id-space it came from, so two producers feeding
+  different ids draw two different creatures for one agent with nothing
+  failing — the never-derive rule's failure mode arriving through the
+  producer door. **`agent_id` is the input**, because an avatar
+  identifies a seat while a project id identifies a project: one agent
+  per project happens to hold across the fleet today, which is why the
+  flaw stayed invisible, but any project hosting two agents would give
+  them identical creatures and no error. Consumers pass through
+  whatever the wire delivers, verbatim, and never substitute or
+  normalise it.
+  The original derivation used the **entorhinal registration ID** (the
   registry's minted stable project ID, which survives workspace moves
-  and path renames via the journal), NOT the canonical path: a path is mutable
+  and path renames via the journal), and the reasoning for preferring
+  it over the canonical path still holds for any id chosen: a path is mutable
   and aliasable, and deriving a durable key from it means a routine
   folder rename re-rolls the seat's face — the exact failure the
   identity core exists to prevent (and the exact class that stranded 24
@@ -161,7 +175,24 @@ Charter constraint #4. The partition is **by region**:
   they render a deliberate placeholder — never a guessed creature. A
   client-derived identity means the same agent wears different faces on
   different surfaces with no error anywhere; this rule deletes that
-  class. It is also the v1 of the eventual contract: once mutation
+  class.
+  **Scope of the rule, stated because it travelled without its
+  qualifier and over-blocked a consumer for weeks.** The prohibition is
+  on a surface DECIDING WHICH STRING identifies a seat. It is not a
+  prohibition on running the generator: rendering from a wire-delivered
+  authoritative id, using the pinned library, cannot diverge, because
+  byte-identity across the three languages is gated by the committed
+  golden corpus and the pinned identity vectors in every CI leg. ALF's
+  formulation is the sharpest statement of the discriminator and is
+  adopted here: client derivation is safe exactly when a multi-leg
+  corpus GATES THE EQUALITY, and a relayed rule that drops that
+  qualifier flips polarity.
+  Consequence for the wire: it carries the INPUT (the seat's
+  authoritative id), not the derived genome — until mutation makes the
+  genome stateful, at which point an additive optional `avatarGenome`
+  field appears and takes precedence over derivation. Consumers should
+  implement that precedence before the field exists, so the day it
+  lands is a no-op for them. It is also the v1 of the eventual contract: once mutation
   ships, the cosmetic region is stateful and the wire carries genome
   data outright — clients are pure renderers from day one.
 - **Cosmetic region** = everything else. Initially seeded from the same
