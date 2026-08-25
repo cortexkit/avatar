@@ -21,7 +21,7 @@
 //!     so ALF can pass richer records); output files are <stable_id>.png.
 //!   Options: --size N (default 400), --mood M (default neutral).
 
-use avatar_genome::{decode, derive_genome, SeatIdentity};
+use avatar_genome::{decode, derive_genome, Genome, SeatIdentity};
 use avatar_svg::{render_svg, Mood, RenderParams, Q32};
 
 /// The avatar TYPE: which procedural representation renders the genome.
@@ -57,6 +57,25 @@ fn mood_from(name: &str) -> Result<Mood, String> {
     })
 }
 
+/// Renders a genome that already exists, as opposed to deriving one.
+///
+/// This is the correct path for anything depicting a LIVE agent, because
+/// the registry row is the only truth once genomes can be re-rolled:
+/// deriving from an id reproduces the agent's ORIGINAL creature, which
+/// after a re-roll is a face that agent no longer wears. A GitHub App
+/// avatar minted by derivation and a phone rendering the stored row would
+/// then disagree permanently, each looking correct.
+fn export_png_from_genome(genome: &Genome, mood: Mood, size: u32) -> Result<Vec<u8>, String> {
+    let phenotype = decode(genome);
+    let params = RenderParams {
+        mood,
+        growth: Q32::ONE,
+        canvas: 10_000,
+    };
+    let svg = render_svg(&phenotype, &params).map_err(|e| e.to_string())?;
+    rasterize(&svg, size)
+}
+
 fn export_png(stable_id: &str, mood: Mood, size: u32) -> Result<Vec<u8>, String> {
     let genome = derive_genome(&SeatIdentity::Registered {
         project_id: stable_id.to_owned(),
@@ -68,8 +87,11 @@ fn export_png(stable_id: &str, mood: Mood, size: u32) -> Result<Vec<u8>, String>
         canvas: 10_000,
     };
     let svg = render_svg(&phenotype, &params).map_err(|e| e.to_string())?;
+    rasterize(&svg, size)
+}
 
-    let tree = resvg::usvg::Tree::from_data(&svg, &resvg::usvg::Options::default())
+fn rasterize(svg: &[u8], size: u32) -> Result<Vec<u8>, String> {
+    let tree = resvg::usvg::Tree::from_data(svg, &resvg::usvg::Options::default())
         .map_err(|e| format!("svg parse: {e}"))?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
         .ok_or_else(|| "pixmap alloc failed".to_owned())?;
@@ -178,6 +200,31 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    // Renders a genome the caller already holds — the path anything
+    // depicting a live agent must use, since after a re-roll the stored
+    // genome and a derived one are different creatures.
+    if let Some(hex) = get("--genome") {
+        let genome = match Genome::from_hex(hex.trim()) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("--genome: {e}");
+                std::process::exit(2);
+            }
+        };
+        let out = get("--out").unwrap_or_else(|| "avatar.png".to_owned());
+        match export_png_from_genome(&genome, mood, size) {
+            Ok(png) => {
+                std::fs::write(&out, png).expect("write png");
+                println!("{out}");
+            }
+            Err(e) => {
+                eprintln!("export: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     if let Some(ids_arg) = get("--mint-genomes") {
         let ids = read_ids(&ids_arg);
@@ -296,6 +343,34 @@ mod tests {
 
         assert!(first.contains("\"avatar_type\":\"creature.classic\""));
         assert!(first.contains("\"avatar_version\":2"));
+    }
+
+    #[test]
+    fn stored_and_derived_paths_agree_until_a_reroll_separates_them() {
+        // The two paths must coincide for an un-re-rolled agent, which is
+        // what makes the stored path a safe drop-in today. They stop
+        // coinciding the moment a genome is re-rolled: derivation still
+        // reproduces the ORIGINAL creature while the row wears a new one.
+        // Anything depicting a live agent must therefore render the stored
+        // genome, or a GitHub avatar and a phone will disagree permanently,
+        // each looking entirely correct.
+        let id = "agent_0000000000000001";
+        let derived = derive_genome(&SeatIdentity::Registered {
+            project_id: id.to_owned(),
+        });
+
+        let from_id = export_png(id, Mood::Neutral, 64).expect("derived render");
+        let from_genome =
+            export_png_from_genome(&derived, Mood::Neutral, 64).expect("stored render");
+        assert_eq!(from_id, from_genome);
+
+        // A different genome must not render the same creature, or the
+        // assertion above would pass for the wrong reason.
+        let other = derive_genome(&SeatIdentity::Registered {
+            project_id: "agent_somebody_else".to_owned(),
+        });
+        let from_other = export_png_from_genome(&other, Mood::Neutral, 64).expect("other render");
+        assert_ne!(from_genome, from_other);
     }
 
     #[test]
