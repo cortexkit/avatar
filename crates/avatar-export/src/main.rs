@@ -24,6 +24,18 @@
 use avatar_genome::{decode, derive_genome, SeatIdentity};
 use avatar_svg::{render_svg, Mood, RenderParams, Q32};
 
+/// The canonical avatar type for genomes this binary mints. It pins the
+/// genome LAYOUT — which byte ranges mean what — and travels with the genome
+/// on the registry row. The creature redesign ships as a distinct type with
+/// a re-minted genome, not as a version bump over these bits.
+const AVATAR_TYPE: &str = "creature.v1";
+
+/// Generator version: how the bits of a given layout render. Distinct from
+/// the type because a mapping change (the point-count floor, v1 to v2)
+/// alters every rendered creature without moving a single field offset — so
+/// a version can never stand in for a layout.
+const AVATAR_VERSION: u32 = 2;
+
 fn mood_from(name: &str) -> Result<Mood, String> {
     Ok(match name {
         "neutral" => Mood::Neutral,
@@ -60,6 +72,55 @@ fn export_png(stable_id: &str, mood: Mood, size: u32) -> Result<Vec<u8>, String>
         &mut pixmap.as_mut(),
     );
     pixmap.encode_png().map_err(|e| format!("png encode: {e}"))
+}
+
+/// Reads agent ids from a comma list or, with a leading `@`, from a file of
+/// one id per line (`#` comments allowed).
+fn read_ids(arg: &str) -> Vec<String> {
+    let text;
+    let source = match arg.strip_prefix('@') {
+        Some(path) => {
+            text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            text.as_str()
+        }
+        None => arg,
+    };
+    let split: Box<dyn Iterator<Item = &str>> = if arg.starts_with('@') {
+        Box::new(source.lines())
+    } else {
+        Box::new(source.split(','))
+    };
+    split
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Mints the genome deposit manifest for a batch of agents.
+///
+/// The operator ruled that the genome is STORED on the agent row and served,
+/// so derivation runs once per agent at creation or backfill rather than per
+/// render. This is the backfill half: one auditable artifact for a batch,
+/// deposited through prefrontal's gated set-avatar op.
+///
+/// Every record carries `avatar_type`, because a genome is positional and
+/// uninterpretable without knowing which LAYOUT minted it. A row holding
+/// genome bytes with no type is corrupt rather than defaulting.
+fn mint_manifest(ids: &[String]) -> String {
+    let mut out = String::from("[\n");
+    for (i, id) in ids.iter().enumerate() {
+        let genome = derive_genome(&SeatIdentity::Registered {
+            project_id: id.clone(),
+        });
+        let comma = if i + 1 == ids.len() { "" } else { "," };
+        out.push_str(&format!(
+            "  {{\"agent_id\":\"{id}\",\"avatar_genome\":\"{}\",\"avatar_type\":\"{AVATAR_TYPE}\",\"avatar_version\":{AVATAR_VERSION}}}{comma}\n",
+            genome.to_hex(),
+        ));
+    }
+    out.push_str("]\n");
+    out
 }
 
 /// Minimal manifest reader: extracts every `"stable_id": "…"` string value.
@@ -109,6 +170,23 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    if let Some(ids_arg) = get("--mint-genomes") {
+        let ids = read_ids(&ids_arg);
+        if ids.is_empty() {
+            eprintln!("--mint-genomes: no agent ids given");
+            std::process::exit(2);
+        }
+        let manifest = mint_manifest(&ids);
+        match get("--out") {
+            Some(path) => {
+                std::fs::write(&path, &manifest).expect("write manifest");
+                eprintln!("minted {} genomes -> {path}", ids.len());
+            }
+            None => print!("{manifest}"),
+        }
+        return;
+    }
 
     if let Some(stable_id) = get("--stable-id") {
         let out = get("--out").unwrap_or_else(|| format!("{stable_id}.png"));
@@ -177,6 +255,51 @@ mod tests {
         let a = export_png("pj-0000000000000001", Mood::Neutral, 64).unwrap();
         let b = export_png("pj-000000000000dead", Mood::Neutral, 64).unwrap();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn minted_manifest_holds_the_properties_the_fleet_deposits_on() {
+        // These are the exact claims made to the registry when handing over
+        // the backfill: reproducible, one genome per agent, and every genome
+        // the declared layout size so the op's length gate passes. A change
+        // that broke any of them would deposit wrong data into 30 rows.
+        let ids: Vec<String> = ["agent_aaa", "agent_bbb", "agent_00000003"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+
+        let first = mint_manifest(&ids);
+        assert_eq!(first, mint_manifest(&ids), "mint must be reproducible");
+
+        let genomes: Vec<&str> = first
+            .split("\"avatar_genome\":\"")
+            .skip(1)
+            .map(|rest| rest.split('"').next().expect("closing quote"))
+            .collect();
+        assert_eq!(genomes.len(), ids.len());
+        for hex in &genomes {
+            assert_eq!(hex.len(), 2048, "1024 bytes as hex");
+            assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+        assert_ne!(genomes[0], genomes[1], "distinct ids, distinct genomes");
+        // Short ids are real registry ids, not truncation: the derivation
+        // hashes an opaque string, so length must not matter.
+        assert_eq!(genomes[2].len(), 2048);
+
+        assert!(first.contains("\"avatar_type\":\"creature.v1\""));
+        assert!(first.contains("\"avatar_version\":2"));
+    }
+
+    #[test]
+    fn ids_parse_from_a_list_or_a_file() {
+        assert_eq!(read_ids("a, b ,c"), vec!["a", "b", "c"]);
+        let path = std::env::temp_dir().join("avatar-export-ids-test.txt");
+        std::fs::write(&path, "# roster\nagent_x\n\n  agent_y  \n").unwrap();
+        assert_eq!(
+            read_ids(&format!("@{}", path.display())),
+            vec!["agent_x", "agent_y"]
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
