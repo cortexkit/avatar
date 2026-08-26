@@ -93,6 +93,14 @@ run "mint tables"     cargo run --locked -p avatar-tables --bin mint
 run "mint is reproducible" bash -c \
   "[[ \"\$( { git status --porcelain; git diff; } | shasum -a 256 )\" == \"$mint_before\" ]]"
 run "golden corpus"   cargo test --locked -p avatar-vectors
+# Does the corpus still cover what real genomes reach? The hand-picked
+# vectors once missed nine decode selectors that live agents hit, including
+# a mouth dispatch arm no port had ever been byte-compared on. Uniform draws
+# have the same distribution as blake3-derived fleet genomes, so a synthetic
+# population re-asks the question here without needing registry data — and
+# fails when a decode change opens a branch no vector exercises.
+run "corpus coverage" cargo run --locked -q -p avatar-genome \
+  --example fleet_coverage -- --population 1000
 
 if [[ $RUST_ONLY -eq 0 ]]; then
   run "ts typecheck"  bash -c 'cd ports/ts && bunx tsc --noEmit'

@@ -91,6 +91,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo test --locked -p avatar-vectors
 
+      # Byte-equality only proves what the corpus contains. This asks the
+      # other half: does the corpus still contain what real genomes reach?
+      # The hand-picked vectors once missed nine decode selectors live agents
+      # hit, including a mouth dispatch arm no port had been compared on.
+      # Uniform draws match the distribution of blake3-derived fleet genomes,
+      # so this needs no registry data to re-ask the question.
+      - name: Corpus covers the reachable genome space
+        if: ${{ !cancelled() }}
+        run: cargo run --locked -q -p avatar-genome --example fleet_coverage -- --population 1000
+
       # A generated file edited by hand is invisible to every test above.
       # Compares against the snapshot rather than requiring an empty tree,
       # so the delta is attributable to the build.
