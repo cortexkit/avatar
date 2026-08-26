@@ -99,8 +99,16 @@ if [[ $RUST_ONLY -eq 0 ]]; then
   run "ts conformance" bash -c 'cd ports/ts && bun test'
   # Xcode's toolchain is required on macOS; CI uses a Linux Swift image.
   if command -v swift >/dev/null 2>&1; then
-    run "swift conformance" bash -c \
-      'DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} swift test'
+    # Resolve the toolchain rather than inheriting one. Apple's /usr/bin/git
+    # shim exports SDKROOT (CommandLineTools) into hook environments, so as
+    # a pre-push hook this gate got Xcode's compiler with CommandLineTools'
+    # SDK — a half-inherited toolchain that cannot build the stdlib, and it
+    # reported a Swift conformance FAILURE for a suite that passes. A gate
+    # whose verdict depends on who invoked it is not a gate.
+    swift_dev_dir=/Applications/Xcode.app/Contents/Developer
+    [[ -d $swift_dev_dir ]] || swift_dev_dir=$(xcode-select -p 2>/dev/null)
+    run "swift conformance" \
+      env -u SDKROOT DEVELOPER_DIR="$swift_dev_dir" swift test
   fi
 fi
 
