@@ -43,6 +43,7 @@ dependencies = [
  "avatar-svg",
  "avatar-tables",
  "blake3",
+ "serde_json",
 ]
 
 [[package]]

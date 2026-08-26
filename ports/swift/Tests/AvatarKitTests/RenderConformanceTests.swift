@@ -22,7 +22,15 @@ final class RenderConformanceTests: XCTestCase {
                 count += 1
             }
         }
-        XCTAssertEqual(count, 30)
+        // Derived from the manifest, not memorized. A literal total has to
+        // be hand-edited whenever the corpus grows, and the tempting fix is
+        // to paste in whatever the run printed — which turns a guard into a
+        // record of the last observation. Still non-vacuous: it fails if any
+        // declared render is skipped, and the floor catches a manifest
+        // misparse that would otherwise shrink the expectation to match.
+        let declaredRenders = vectors.reduce(0) { $0 + $1.moods.count }
+        XCTAssertEqual(count, declaredRenders)
+        XCTAssertGreaterThanOrEqual(vectors.count, 18, "manifest looks truncated")
     }
 
     func testCorpusTreesAreFlatAndEveryAffineMatchesNaiveComposition() throws {
@@ -86,8 +94,26 @@ final class RenderConformanceTests: XCTestCase {
                 roundJoins += svg.nonOverlappingCount(of: "stroke-linejoin=\"round\"")
             }
         }
-        XCTAssertEqual(roundCaps, 274)
-        XCTAssertEqual(roundJoins, 30)
+        // Compare against the Rust-generated golden SVGs rather than
+        // remembered totals. This exercises renderSvg(), a different entry
+        // point from serializeSvg(buildRenderTree()), so what is worth
+        // asserting is that both paths agree with the canonical output.
+        var goldenCaps = 0
+        var goldenJoins = 0
+        for vector in vectors {
+            for moodName in vector.moods {
+                let golden = try String(contentsOf: root.appendingPathComponent(
+                    "svg/\(vector.name)__\(moodName).svg"), encoding: .utf8)
+                goldenCaps += golden.nonOverlappingCount(of: "stroke-linecap=\"round\"")
+                goldenJoins += golden.nonOverlappingCount(of: "stroke-linejoin=\"round\"")
+            }
+        }
+        XCTAssertEqual(roundCaps, goldenCaps)
+        XCTAssertEqual(roundJoins, goldenJoins)
+        // The corpus does contain round strokes, so a renderer emitting none
+        // must not pass by matching zero against zero.
+        XCTAssertGreaterThan(goldenCaps, 0)
+        XCTAssertGreaterThan(goldenJoins, 0)
 
         let pattern = try loadPhenotype("pattern_0", root: root)
         let tree = try buildRenderTree(

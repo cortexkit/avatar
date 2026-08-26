@@ -387,6 +387,21 @@ mod tests {
                 genome: Genome::from_bytes(sliver),
                 moods: NEUTRAL,
             },
+            // Coverage vectors, chosen by measurement rather than taste.
+            // `cargo run -p avatar-genome --example fleet_coverage` decoded
+            // the fleet's 30 stored genomes against this corpus and found
+            // nine decode-selector values live agents reach that no vector
+            // exercised: body point counts 5, 7, 9 and 10, lash counts 1,
+            // 6, 7 and 11, and mouth family 3 — a dense dispatch arm
+            // implemented in three languages and byte-compared in none.
+            // The seeds are a greedy minimum cover over that gap set, so
+            // four vectors close all nine. They are derived from documented
+            // strings rather than copied from registry rows, because a
+            // stored genome can be re-rolled out from under the corpus.
+            seat_vector("cover_point_count_5", "corpus-cover-1", ALL_MOODS),
+            seat_vector("cover_point_count_9", "corpus-cover-56", NEUTRAL),
+            seat_vector("cover_point_count_10", "corpus-cover-166", NEUTRAL),
+            seat_vector("cover_point_count_7", "corpus-cover-185", NEUTRAL),
         ]
     }
 

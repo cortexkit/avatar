@@ -12,3 +12,6 @@ blake3 = "1.5"
 # Dev-only: lets the sample-render example exercise the full DNA -> SVG
 # pipeline. The library dependency direction stays genome-free in avatar-svg.
 avatar-svg = { path = "../avatar-svg" }
+# Dev-only: the fleet_coverage example reads deposit manifests. The library
+# itself stays serde-free — genomes are bytes, not documents.
+serde_json = "1"
