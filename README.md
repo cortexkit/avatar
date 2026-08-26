@@ -11,9 +11,17 @@ mechanism inside EVM limits; this project removes the limits.
 ## Pipeline
 
 ```
-DNA (8192 bits)  →  Phenotype (typed integers)  →  SVG bytes / render tree
-      identity           canonical JSON              7 moods, render-time
+registry row  →  DNA  →  Phenotype (typed integers)  →  SVG / render tree
+ genome+type      1 KiB      canonical JSON            7 moods, render-time
+ +version
 ```
+
+The genome is **stored**, not derived at render time. Prefrontal seeds one
+onto an agent's registry row at creation, and the operator or the agent can
+re-roll it later — so the row is the only truth, and nothing may be cached
+by agent id alone. Deriving a genome from an id (`avatar-export
+--stable-id`) is the seeding path and the GitHub-App path, not the
+consumption path.
 
 Three implementations produce **byte-identical SVG** from the same
 DNA + mood + generator version, enforced by a golden-vector corpus at
@@ -61,14 +69,30 @@ required behaviour.
 ## Documents
 
 - `docs/charter.md` — design space, TOG inheritance, chartering constraints
-- `docs/design/001…006` — genome layout, determinism contract, phenotype
-  schema, bit map, renderer geometry, face+mood, render tree
+- `docs/design/001…006` — shipped `creature.classic`: determinism contract,
+  phenotype schema, genome bit map, renderer geometry, face+mood, render tree
+- `docs/design/007…009`, `011` — the `creature.wild` redesign: expressiveness
+  spikes, look-first workflow, genome v2 layout, port-surface fork. 010 is
+  reserved for its phenotype schema, which waits on the look being frozen
+- `docs/design/012` — how a face is allowed to change: type vs version, and
+  the procedure for each
 
 ## Determinism rules (the short version)
 
 Integer/fixed-point math only, one pinned rounding rule, trig and easing
 from committed lookup tables, no platform libm, hand-rolled canonical
-serialization. Any observable output change is a `generator_version`
-bump: re-mint the corpus (`UPDATE_GOLDEN=1 cargo test -p avatar-vectors`),
-review `vectors/contact-sheet.html` by eye, and every port's conformance
-leg must re-pass before it ships.
+serialization.
+
+An observable output change is **never** a silent edit to a shipped
+version, because an agent's face must not change because we shipped:
+
+- Fixing a **generation bug** adds a new version arm; the old arm stays
+  byte-for-byte, keeps its corpus vectors, and rows upgrade only when
+  somebody chooses to.
+- Changing the **depiction** is a new type, not a version — types are
+  different representations of the same genome behind one interface.
+
+Either way: re-mint only the new arm's vectors (`UPDATE_GOLDEN=1 cargo test
+-p avatar-vectors`), review `vectors/contact-sheet.html` by eye, and every
+port's conformance leg must re-pass before it ships. `docs/design/012` has
+the full procedure.
