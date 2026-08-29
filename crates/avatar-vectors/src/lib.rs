@@ -82,36 +82,23 @@ mod tests {
         Mood::Sleepy,
     ];
 
+    /// Tree fixtures for the second creature type, which Swift cannot build
+    /// natively. They exist to exercise the primitive variants the shipped
+    /// type never reaches — gradient paint, gradient-content masks, path
+    /// fill rules — so the decoder is gated on them rather than inheriting
+    /// whatever coverage the classic corpus happens to provide.
+    ///
+    /// Deliberately NOT one per mood. A wild tree runs 480 KB to 630 KB of
+    /// JSON because its silhouette is flattened to line segments, so a full
+    /// mood set costs about four megabytes of repository for coverage two
+    /// files already give: neutral, and one mood that adds overlay
+    /// primitives. The size is a property of the geometry, not the
+    /// encoding, and is recorded in note 011.
     const WILD_TREE_FIXTURES: &[(&str, usize, &str)] = &[
-        (
-            "wild_5002__blocked.json",
-            568_497,
-            "8d4592fdcaa6aa0cbbd26fb711172f6c07ebdba4e773c9e3296b7e25d46bc1ff",
-        ),
-        (
-            "wild_5002__happy.json",
-            554_642,
-            "ad34dfad030d3dfc63a67bc9d833c167a40c0137e14114f4a2055c3357387bc2",
-        ),
         (
             "wild_5002__neutral.json",
             482_018,
             "0beb1a326795731bd997a77c011002d2ed852b3c7470e68b53c1c045d16686df",
-        ),
-        (
-            "wild_5002__sad.json",
-            568_548,
-            "8f3e512ad5350a93dfc4100d7a63cd410c4661132ad8a8612daf587004b60c32",
-        ),
-        (
-            "wild_5002__sleepy.json",
-            540_422,
-            "09b44367ca457e5a1c4a4f71f1696816c35fd715387f582a89b22054013498f4",
-        ),
-        (
-            "wild_5002__waiting.json",
-            510_755,
-            "ef91581283fd52c5940092fe1be20e0f2f638123e5c6d558a0ca57af56874fbe",
         ),
         (
             "wild_5002__working.json",

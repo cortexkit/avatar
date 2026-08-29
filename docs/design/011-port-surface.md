@@ -318,6 +318,36 @@ body clip, and closed paths with a fill rule. `Paint::RadialGradient`,
 primitive list the iOS client depends on does not have to change shape
 to ship wild — which is what makes a preview on device cheap.
 
+## The wild tree is 10x to 60x heavier than the classic one (2026-08-29)
+
+Measured while minting the tree-JSON boundary, and it is a property of
+the geometry rather than of the encoding:
+
+| tree | primitives | path segments | JSON bytes |
+|---|---|---|---|
+| `seat_ava` (classic) | 41 | 200 | 35 KB |
+| `pattern_3` (classic) | 31 | 368 | 45 KB |
+| `wild_5004` | 12 | 1848 | 77 KB |
+| `wild_5003` | 13 | 4842 | 193 KB |
+| `wild_5002` | 38 | 11638 | 482 KB |
+
+The cause is that the wild pipeline FLATTENS its curves. Classic keeps
+cubic Beziers in the tree and lets the renderer tessellate; wild emits
+marching-squares contours, spline flattening and voronoi cell outlines
+as line segments, so the tree carries the tessellation instead of the
+curve.
+
+This matters well beyond file size. A consumer builds one path per
+primitive and walks every segment, so a fleet list of thirty wild
+avatars is on the order of 350,000 segments where the same list of
+classic avatars is about 6,000. It is also memory in any tree cache.
+
+Not urgent and deliberately not fixed here — the preview path tolerates
+it. But it is a real constraint on the wild pipeline, and the fix is
+known: fit curves to the extracted contours rather than shipping their
+flattened polylines. That belongs with the fixed-point port, where the
+contour extraction is being rewritten anyway.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The

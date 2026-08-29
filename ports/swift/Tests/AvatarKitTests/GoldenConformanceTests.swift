@@ -36,13 +36,14 @@ struct ManifestVector {
     let moods: [String]
 }
 
+/// Fixtures for the creature type this package cannot build natively.
+/// They gate the decoder against primitive variants the shipped type never
+/// produces. Their names must match `WILD_TREE_FIXTURES` in
+/// `crates/avatar-vectors/src/lib.rs`, which mints these files; the
+/// inventory assertion fails on a mismatch rather than silently skipping
+/// a fixture.
 let wildTreeFixtureNames: Set<String> = [
-    "wild_5002__blocked.json",
-    "wild_5002__happy.json",
     "wild_5002__neutral.json",
-    "wild_5002__sad.json",
-    "wild_5002__sleepy.json",
-    "wild_5002__waiting.json",
     "wild_5002__working.json",
     "wild_5003__neutral.json",
     "wild_5004__neutral.json",
