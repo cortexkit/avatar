@@ -887,8 +887,60 @@ fn run_checker(n: u64) {
     }
 }
 
+fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
+    std::fs::create_dir_all(out_dir)
+        .unwrap_or_else(|error| panic!("create fixture directory {}: {error}", out_dir.display()));
+    for offset in 0..count {
+        let seed = start_seed + offset as u64;
+        let creature = decode_full(seed);
+        let moods: &[mood::Mood] = if offset == 0 {
+            &mood::ALL
+        } else {
+            &[mood::Mood::Neutral]
+        };
+        for &mood in moods {
+            let tree = RenderTree {
+                canvas: 240,
+                background: None,
+                primitives: draw_full(&creature, mood, 120.0, 120.0),
+            };
+            let json = avatar_svg::serialize_tree_json(&tree);
+            let path = out_dir.join(format!("wild_{seed}__{}.json", mood::name(mood)));
+            std::fs::write(&path, json.as_bytes())
+                .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+            println!("{}: {} bytes", path.display(), json.len());
+            if json.len() > 200 * 1024 {
+                eprintln!(
+                    "warning: {} is larger than 200 KiB ({} bytes)",
+                    path.display(),
+                    json.len()
+                );
+            }
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|argument| argument == "--fixtures") {
+        let usage = "--fixtures <start-seed> <count> <out-dir>";
+        let start_seed = args
+            .get(i + 1)
+            .unwrap_or_else(|| panic!("missing start seed; usage: {usage}"))
+            .parse::<u64>()
+            .unwrap_or_else(|error| panic!("invalid start seed; usage: {usage}: {error}"));
+        let count = args
+            .get(i + 2)
+            .unwrap_or_else(|| panic!("missing count; usage: {usage}"))
+            .parse::<usize>()
+            .unwrap_or_else(|error| panic!("invalid count; usage: {usage}: {error}"));
+        assert!(count > 0, "fixture count must be greater than zero");
+        let out_dir = args
+            .get(i + 3)
+            .unwrap_or_else(|| panic!("missing output directory; usage: {usage}"));
+        run_fixtures(start_seed, count, std::path::Path::new(out_dir));
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--check") {
         let n = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(200);
         run_checker(n);

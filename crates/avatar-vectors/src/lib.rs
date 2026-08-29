@@ -61,13 +61,13 @@ mod tests {
 
     use avatar_genome::{decode, derive_genome, Genome, SeatIdentity};
     use avatar_phenotype::{from_canonical_json, to_canonical_json, Q32};
-    use avatar_svg::{render_svg, Mood, RenderParams};
+    use avatar_svg::{build_render_tree, render_svg, serialize_tree_json, Mood, RenderParams};
     use serde::Deserialize;
 
     // v2: body point-count floor raised 4..=16 (2- and 3-point bodies were
     // unrecognizable slivers). Decoder mapping change, so every vector's
     // observable output potentially moves.
-    const GENERATOR_VERSION: u16 = 2;
+    const GENERATOR_VERSION: u16 = 3;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
 
@@ -80,6 +80,54 @@ mod tests {
         Mood::Blocked,
         Mood::Sad,
         Mood::Sleepy,
+    ];
+
+    const WILD_TREE_FIXTURES: &[(&str, usize, &str)] = &[
+        (
+            "wild_5002__blocked.json",
+            568_497,
+            "8d4592fdcaa6aa0cbbd26fb711172f6c07ebdba4e773c9e3296b7e25d46bc1ff",
+        ),
+        (
+            "wild_5002__happy.json",
+            554_642,
+            "ad34dfad030d3dfc63a67bc9d833c167a40c0137e14114f4a2055c3357387bc2",
+        ),
+        (
+            "wild_5002__neutral.json",
+            482_018,
+            "0beb1a326795731bd997a77c011002d2ed852b3c7470e68b53c1c045d16686df",
+        ),
+        (
+            "wild_5002__sad.json",
+            568_548,
+            "8f3e512ad5350a93dfc4100d7a63cd410c4661132ad8a8612daf587004b60c32",
+        ),
+        (
+            "wild_5002__sleepy.json",
+            540_422,
+            "09b44367ca457e5a1c4a4f71f1696816c35fd715387f582a89b22054013498f4",
+        ),
+        (
+            "wild_5002__waiting.json",
+            510_755,
+            "ef91581283fd52c5940092fe1be20e0f2f638123e5c6d558a0ca57af56874fbe",
+        ),
+        (
+            "wild_5002__working.json",
+            626_954,
+            "1853df04e5f5804286d9727b96a28109930f542c57c0953f851f689333524df4",
+        ),
+        (
+            "wild_5003__neutral.json",
+            192_922,
+            "a1ed8febd1edeb854c851b1b8ef526b455090f8217790aede47e08c9bd308739",
+        ),
+        (
+            "wild_5004__neutral.json",
+            76_944,
+            "0fc69a40ac7e3a37ebb1082ea98d51ce5c221c01296e0567fddea95f59872a7f",
+        ),
     ];
 
     struct VectorSpec {
@@ -114,9 +162,9 @@ mod tests {
         mint_corpus();
     }
 
-    /// The conformance gate derives both byte boundaries again. Similar-looking
-    /// output is not compatible: ports must reproduce the exact JSON and SVG
-    /// bytes consumed by their vendored corpus.
+    /// The conformance gate derives every canonical boundary again. Similar-looking
+    /// output is not compatible: ports must reproduce the exact phenotype JSON,
+    /// tree JSON, and SVG bytes consumed by their vendored corpus.
     #[test]
     fn corpus_is_current() {
         if update_golden_enabled() {
@@ -132,7 +180,19 @@ mod tests {
             assert_current(&phenotype_path(vector.name), &to_canonical_json(&phenotype));
 
             for &mood in vector.moods {
-                let svg = render_svg(&phenotype, &render_params(mood)).unwrap_or_else(|error| {
+                let params = render_params(mood);
+                let tree = build_render_tree(&phenotype, &params).unwrap_or_else(|error| {
+                    panic!(
+                        "build tree {} ({}) failed: {error}",
+                        vector.name,
+                        mood_name(mood)
+                    )
+                });
+                assert_current(
+                    &tree_path(vector.name, mood),
+                    serialize_tree_json(&tree).as_bytes(),
+                );
+                let svg = render_svg(&phenotype, &params).unwrap_or_else(|error| {
                     panic!(
                         "render {} ({}) failed: {error}",
                         vector.name,
@@ -166,13 +226,14 @@ mod tests {
             "manifest.json".to_owned(),
             "phenotype".to_owned(),
             "svg".to_owned(),
+            "tree".to_owned(),
         ]);
         assert_directory_entry_names("vectors", &expected_root);
         assert!(
             manifest_path().is_file(),
             "vectors/manifest.json is not a file"
         );
-        for directory in ["dna", "phenotype", "svg"] {
+        for directory in ["dna", "phenotype", "svg", "tree"] {
             assert!(
                 corpus_root().join(directory).is_dir(),
                 "vectors/{directory} is not a directory"
@@ -182,16 +243,22 @@ mod tests {
         let mut expected_dna = BTreeSet::new();
         let mut expected_phenotype = BTreeSet::new();
         let mut expected_svg = BTreeSet::new();
+        let mut expected_tree = WILD_TREE_FIXTURES
+            .iter()
+            .map(|(name, _, _)| (*name).to_owned())
+            .collect::<BTreeSet<_>>();
         for vector in &manifest.vectors {
             expected_dna.insert(format!("{}.hex", vector.name));
             expected_phenotype.insert(format!("{}.json", vector.name));
             for mood in &vector.moods {
                 expected_svg.insert(format!("{}__{mood}.svg", vector.name));
+                expected_tree.insert(format!("{}__{mood}.json", vector.name));
             }
         }
         assert_file_names("dna", &expected_dna);
         assert_file_names("phenotype", &expected_phenotype);
         assert_file_names("svg", &expected_svg);
+        assert_file_names("tree", &expected_tree);
     }
 
     #[test]
@@ -216,6 +283,24 @@ mod tests {
     }
 
     #[test]
+    fn wild_tree_fixtures_are_hash_pinned() {
+        if update_golden_enabled() {
+            return;
+        }
+        for &(name, expected_size, expected_hash) in WILD_TREE_FIXTURES {
+            let path = corpus_root().join("tree").join(name);
+            let bytes =
+                fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            assert_eq!(bytes.len(), expected_size, "{name} size drifted");
+            assert_eq!(
+                blake3::hash(&bytes).to_hex().as_str(),
+                expected_hash,
+                "{name} bytes drifted"
+            );
+        }
+    }
+
+    #[test]
     fn svg_smoke() {
         if update_golden_enabled() {
             return;
@@ -235,7 +320,7 @@ mod tests {
 
     fn mint_corpus() {
         let root = corpus_root();
-        for directory in ["dna", "phenotype", "svg"] {
+        for directory in ["dna", "phenotype", "svg", "tree"] {
             fs::create_dir_all(root.join(directory))
                 .unwrap_or_else(|error| panic!("create vectors/{directory}: {error}"));
         }
@@ -247,7 +332,19 @@ mod tests {
             write_corpus_file(&phenotype_path(vector.name), &to_canonical_json(&phenotype));
 
             for &mood in vector.moods {
-                let svg = render_svg(&phenotype, &render_params(mood)).unwrap_or_else(|error| {
+                let params = render_params(mood);
+                let tree = build_render_tree(&phenotype, &params).unwrap_or_else(|error| {
+                    panic!(
+                        "build tree {} ({}) failed: {error}",
+                        vector.name,
+                        mood_name(mood)
+                    )
+                });
+                write_corpus_file(
+                    &tree_path(vector.name, mood),
+                    serialize_tree_json(&tree).as_bytes(),
+                );
+                let svg = render_svg(&phenotype, &params).unwrap_or_else(|error| {
                     panic!(
                         "render {} ({}) failed: {error}",
                         vector.name,
@@ -492,6 +589,12 @@ mod tests {
 
     fn phenotype_path(name: &str) -> PathBuf {
         corpus_root().join("phenotype").join(format!("{name}.json"))
+    }
+
+    fn tree_path(name: &str, mood: Mood) -> PathBuf {
+        corpus_root()
+            .join("tree")
+            .join(format!("{name}__{}.json", mood_name(mood)))
     }
 
     fn svg_path(name: &str, mood: Mood) -> PathBuf {

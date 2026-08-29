@@ -36,6 +36,18 @@ struct ManifestVector {
     let moods: [String]
 }
 
+let wildTreeFixtureNames: Set<String> = [
+    "wild_5002__blocked.json",
+    "wild_5002__happy.json",
+    "wild_5002__neutral.json",
+    "wild_5002__sad.json",
+    "wild_5002__sleepy.json",
+    "wild_5002__waiting.json",
+    "wild_5002__working.json",
+    "wild_5003__neutral.json",
+    "wild_5004__neutral.json",
+]
+
 func loadManifest() throws -> (root: URL, vectors: [ManifestVector]) {
     let root = try vectorsRoot()
     let data = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
@@ -227,6 +239,15 @@ final class GoldenConformanceTests: XCTestCase {
             try FileManager.default.contentsOfDirectory(atPath: svgDirectory)
                 .filter { $0.hasSuffix(".svg") })
         XCTAssertEqual(svgs, expectedSvgs)
+
+        let classicTrees = Set(expectedSvgs.map {
+            String($0.dropLast(".svg".count)) + ".json"
+        })
+        let treeDirectory = root.appendingPathComponent("tree").path
+        let trees = Set(
+            try FileManager.default.contentsOfDirectory(atPath: treeDirectory)
+                .filter { $0.hasSuffix(".json") })
+        XCTAssertEqual(trees, classicTrees.union(wildTreeFixtureNames))
     }
 
     // MARK: Genome bit reader and hex wire form (Rust unit-test vectors)

@@ -33,6 +33,77 @@ final class RenderConformanceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(vectors.count, 18, "manifest looks truncated")
     }
 
+    func testBoundary3EveryRustTreeDecodesToTheNativeSwiftTree() throws {
+        let (root, vectors) = try loadManifest()
+        var count = 0
+        for vector in vectors {
+            let phenotype = try loadPhenotype(vector.name, root: root)
+            for moodName in vector.moods {
+                let mood = try XCTUnwrap(Mood(rawValue: moodName))
+                let data = try Data(contentsOf: root.appendingPathComponent(
+                    "tree/\(vector.name)__\(moodName).json"))
+                let decoded = try decodeRenderTreeJson([UInt8](data))
+                let native = try buildRenderTree(
+                    phenotype: phenotype, params: RenderParams(mood: mood))
+                XCTAssertEqual(decoded, native, "\(vector.name)__\(moodName)")
+                count += 1
+            }
+        }
+        XCTAssertEqual(count, vectors.reduce(0) { $0 + $1.moods.count })
+        XCTAssertGreaterThanOrEqual(count, 40, "tree corpus looks truncated")
+    }
+
+    func testBoundary3EveryRustTreeDecodesAndReencodesToIdenticalBytes() throws {
+        let (root, vectors) = try loadManifest()
+        let treeDirectory = root.appendingPathComponent("tree")
+        let names = try FileManager.default.contentsOfDirectory(atPath: treeDirectory.path)
+            .filter { $0.hasSuffix(".json") }
+            .sorted()
+        var inventory = TreeInventory()
+        for name in names {
+            let bytes = try [UInt8](Data(contentsOf: treeDirectory.appendingPathComponent(name)))
+            let tree = try decodeRenderTreeJson(bytes)
+            inventory.observe(tree)
+            assertByteEqual(
+                "\(name) lossless tree round trip",
+                actual: canonicalTreeJSONBytes(tree),
+                expected: bytes)
+        }
+        let classicCount = vectors.reduce(0) { $0 + $1.moods.count }
+        XCTAssertEqual(names.count, classicCount + wildTreeFixtureNames.count)
+        XCTAssertTrue(inventory.hasGradient, "second-type fixtures must exercise gradient paint")
+        XCTAssertTrue(
+            inventory.hasGradientInsideMask,
+            "second-type fixtures must exercise gradient-content masks")
+        XCTAssertTrue(inventory.hasPathFillRule, "tree fixtures must exercise path fill rules")
+    }
+
+    func testTreeDecoderRejectsMissingUnknownAndMalformedValues() throws {
+        let minimal = Array("{\"background\":null,\"canvas\":10000,\"primitives\":[]}".utf8)
+        XCTAssertNoThrow(try decodeRenderTreeJson(minimal))
+        for malformed in [
+            "{\"canvas\":10000,\"primitives\":[]}",
+            "{\"background\":null,\"canvas\":10000.0,\"primitives\":[]}",
+            "{\"background\":null,\"canvas\":4294967296,\"primitives\":[]}",
+            "{\"background\":null,\"canvas\":10000,\"extra\":0,\"primitives\":[]}",
+        ] {
+            XCTAssertThrowsError(try decodeRenderTreeJson(Array(malformed.utf8)))
+        }
+
+        let tree = RenderTree(
+            canvas: 10_000,
+            background: nil,
+            primitives: [Primitive(
+                shape: .rect(x: 1, y: 2, w: 3, h: 4),
+                paint: .none,
+                label: "strict")])
+        let valid = String(decoding: canonicalTreeJSONBytes(tree), as: UTF8.self)
+        XCTAssertThrowsError(try decodeRenderTreeJson(Array(valid.replacingOccurrences(
+            of: "\"kind\":\"none\"", with: "\"kind\":\"unknown\"").utf8)))
+        XCTAssertThrowsError(try decodeRenderTreeJson(Array(valid.replacingOccurrences(
+            of: ",\"transform\":null", with: "").utf8)))
+    }
+
     func testCorpusTreesAreFlatAndEveryAffineMatchesNaiveComposition() throws {
         let (root, vectors) = try loadManifest()
         var transformCount = 0
@@ -176,6 +247,33 @@ final class RenderConformanceTests: XCTestCase {
             phenotype: phenotype, params: RenderParams(mood: .happy)), as: UTF8.self)
         XCTAssertFalse(svg.contains("id=\"av-face\""))
         XCTAssertTrue(svg.contains("id=\"av-bp\""))
+    }
+}
+
+private struct TreeInventory {
+    var hasGradient = false
+    var hasGradientInsideMask = false
+    var hasPathFillRule = false
+
+    mutating func observe(_ tree: RenderTree) {
+        observe(tree.primitives, insideMask: false)
+    }
+
+    private mutating func observe(_ primitives: [Primitive], insideMask: Bool) {
+        for primitive in primitives {
+            if case .path = primitive.shape {
+                hasPathFillRule = true
+            }
+            if case .radialGradient = primitive.paint {
+                hasGradient = true
+                hasGradientInsideMask = hasGradientInsideMask || insideMask
+            }
+            for effect in primitive.effects {
+                if case .masked(let mask) = effect {
+                    observe(mask, insideMask: true)
+                }
+            }
+        }
     }
 }
 
