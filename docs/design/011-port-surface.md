@@ -199,6 +199,57 @@ multiplies by three again. Old versions of each type are permanent
 obligations too (note 012), so the matrix is types x versions x
 languages and it only grows.
 
+## The maintenance cost, measured (2026-08-29)
+
+The iOS client asked that the fork be weighed on maintenance cost rather
+than phone-side ergonomics. That deserved a measurement rather than the
+assertion above, so here is the port surface counted by role. Lines are
+a proxy, not the cost itself: what actually costs is HAND-WRITTEN
+algorithm code carrying iteration counts and tiebreaks that three
+languages must agree on. Generated tables are near-free, and separating
+them is most of what makes these numbers honest.
+
+| role | TypeScript | Swift |
+|---|---|---|
+| generated tables (minted, near-zero upkeep) | 2539 | 2086 |
+| **hand-written generator logic** | **3334** | **3650** |
+| tree, serializer, cache, API (what B keeps) | 307 | 871 |
+| total | 6180 | 6607 |
+
+So `creature.classic` alone carries **~7000 hand-written generator lines
+across two ports**, all of it duplicating canonical Rust, all of it
+held correct by the corpus and nothing else.
+
+What `creature.wild` adds: the playground pipeline is 3374 lines of f64
+prototype today, and the fixed-point implementation will be larger
+(integer sqrt, Q32 arithmetic, explicit tiebreaks written out). Under A
+that is ported twice by hand, and it is qualitatively harder than
+classic rather than merely bigger: classic is spline flattening and
+shape assembly, while wild adds SDF fields, smooth-min welds, marching
+squares, Lloyd relaxation, arc-length resampling, a greedy placement
+search and a belly profile walk. Every one has an iteration count or a
+tiebreak that must match exactly. Two have already diverged between my
+OWN two implementations (the contour chaining tiebreak and the marching
+squares resolution, found by the drift check) — before any third
+language existed.
+
+The recurring cost is worse than the writing cost. Under A the corpus
+must prove DNA to bytes for every type x version x language, and every
+new vector multiplies across all of them. Under B there is one
+generator, so cross-language byte-equality of the GENERATOR is
+vacuously true, and the corpus shrinks to proving that each port's
+serializer turns the same tree into the same SVG — a much smaller
+property, and one that only TypeScript actually needs, since iOS
+consumes the primitive list directly and never parses SVG.
+
+**Summary of the measured position.** B removes ~7000 existing
+hand-written lines and avoids roughly the same again per new type,
+leaves ~1180 lines of tree/serializer/cache in place, and shrinks what
+the corpus must prove. The cost it adds is a build and distribution
+problem — an embedded Rust core per platform — rather than a
+correctness one. That is the trade to argue, and it is not close on
+volume alone.
+
 **Under Option B it does not multiply.** A new type is implemented once
 in canonical Rust; the ports gain nothing, because they implement the
 serializer over whatever tree arrives. Types become a canonical-side
