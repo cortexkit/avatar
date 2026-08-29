@@ -12,4 +12,7 @@ publish = false
 name = "grid"
 path = "src/main.rs"
 
+[dependencies]
+avatar-svg = { path = "../crates/avatar-svg" }
+
 [workspace]
