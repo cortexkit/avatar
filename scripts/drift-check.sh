@@ -23,11 +23,36 @@ cd "$(dirname "$0")/.."
 START="${1:-4000}"
 COUNT="${2:-24}"
 LAB="file://$(pwd)/playground/web/index.html"
-CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
-if [[ ! -x "$CHROME" ]]; then
-  echo "chrome not found at $CHROME — skipping drift check" >&2
-  exit 0
+# Resolve a browser rather than hardcoding one machine's path. The previous
+# version looked only in /Applications and exited 0 when it found nothing,
+# so on any other machine this guard reported success without comparing
+# anything — a green result that verified nothing is worse than no result,
+# because it is indistinguishable from a real pass.
+# An override that does not exist must fall through to detection and then
+# to the explicit failure below, never be trusted because it was non-empty.
+CHROME="${CHROME_BIN:-}"
+if [[ -n $CHROME && ! -x $CHROME ]]; then
+  echo "drift-check: CHROME_BIN=$CHROME is not executable" >&2
+  CHROME=""
+fi
+if [[ -z $CHROME ]]; then
+  for candidate in \
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    "$(command -v google-chrome 2>/dev/null || true)" \
+    "$(command -v google-chrome-stable 2>/dev/null || true)" \
+    "$(command -v chromium 2>/dev/null || true)" \
+    "$(command -v chromium-browser 2>/dev/null || true)"; do
+    if [[ -n $candidate && -x $candidate ]]; then
+      CHROME=$candidate
+      break
+    fi
+  done
+fi
+
+if [[ -z $CHROME ]]; then
+  echo "drift-check: no chrome or chromium found; set CHROME_BIN" >&2
+  exit 1
 fi
 
 cargo build --quiet --manifest-path playground/Cargo.toml --bin grid || exit 1

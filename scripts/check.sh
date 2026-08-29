@@ -112,6 +112,18 @@ run "playground clippy" bash -c 'cd playground && cargo clippy --all-targets --l
 run "playground tests"  bash -c 'cd playground && cargo test --locked'
 run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin grid -- --check 300'
 
+# playground/web/index.html is a JavaScript twin of the Rust generator,
+# and it is what a human opens to review creature designs. If the two
+# implementations drift, the review is of something nobody ships, so
+# drift-check.sh renders the same seeds through both and compares the
+# derived geometry.
+#
+# This gate greps for the script's agreement line instead of trusting its
+# exit code, because a comparison that never ran must not be reportable as
+# a successful comparison.
+run "lab matches canonical" bash -c \
+  './scripts/drift-check.sh | tee /dev/stderr | grep -q "seeds: renderers agree"'
+
 if [[ $RUST_ONLY -eq 0 ]]; then
   run "ts typecheck"  bash -c 'cd ports/ts && bunx tsc --noEmit'
   run "ts conformance" bash -c 'cd ports/ts && bun test'
