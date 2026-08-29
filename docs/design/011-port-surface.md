@@ -266,6 +266,58 @@ Worth noting what the ruling does NOT change: `creature.classic` is
 already ported three ways and shipping, so B would not be a rewrite of
 what exists. It is a decision about where the NEXT type lands.
 
+## Settled: sampling cannot prove equivalence (2026-08-29, operator)
+
+The operator's objection retires the fork, and on a stronger axis than
+cost:
+
+> The problem with output comparison is that when the genome gets big
+> and some features are rarer, sampling may not surface the differences.
+> Instead we should have a builder from a single source.
+
+This is correct and it invalidates the premise every argument above was
+built on. The golden corpus does not prove three implementations are
+equivalent. It proves they agree on a **finite sample** of an input
+space of 2^8192 today and 2^131072 under the v2 layout — a measure-zero
+subset either way. Sampling can only fail to find a counterexample; it
+cannot establish equality.
+
+The coverage gate added earlier this week improves the sample and does
+not change its nature. It targets branch coverage rather than random
+draws, but it covers only the selectors I thought to enumerate, and it
+deliberately excludes continuous fields — which is exactly where
+rounding boundaries live. A divergence that fires for one input in 10^9
+is invisible to it, and stays invisible until it renders on somebody's
+phone.
+
+And the problem grows with the design rather than shrinking: rarer
+features mean lower per-branch probability, so the sample needed to
+surface a divergence grows as the vocabulary gets richer. A test whose
+power decreases as the thing it tests gets more ambitious is the wrong
+shape of test.
+
+**A single source makes divergence unrepresentable rather than
+undetected.** That is the same move this project has made everywhere
+else: folding spokes into a half-plane made asymmetry unrepresentable
+instead of tested-for; capping the eye radius by the spacing made
+overlap unrepresentable instead of checked. Three hand-written
+generators verified by sampled output comparison is the one place the
+codebase still relied on detection.
+
+So the answer is Option B, and the corpus keeps a real job under it: it
+stops being the thing that holds three implementations together and
+becomes a regression gate on the one implementation — proof that a
+refactor did not change what a genome renders to.
+
+### What the tree vocabulary already supports
+
+Checked before assuming a contract change: `creature.wild` needs
+radial-gradient paint for the voronoi face-fade, mask geometry for the
+body clip, and closed paths with a fill rule. `Paint::RadialGradient`,
+`Effect::Masked` and `Shape::Path` already carry all three. The
+primitive list the iOS client depends on does not have to change shape
+to ship wild — which is what makes a preview on device cheap.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The
