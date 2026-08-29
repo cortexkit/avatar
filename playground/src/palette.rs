@@ -111,7 +111,11 @@ pub fn tone(recipe: usize, h: f64, dir: i32) -> String {
         _ => (28.0, 88.0),
     };
     let dl: f64 = if dir > 0 { 9.0 } else { -11.0 };
-    hsl(h, (s - dl.abs() * 0.3).max(12.0), (l + dl).clamp(10.0, 94.0))
+    hsl(
+        h,
+        (s - dl.abs() * 0.3).max(12.0),
+        (l + dl).clamp(10.0, 94.0),
+    )
 }
 
 /// recipe index x base hue -> colors.

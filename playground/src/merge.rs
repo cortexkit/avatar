@@ -222,7 +222,10 @@ fn resample_smooth(pts: &[(f64, f64)], target: usize) -> Vec<(f64, f64)> {
     let mut out = Vec::with_capacity(target);
     for k in 0..target {
         let d = total * k as f64 / target as f64;
-        let idx = cum.partition_point(|&c| c <= d).saturating_sub(1).min(n - 1);
+        let idx = cum
+            .partition_point(|&c| c <= d)
+            .saturating_sub(1)
+            .min(n - 1);
         let seg_len = (cum[idx + 1] - cum[idx]).max(1e-12);
         let t = (d - cum[idx]) / seg_len;
         let a = pts[idx];
@@ -237,7 +240,10 @@ fn resample_smooth(pts: &[(f64, f64)], target: usize) -> Vec<(f64, f64)> {
             let a = prev[(i + m - 1) % m];
             let b = prev[i];
             let c = prev[(i + 1) % m];
-            out[i] = (b.0 * 0.5 + (a.0 + c.0) * 0.25, b.1 * 0.5 + (a.1 + c.1) * 0.25);
+            out[i] = (
+                b.0 * 0.5 + (a.0 + c.0) * 0.25,
+                b.1 * 0.5 + (a.1 + c.1) * 0.25,
+            );
         }
     }
     out

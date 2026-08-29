@@ -118,17 +118,31 @@ fn eye_frame(bp: &BodyParams, cx: f64, cy: f64, tilt: f64) -> EyeFrame {
 /// the rest could not. Shrinking is the safe direction: an eye that only
 /// gets smaller cannot breach the clearance or separation the placement
 /// search proved for the full radius.
+/// The four colour roles an eye draws with, kept together because they are
+/// chosen together and confusing them is the defect this grouping exists
+/// to prevent: `accent` is the body's outline colour, used for lid and
+/// lash strokes that should read as part of the silhouette; `ink` is
+/// line-work and flips light on dark bodies; `pupil` stays dark
+/// everywhere; and `sclera` is the light backing that gives a dark body
+/// the contrast a light one provides for free.
+#[derive(Clone, Copy)]
+pub struct EyeInk<'a> {
+    pub accent: &'a str,
+    pub ink: &'a str,
+    pub pupil: &'a str,
+    pub sclera: Option<&'a str>,
+}
+
 pub fn eyes(
     kind: EyeKind,
     bp: &BodyParams,
     cx: f64,
     cy: f64,
     tilt: f64,
-    accent: &str,
-    ink: &str,
-    pupil: &str,
+    colors: EyeInk<'_>,
     wonk: f64,
 ) -> Vec<Primitive> {
+    let (accent, ink, pupil) = (colors.accent, colors.ink, colors.pupil);
     let f = eye_frame(bp, cx, cy, tilt);
     let kl = wonk_factor(kind, wonk, false);
     let kr = wonk_factor(kind, wonk, true);
@@ -517,12 +531,10 @@ pub fn eyes_inked(
     cx: f64,
     cy: f64,
     tilt: f64,
-    accent: &str,
-    ink: &str,
-    pupil: &str,
-    sclera: Option<&str>,
+    colors: EyeInk<'_>,
     wonk: f64,
 ) -> Vec<Primitive> {
+    let sclera = colors.sclera;
     let f = eye_frame(bp, cx, cy, tilt);
     let mut primitives = Vec::new();
     if let Some(sc) = sclera {
@@ -572,7 +584,7 @@ pub fn eyes_inked(
             EyeKind::Lidded | EyeKind::HappyArc => {}
         }
     }
-    primitives.extend(eyes(kind, bp, cx, cy, tilt, accent, ink, pupil, wonk));
+    primitives.extend(eyes(kind, bp, cx, cy, tilt, colors, wonk));
     primitives
 }
 

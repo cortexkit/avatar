@@ -63,10 +63,10 @@ pub fn decode(seed: u64) -> RandomCreature {
     // PALETTE: weighted recipe via mod-8 alias table (note 009 weights:
     // pastel x3, toy x2, earthy x2, dark x1).
     let recipe = match b.byte() % 8 {
-        0 | 1 | 2 => 0, // pastel analogous
-        3 | 4 => 2,     // toy saturated
-        5 | 6 => 4,     // muted earthy
-        _ => 3,         // dark gravitas
+        0..=2 => 0, // pastel analogous
+        3..=4 => 2, // toy saturated
+        5..=6 => 4, // muted earthy
+        _ => 3,     // dark gravitas
     };
     let hue = (b.byte() as f64 / 255.0 + b.byte() as f64 / 65535.0) * 360.0;
     // PARTS: top mod 6, side skipped in v2.0 rendering, bottom mod 4.

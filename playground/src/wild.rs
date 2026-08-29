@@ -62,7 +62,10 @@ pub fn decode(b: &mut Bits) -> WildBody {
             tension: b.lin(0.4, 2.6),
         });
     }
-    WildBody { spokes, mirrored: true }
+    WildBody {
+        spokes,
+        mirrored: true,
+    }
 }
 
 /// One genome-driven extremity: a curved, tapered capsule lobe grafted onto
@@ -171,7 +174,9 @@ pub fn extremity_outline(e: &Extremity, ring_r: f64, mean_r: f64, mirror: bool) 
     let tip_w = base_w * e.taper;
     let (tdx, tdy) = {
         let pr = spine[steps - 1];
-        let l = ((tip.0 - pr.0).powi(2) + (tip.1 - pr.1).powi(2)).sqrt().max(1e-9);
+        let l = ((tip.0 - pr.0).powi(2) + (tip.1 - pr.1).powi(2))
+            .sqrt()
+            .max(1e-9);
         ((tip.0 - pr.0) / l, (tip.1 - pr.1) / l)
     };
     let mut out = Vec::new();
@@ -221,7 +226,11 @@ fn cubic_extremes(p0: f64, c1: f64, c2: f64, p3: f64) -> [f64; 4] {
             roots.push((-b - sq) / (2.0 * a));
         }
     }
-    for (slot, t) in roots.into_iter().filter(|t| *t > 0.0 && *t < 1.0).enumerate() {
+    for (slot, t) in roots
+        .into_iter()
+        .filter(|t| *t > 0.0 && *t < 1.0)
+        .enumerate()
+    {
         out[2 + slot.min(1)] = eval(t);
     }
     out
@@ -282,8 +291,14 @@ fn control_segments(body: &WildBody, dom: f64) -> Vec<[(f64, f64); 4]> {
         let p3 = pts[(i + 2) % n];
         let t1 = p1.2;
         let t2 = p2.2;
-        let c1 = (p1.0 + (p2.0 - p0.0) / 6.0 * t1, p1.1 + (p2.1 - p0.1) / 6.0 * t1);
-        let c2 = (p2.0 - (p3.0 - p1.0) / 6.0 * t2, p2.1 - (p3.1 - p1.1) / 6.0 * t2);
+        let c1 = (
+            p1.0 + (p2.0 - p0.0) / 6.0 * t1,
+            p1.1 + (p2.1 - p0.1) / 6.0 * t1,
+        );
+        let c2 = (
+            p2.0 - (p3.0 - p1.0) / 6.0 * t2,
+            p2.1 - (p3.1 - p1.1) / 6.0 * t2,
+        );
         segs.push([(p1.0, p1.1), c1, c2, (p2.0, p2.1)]);
     }
     segs
@@ -306,7 +321,11 @@ fn prepared_points(body: &WildBody, dom: f64) -> Vec<(f64, f64, f64)> {
             .iter()
             .map(|s| {
                 let t = s.theta.rem_euclid(std::f64::consts::TAU);
-                let folded = if t.cos() < 0.0 { std::f64::consts::PI - t } else { t };
+                let folded = if t.cos() < 0.0 {
+                    std::f64::consts::PI - t
+                } else {
+                    t
+                };
                 Spoke {
                     theta: folded,
                     r: s.r,
@@ -384,13 +403,25 @@ fn outline_impl(body: &WildBody, dom: f64, normalize: Option<(f64, f64, f64)>) -
         let p3 = pts[(i + 2) % n];
         let t1 = p1.2;
         let t2 = p2.2;
-        let c1 = (p1.0 + (p2.0 - p0.0) / 6.0 * t1, p1.1 + (p2.1 - p0.1) / 6.0 * t1);
-        let c2 = (p2.0 - (p3.0 - p1.0) / 6.0 * t2, p2.1 - (p3.1 - p1.1) / 6.0 * t2);
+        let c1 = (
+            p1.0 + (p2.0 - p0.0) / 6.0 * t1,
+            p1.1 + (p2.1 - p0.1) / 6.0 * t1,
+        );
+        let c2 = (
+            p2.0 - (p3.0 - p1.0) / 6.0 * t2,
+            p2.1 - (p3.1 - p1.1) / 6.0 * t2,
+        );
         for step in 0..18 {
             let u = step as f64 / 18.0;
             let v = 1.0 - u;
-            let x = v * v * v * p1.0 + 3.0 * v * v * u * c1.0 + 3.0 * v * u * u * c2.0 + u * u * u * p2.0;
-            let y = v * v * v * p1.1 + 3.0 * v * v * u * c1.1 + 3.0 * v * u * u * c2.1 + u * u * u * p2.1;
+            let x = v * v * v * p1.0
+                + 3.0 * v * v * u * c1.0
+                + 3.0 * v * u * u * c2.0
+                + u * u * u * p2.0;
+            let y = v * v * v * p1.1
+                + 3.0 * v * v * u * c1.1
+                + 3.0 * v * u * u * c2.1
+                + u * u * u * p2.1;
             out.push((x, y));
         }
     }
@@ -464,7 +495,11 @@ pub fn radius_along(outline: &[(f64, f64)], theta: f64) -> Option<f64> {
         }
         let px = x1 + ex * s;
         let py = y1 + ey * s;
-        let t = if dx.abs() > dy.abs() { px / dx } else { py / dy };
+        let t = if dx.abs() > dy.abs() {
+            px / dx
+        } else {
+            py / dy
+        };
         if t > 1e-9 && best.map(|b| t < b).unwrap_or(true) {
             best = Some(t);
         }

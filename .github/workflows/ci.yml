@@ -101,6 +101,26 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo run --locked -q -p avatar-genome --example fleet_coverage -- --population 1000
 
+      # The playground is a separate workspace, so every gate above misses
+      # it. That was fine while it was a sketch and is not now: it is the
+      # source the second creature type will be ported from.
+      - name: Playground lints
+        if: ${{ !cancelled() }}
+        working-directory: playground
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+
+      # Eyes inside the body, eyes clear of each other, mouth inside the
+      # body, SDF-verified across 300 genomes. These were proved by hand
+      # until now, and a proof nobody runs is a proof nobody has.
+      - name: Wild placement invariants
+        if: ${{ !cancelled() }}
+        working-directory: playground
+        run: |
+          cargo test --locked
+          cargo run --locked -q --bin grid -- --check 300
+
       # A generated file edited by hand is invisible to every test above.
       # Compares against the snapshot rather than requiring an empty tree,
       # so the delta is attributable to the build.

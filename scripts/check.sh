@@ -102,6 +102,16 @@ run "golden corpus"   cargo test --locked -p avatar-vectors
 run "corpus coverage" cargo run --locked -q -p avatar-genome \
   --example fleet_coverage -- --population 1000
 
+# The playground is its own workspace, so the gates above never reached it.
+# That mattered once it stopped being a sketch: it is the source the second
+# creature type will be ported from, and its placement invariants (eyes
+# inside the body, eyes clear of each other, mouth inside the body) were
+# only ever proved by hand. A proof nobody runs is a proof nobody has.
+run "playground fmt"    bash -c 'cd playground && cargo fmt --all -- --check'
+run "playground clippy" bash -c 'cd playground && cargo clippy --all-targets --locked -- -D warnings'
+run "playground tests"  bash -c 'cd playground && cargo test --locked'
+run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin grid -- --check 300'
+
 if [[ $RUST_ONLY -eq 0 ]]; then
   run "ts typecheck"  bash -c 'cd ports/ts && bunx tsc --noEmit'
   run "ts conformance" bash -c 'cd ports/ts && bun test'

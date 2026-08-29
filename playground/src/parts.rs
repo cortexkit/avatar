@@ -43,7 +43,14 @@ pub enum BottomPart {
     DuckFeet,
 }
 
-pub fn draw_bottom(part: BottomPart, body: &BodyParams, cx: f64, cy: f64, fill: &str, outline: &str) -> String {
+pub fn draw_bottom(
+    part: BottomPart,
+    body: &BodyParams,
+    cx: f64,
+    cy: f64,
+    fill: &str,
+    outline: &str,
+) -> String {
     let half_h = body.height / 2.0;
     let by = cy + half_h;
     let w = width_at(body, half_h * 0.7);

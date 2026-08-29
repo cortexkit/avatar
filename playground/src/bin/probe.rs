@@ -28,6 +28,9 @@ fn main() {
             }
             ext_asym = ext_asym.max(worst);
         }
-        println!("seed {seed}: body_asym={body_asym:.3}cell ext_asym={ext_asym:.4}ring n_ext={}", exts.len());
+        println!(
+            "seed {seed}: body_asym={body_asym:.3}cell ext_asym={ext_asym:.4}ring n_ext={}",
+            exts.len()
+        );
     }
 }

@@ -52,12 +52,30 @@ pub fn hit(c: &AtomicUsize) {
 
 pub fn snapshot() -> [(&'static str, usize); 6] {
     [
-        ("marching-squares saddle", COUNTERS.saddle.load(Ordering::Relaxed)),
-        ("extremity curvature clamp", COUNTERS.curvature_clamp.load(Ordering::Relaxed)),
-        ("placement eyes-only fallback", COUNTERS.placement_fallback.load(Ordering::Relaxed)),
-        ("belly suppressed", COUNTERS.belly_suppressed.load(Ordering::Relaxed)),
-        ("belly span switch", COUNTERS.belly_span_switch.load(Ordering::Relaxed)),
-        ("chain tiebreak", COUNTERS.chain_tiebreak.load(Ordering::Relaxed)),
+        (
+            "marching-squares saddle",
+            COUNTERS.saddle.load(Ordering::Relaxed),
+        ),
+        (
+            "extremity curvature clamp",
+            COUNTERS.curvature_clamp.load(Ordering::Relaxed),
+        ),
+        (
+            "placement eyes-only fallback",
+            COUNTERS.placement_fallback.load(Ordering::Relaxed),
+        ),
+        (
+            "belly suppressed",
+            COUNTERS.belly_suppressed.load(Ordering::Relaxed),
+        ),
+        (
+            "belly span switch",
+            COUNTERS.belly_span_switch.load(Ordering::Relaxed),
+        ),
+        (
+            "chain tiebreak",
+            COUNTERS.chain_tiebreak.load(Ordering::Relaxed),
+        ),
     ]
 }
 

@@ -38,8 +38,9 @@ struct Creature {
 
 #[derive(Clone, Copy)]
 struct FaceStyle {
-    /// >1 taller, <1 wider. Applied as min-scaling on both axes so an eye
-    /// never grows past the placed radius the invariants were proved for.
+    /// Above 1 is taller, below 1 is wider. Applied as min-scaling on both
+    /// axes so an eye never grows past the placed radius the invariants
+    /// were proved for.
     eye_aspect: f64,
     /// Signed one-eye shrink (negative = left, positive = right). Shrinking
     /// cannot violate clearance or separation, while enlarging could. Live:
@@ -575,10 +576,12 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> Vec<Primitive> {
             p.fx,
             face_cy,
             0.0,
-            &colors.outline,
-            &colors.ink,
-            &colors.pupil,
-            colors.sclera.as_deref(),
+            face::EyeInk {
+                accent: &colors.outline,
+                ink: &colors.ink,
+                pupil: &colors.pupil,
+                sclera: colors.sclera.as_deref(),
+            },
             c.face_style.eye_wonk,
         );
         // Per-creature eye shape, bounded so the invariants still hold:
