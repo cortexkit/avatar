@@ -348,6 +348,20 @@ known: fit curves to the extracted contours rather than shipping their
 flattened polylines. That belongs with the fixed-point port, where the
 contour extraction is being rewritten anyway.
 
+Measured on device rather than guessed, by the iOS client: all thirty
+heavy trees decode and rasterize in well under the screen's first
+settle on an M-series simulator, at 108pt tiles, with no list jank.
+So the weight is tolerable at preview scale — but that number says
+nothing about the shipped path, which will carry fitted curves and a
+different tree entirely. Recorded so nobody later cites a preview
+measurement as evidence the flattening is fine.
+
+One claim from this note did hold under test: the primitive vocabulary
+already covered the second type. Gradient paint, gradient-content masks
+and path fill rules all drew with zero changes to the client's
+rasterizer, so introducing a second creature type did not change the
+contract its consumers depend on.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The
