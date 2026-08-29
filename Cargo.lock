@@ -61,6 +61,7 @@ dependencies = [
  "avatar-phenotype",
  "avatar-tables",
  "blake3",
+ "serde_json",
 ]
 
 [[package]]

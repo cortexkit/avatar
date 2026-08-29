@@ -27,6 +27,7 @@ mod pattern;
 mod serialize;
 mod svg;
 mod tree;
+mod tree_json;
 mod tree_serialize;
 
 /// The vendored Voronoi pattern table (spec data, hash-pinned in tests).
@@ -45,6 +46,7 @@ pub use tree::{
     Affine, Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Segment, Shape, Stroke,
     StrokeCap, StrokeJoin, Transform, TransformOp,
 };
+pub use tree_json::serialize_tree_json;
 pub use tree_serialize::{serialize_tree, serialize_tree_with_id_prefix};
 
 #[cfg(test)]
