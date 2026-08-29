@@ -113,6 +113,26 @@ linked core.
    web and possibly iOS the generator without a port, which would make
    A affordable again for exactly the consumers B was meant to help.
 
+## The only shipped consumer removed itself as a constraint (2026-08-29)
+
+Unprompted, from the iOS client: the Swift port's value there was never
+native-ness. It was that `renderTree` returns a **flat primitive list**
+that their UIKit layer rasterizes and caches. Any option preserving that
+output contract is invisible to them, and they asked that the fork be
+weighed on maintenance cost rather than phone-side ergonomics.
+
+This matters more than a preference, because it retires the reframed
+deciding question for the one platform that had actually shipped. "Can
+every consumer embed a Rust core" was worth asking only if some surface
+needed a native implementation; iOS — the hardest embedding case and the
+only live one — says it does not care how the list is produced.
+
+What survives as a real constraint is narrower and worth stating plainly:
+the **primitive list is the contract**, not the language it is built in.
+An option that keeps the list and moves its producer is a refactor to
+consumers. An option that changes the list's shape is a breaking change
+no matter which language wins.
+
 ## Corpus coverage is now measured, not argued
 
 Option A's stated risk was that a port getting one tiebreak wrong fails

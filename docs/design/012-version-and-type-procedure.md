@@ -73,6 +73,15 @@ off the body. Something a user would call a defect rather than a style.
 4. If the layout differs from an existing type, existing agents need a
    **new genome** to wear it. That is a deliberate re-deposit, never an
    automatic migration.
+5. Hand consumers a **fixture row** with the corpus tag: one avatar object
+   shaped exactly as the wire delivers it (genome fingerprint, type,
+   version), so a client can pin its wire decode and its render in the
+   same change. Requested by the iOS client, and the reason is worth
+   keeping: without a fixture, the first row of a new type a consumer
+   ever sees is a live one, which makes production the place where a
+   decode mistake surfaces. The corpus proves renderers agree on bytes;
+   it says nothing about a consumer's ability to parse the envelope
+   those bytes arrive in.
 
 ## What a client does with a version or type it does not know
 
