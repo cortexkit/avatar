@@ -5,7 +5,8 @@
 //!   sheet 2 (grid10-moods.svg): 4 cast seeds x all 7 moods on wild bodies.
 //!   sheet 3 (grid10-strip.svg): natural-size 36px cells — icon legibility.
 
-use ava_playground::{body, coverage, face, genome, merge, mood, palette, surface, wild};
+use ava_playground::{body, coverage, face, genome, merge, mood, palette, render, surface, wild};
+use avatar_svg::{Effect, GradientStop, Paint, Primitive, RenderTree, StrokeCap, StrokeJoin, Q32};
 
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
@@ -208,15 +209,6 @@ fn belly_patch(outline: &[(f64, f64)], top_y: f64, scale: f64) -> Vec<(f64, f64)
     left
 }
 
-/// Monotonic id source for SVG defs. Local ids in one document must be
-/// unique; deriving them from content invites collisions that render as
-/// silent visual corruption rather than as errors.
-fn next_id() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    COUNTER.fetch_add(1, Ordering::Relaxed)
-}
-
 #[derive(Clone, Copy)]
 struct FacePlacement {
     fx: f64,
@@ -303,7 +295,11 @@ fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<Face
                 r,
                 mouth_fits: true,
             };
-            if best_eyes_only.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
+            if best_eyes_only
+                .as_ref()
+                .map(|(s, _)| score > *s)
+                .unwrap_or(true)
+            {
                 best_eyes_only = Some((
                     score,
                     FacePlacement {
@@ -332,7 +328,7 @@ fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<Face
     best.or(best_eyes_only).map(|(_, p)| p)
 }
 
-fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
+fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> Vec<Primitive> {
     let colors = palette::resolve(c.recipe, c.hue);
     let dom = 0.32;
     let spec = mood::spec(m);
@@ -343,8 +339,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
     // the nearest raw spoke: smoothing moves the curve inward, and roots
     // that trusted the raw radius floated outside the body (seed 5012's
     // detached limbs).
-    let ring_r_at =
-        |theta: f64| -> f64 { wild::radius_along(&raw.pts, theta).unwrap_or(mean_r) };
+    let ring_r_at = |theta: f64| -> f64 { wild::radius_along(&raw.pts, theta).unwrap_or(mean_r) };
 
     let ext_outlines: Vec<(usize, Vec<(f64, f64)>)> = c
         .exts
@@ -387,12 +382,13 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
     let (min_x, min_y, max_x, max_y) = wild::bbox(&outline);
     let h = max_y - min_y;
 
-    let mut s = String::new();
-    s.push_str(&format!(
-        "<ellipse cx='{cx:.1}' cy='{:.1}' rx='{:.1}' ry='6' fill='rgba(40,30,50,0.14)'/>",
-        max_y + 4.0,
-        (max_x - min_x) * 0.42,
-    ));
+    let mut primitives = vec![render::filled(
+        render::ellipse(cx, max_y + 4.0, (max_x - min_x) * 0.42, 6.0),
+        "rgba(40,30,50,0.14)",
+        1.0,
+        None,
+        "wild-shadow",
+    )];
 
     if !merged_mode {
         for (ei, pts) in &ext_outlines {
@@ -402,43 +398,87 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                 (_, 1) => palette::tone(c.recipe, c.hue, -1),
                 _ => colors.body.clone(),
             };
-            let mut d = String::new();
-            for (i, p) in pts.iter().enumerate() {
-                let q = t(*p);
-                let cmd = if i == 0 { 'M' } else { 'L' };
-                d.push_str(&format!("{cmd}{:.2} {:.2} ", q.0, q.1));
-            }
-            d.push('Z');
-            s.push_str(&format!(
-                "<path d='{d}' fill='{fill}' stroke='{}' stroke-width='1.5' stroke-linejoin='round'/>",
-                colors.outline,
+            let points: Vec<(f64, f64)> = pts.iter().map(|point| t(*point)).collect();
+            primitives.push(render::filled(
+                render::polygon(&points),
+                &fill,
+                1.0,
+                Some(render::stroke(
+                    &colors.outline,
+                    1.5,
+                    StrokeCap::Butt,
+                    StrokeJoin::Round,
+                )),
+                "wild-extremity",
             ));
         }
     }
 
-    let mut d = String::new();
-    for (i, p) in outline.iter().enumerate() {
-        let cmd = if i == 0 { 'M' } else { 'L' };
-        d.push_str(&format!("{cmd}{:.2} {:.2} ", p.0, p.1));
-    }
-    d.push('Z');
-    // Unique per DRAW, from a process counter. url(#) resolves
-    // document-wide to the first match, so any id derived from creature
-    // content or cell position collides as soon as two draws share it:
-    // hue+mood collided across same-hue cells, and position collided the
-    // moment the review renderer drew every creature at local (120,120)
-    // and moved them with an outer transform — 40 creatures clipped by the
-    // first one's silhouette. A counter cannot collide by construction,
-    // which is the only property this id actually needs.
-    let clip_id = format!("c{}", next_id());
-    s.push_str(&format!(
-        "<defs><clipPath id='{clip_id}'><path d='{d}'/></clipPath></defs><path d='{d}' fill='{}' stroke='{}' stroke-width='1.5'/>",
-        colors.body, colors.outline,
+    let outline_shape = render::polygon(&outline);
+    primitives.push(render::filled(
+        outline_shape.clone(),
+        &colors.body,
+        1.0,
+        Some(render::stroke(
+            &colors.outline,
+            1.5,
+            StrokeCap::Butt,
+            StrokeJoin::Miter,
+        )),
+        "wild-body",
     ));
-    s.push_str(&format!("<g clip-path='url(#{clip_id})'>"));
 
-    // Placement first: the voronoi mask needs to know where the face lives.
+    // Placement first: the Voronoi face-fade mask needs to know where the
+    // face lives, while the body silhouette masks every inside-body feature.
     let placement = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d);
+    let body_mask = vec![render::filled(
+        outline_shape,
+        "white",
+        1.0,
+        None,
+        "wild-body-mask",
+    )];
+    let face_fade_mask = placement.map(|p| {
+        let cap_top = p.eye_y - p.r * 2.2;
+        let cap_bot = min_y + h * 0.62 + h * 0.29;
+        let cap_cy = (cap_top + cap_bot) / 2.0;
+        let cap_ry = (cap_bot - cap_top) / 2.0;
+        let cap_rx = (p.ipd + p.r * 2.6).max(p.half_w * 0.66);
+        let mut fade = render::filled(
+            render::ellipse(p.fx, cap_cy, cap_rx, cap_ry),
+            "white",
+            1.0,
+            None,
+            "wild-voronoi-face-fade",
+        );
+        fade.paint = Paint::RadialGradient {
+            stops: vec![
+                GradientStop {
+                    offset_q32: Q32((0.62 * (1_u64 << 32) as f64).round() as i64),
+                    color: render::css_rgb("#000000"),
+                },
+                GradientStop {
+                    offset_q32: Q32::ONE,
+                    color: render::css_rgb("white"),
+                },
+            ],
+        };
+        vec![
+            render::filled(
+                render::rect(
+                    min_x - 20.0,
+                    min_y - 20.0,
+                    max_x - min_x + 40.0,
+                    max_y - min_y + 40.0,
+                ),
+                "white",
+                1.0,
+                None,
+                "wild-voronoi-mask-field",
+            ),
+            fade,
+        ]
+    });
 
     if c.voronoi {
         let cell_bbox = (min_x, min_y, max_x, max_y);
@@ -453,41 +493,27 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             .collect();
         surface::relax(&mut scaled, cell_bbox, 2);
         let (light, dark) = palette::mottle(c.recipe, c.hue);
-        // Face-capsule mask: the mottle belongs to the creature's HIDE, not
-        // its face — pebble edges crossing the eye/belly zone read as glare
-        // artifacts (Ufuk's review). A radial-gradient mask fades cells out
-        // over the face-and-belly capsule instead of hard-cutting them.
-        let mask_id = format!("vm{clip_id}");
-        let mut mask_defs = String::new();
-        if let Some(p) = &placement {
-            let cap_top = p.eye_y - p.r * 2.2;
-            let cap_bot = min_y + h * 0.62 + h * 0.29;
-            let cap_cy = (cap_top + cap_bot) / 2.0;
-            let cap_ry = (cap_bot - cap_top) / 2.0;
-            let cap_rx = (p.ipd + p.r * 2.6).max(p.half_w * 0.66);
-            mask_defs = format!(
-                "<defs><radialGradient id='fg{mask_id}'><stop offset='0.62' stop-color='black'/><stop offset='1' stop-color='white'/></radialGradient><mask id='{mask_id}'><rect x='{:.0}' y='{:.0}' width='{:.0}' height='{:.0}' fill='white'/><ellipse cx='{:.1}' cy='{cap_cy:.1}' rx='{cap_rx:.1}' ry='{cap_ry:.1}' fill='url(#fg{mask_id})'/></mask></defs>",
-                min_x - 20.0,
-                min_y - 20.0,
-                max_x - min_x + 40.0,
-                max_y - min_y + 40.0,
-                p.fx,
-            );
-            s.push_str(&mask_defs);
-            s.push_str(&format!("<g mask='url(#{mask_id})'>"));
-        }
         for (site, cell) in scaled.iter().zip(surface::cells(&scaled, cell_bbox)) {
             if cell.len() < 3 || site.shade == 2 {
                 continue;
             }
             let fill = if site.shade == 0 { &dark } else { &light };
-            s.push_str(&format!(
-                "<path d='{}' fill='{fill}'/>",
-                surface::cell_path(&cell, 0.8),
-            ));
-        }
-        if !mask_defs.is_empty() {
-            s.push_str("</g>");
+            let mut primitive = render::filled(
+                render::rounded_polygon(&cell, 0.8),
+                fill,
+                1.0,
+                None,
+                "wild-voronoi-cell",
+            );
+            primitive.effects.push(Effect::Masked {
+                mask: body_mask.clone(),
+            });
+            if let Some(mask) = &face_fade_mask {
+                primitive
+                    .effects
+                    .push(Effect::Masked { mask: mask.clone() });
+            }
+            primitives.push(primitive);
         }
     }
 
@@ -504,26 +530,31 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         let belly_top = p.eye_y + p.r * 3.4;
         let belly = belly_patch(&outline, belly_top, 0.72);
         if belly.len() >= 3 {
-            let mut d = String::new();
-            for (i, q) in belly.iter().enumerate() {
-                d.push_str(&format!(
-                    "{}{:.1} {:.1} ",
-                    if i == 0 { 'M' } else { 'L' },
-                    q.0,
-                    q.1
-                ));
-            }
-            d.push('Z');
-            s.push_str(&format!(
-                "<path d='{d}' fill='{}'/>",
-                palette::belly_fill(c.recipe, c.hue, c.belly_variant),
-            ));
+            let mut primitive = render::filled(
+                render::polygon(&belly),
+                &palette::belly_fill(c.recipe, c.hue, c.belly_variant),
+                1.0,
+                None,
+                "wild-belly",
+            );
+            primitive.effects.push(Effect::Masked {
+                mask: body_mask.clone(),
+            });
+            primitives.push(primitive);
         }
-        s.push_str(&format!(
-            "<ellipse cx='{:.1}' cy='{:.1}' rx='{:.1}' ry='{:.1}' fill='{}' opacity='0.8'/><ellipse cx='{:.1}' cy='{:.1}' rx='{:.1}' ry='{:.1}' fill='{}' opacity='0.8'/>",
-            p.fx - p.ipd * 1.28, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5, colors.blush,
-            p.fx + p.ipd * 1.28, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5, colors.blush,
-        ));
+        for blush_x in [p.fx - p.ipd * 1.28, p.fx + p.ipd * 1.28] {
+            let mut primitive = render::filled(
+                render::ellipse(blush_x, p.eye_y + p.r * 1.3, p.r * 0.82, p.r * 0.5),
+                &colors.blush,
+                0.8,
+                None,
+                "wild-blush",
+            );
+            primitive.effects.push(Effect::Masked {
+                mask: body_mask.clone(),
+            });
+            primitives.push(primitive);
+        }
         // The shim width is derived from the CHOSEN ipd (frame computes
         // ex = width*0.42), so the fit-searched spacing survives verbatim.
         let shim = body::BodyParams {
@@ -538,7 +569,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         let f = face::frame(&shim, p.fx, face_cy);
 
         // Eyes, optionally mood-scaled around the eye line.
-        let eyes_svg = face::eyes_inked(
+        let mut eyes = face::eyes_inked(
             c.eyes,
             &shim,
             p.fx,
@@ -565,18 +596,17 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         let sx = ax * spec.eye_scale;
         let sy = ay * spec.eye_scale;
         if (sx - 1.0).abs() > 0.005 || (sy - 1.0).abs() > 0.005 {
-            s.push_str(&format!(
-                "<g transform='translate({:.1} {:.1}) scale({sx:.3} {sy:.3}) translate({:.1} {:.1})'>{eyes_svg}</g>",
-                p.fx, f.y, -p.fx, -f.y,
-            ));
-        } else {
-            s.push_str(&eyes_svg);
+            render::prepend_transform(
+                &mut eyes,
+                &[
+                    render::translate(p.fx, f.y),
+                    render::scale(sx, sy),
+                    render::translate(-p.fx, -f.y),
+                ],
+            );
         }
-        // eye_wonk decodes but stays dormant: expressing it needs a per-eye
-        // radius inside the archetype renderers, and the obvious shortcut
-        // (redrawing the pair scaled about one eye) draws the other eye
-        // twice. Dormant-field law — the DNA is reserved and the feature
-        // lights up when the renderers take a per-eye scale.
+        append_mask(&mut eyes, &body_mask);
+        primitives.extend(eyes);
 
         // Mood layers per eye — ARCHETYPE-AWARE (Ufuk's lab find: lids and
         // squints are disc-eye concepts; stacked on line eyes they read as
@@ -607,10 +637,13 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                 ),
             };
             if do_squint {
-                s.push_str(&mood::squint_overlay(x, ey, er, spec.squint, &colors.body, &colors.outline));
+                let mut overlays =
+                    mood::squint_overlay(x, ey, er, spec.squint, &colors.body, &colors.outline);
+                append_mask(&mut overlays, &body_mask);
+                primitives.extend(overlays);
             }
             if do_lid {
-                s.push_str(&mood::lid_overlay(
+                let mut overlays = mood::lid_overlay(
                     x,
                     ey,
                     er,
@@ -618,7 +651,9 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
                     spec.lid_angle * side,
                     &colors.body,
                     &colors.outline,
-                ));
+                );
+                append_mask(&mut overlays, &body_mask);
+                primitives.extend(overlays);
             }
             // Mood brows win; otherwise the creature's RESTING brow shows.
             // A permanent brow reads as standing attitude rather than a
@@ -634,7 +669,9 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
             } else {
                 spec.brows
             };
-            s.push_str(&mood::brow(brows, x, f.y, f.r, side, &colors.ink));
+            let mut brows = mood::brow(brows, x, f.y, f.r, side, &colors.ink);
+            append_mask(&mut brows, &body_mask);
+            primitives.extend(brows);
         }
 
         // Mouth: mood override or the pack's own.
@@ -648,31 +685,78 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> String {
         // No mouth on the fallback path: the placement search could not fit
         // one inside the silhouette, so drawing it would put geometry
         // outside the body.
-        let mouth_svg = if p.mouth_fits {
-            face::mouth_inked(mouth_kind, &shim, p.fx, face_cy, &colors.outline, &colors.ink)
+        let mut mouth = if p.mouth_fits {
+            face::mouth_inked(
+                mouth_kind,
+                &shim,
+                p.fx,
+                face_cy,
+                &colors.outline,
+                &colors.ink,
+            )
         } else {
-            String::new()
+            Vec::new()
         };
         // Per-creature mouth proportion. The placement search already tested
         // fit at exactly these factors, so a wide mouth was accounted for
         // when the face was positioned rather than overflowing afterwards.
-        let my = face_cy + shim.height * 0.15;
+        let mouth_y = face_cy + shim.height * 0.15;
         if (st.mouth_w - 1.0).abs() > 0.02 || (st.mouth_d - 1.0).abs() > 0.02 {
-            s.push_str(&format!(
-                "<g transform='translate({:.1} {my:.1}) scale({:.3} {:.3}) translate({:.1} {:.1})'>{mouth_svg}</g>",
-                p.fx, st.mouth_w, st.mouth_d, -p.fx, -my,
-            ));
-        } else {
-            s.push_str(&mouth_svg);
+            render::prepend_transform(
+                &mut mouth,
+                &[
+                    render::translate(p.fx, mouth_y),
+                    render::scale(st.mouth_w, st.mouth_d),
+                    render::translate(-p.fx, -mouth_y),
+                ],
+            );
         }
-        s.push_str("</g>");
+        append_mask(&mut mouth, &body_mask);
+        primitives.extend(mouth);
 
         // Adjuncts live OUTSIDE the body clip (Zz floats beside the crown).
-        s.push_str(&mood::adjunct(spec.adjunct, cx, min_y, h / 200.0, &colors.ink));
-    } else {
-        s.push_str("</g>");
+        primitives.extend(mood::adjunct(
+            spec.adjunct,
+            cx,
+            min_y,
+            h / 200.0,
+            &colors.ink,
+        ));
     }
-    s
+    primitives
+}
+
+fn append_mask(primitives: &mut [Primitive], mask: &[Primitive]) {
+    for primitive in primitives {
+        primitive.effects.push(Effect::Masked {
+            mask: mask.to_vec(),
+        });
+    }
+}
+
+/// Projects one creature tree into the review-sheet SVG shell. The shell owns
+/// captions and layout; the creature contributes only its independently
+/// renderable primitives.
+fn tree_fragment(mut primitives: Vec<Primitive>, operations: &[avatar_svg::TransformOp]) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TREE: AtomicU64 = AtomicU64::new(0);
+    render::prepend_transform(&mut primitives, operations);
+    let tree_index = NEXT_TREE.fetch_add(1, Ordering::Relaxed);
+    let svg = String::from_utf8(avatar_svg::serialize_tree_with_id_prefix(
+        &RenderTree {
+            // Fragments carry sheet-space transforms, so their serializer
+            // needs a canvas that bounds every sheet mask region.
+            canvas: 5_000,
+            background: None,
+            primitives,
+        },
+        &format!("wild-tree-{tree_index}"),
+    ))
+    .expect("tree serializer emits UTF-8 SVG");
+    let start = svg.find('>').expect("tree SVG has an opening element") + 1;
+    let end = svg.rfind("</svg>").expect("tree SVG has a closing element");
+    svg[start..end].to_owned()
 }
 
 fn cell_bg(svg: &mut String, cx: f64, cy: f64, label: &str) {
@@ -697,8 +781,7 @@ fn outline_for(c: &Creature, cx: f64, cy: f64) -> Vec<(f64, f64)> {
     let mean_r = c.wb.spokes.iter().map(|s| s.r).sum::<f64>() / c.wb.spokes.len() as f64;
     // Must match draw_full exactly — a checker that rebuilds the geometry
     // differently is measuring a creature nobody renders.
-    let ring_r_at =
-        |theta: f64| -> f64 { wild::radius_along(&raw.pts, theta).unwrap_or(mean_r) };
+    let ring_r_at = |theta: f64| -> f64 { wild::radius_along(&raw.pts, theta).unwrap_or(mean_r) };
     let ext_outlines: Vec<Vec<(f64, f64)>> = c
         .exts
         .iter()
@@ -778,7 +861,10 @@ fn run_checker(n: u64) {
             violations += 1;
         }
         if clearance < 0.0 {
-            println!("seed {seed}: eye disc breaches outline by {:.2}", -clearance);
+            println!(
+                "seed {seed}: eye disc breaches outline by {:.2}",
+                -clearance
+            );
             violations += 1;
         }
         // Separation invariant: eye discs never touch each other (widest
@@ -824,7 +910,11 @@ fn main() {
         println!("consumed per creature over {n} seeds:");
         println!("  min {min_b} bytes ({} bits)", min_b * 8);
         println!("  max {max_b} bytes ({} bits)", max_b * 8);
-        println!("  mean {:.1} bytes ({:.0} bits)", total as f64 / n as f64, total as f64 / n as f64 * 8.0);
+        println!(
+            "  mean {:.1} bytes ({:.0} bits)",
+            total as f64 / n as f64,
+            total as f64 / n as f64 * 8.0
+        );
         return;
     }
     // --review START N: high-fidelity contact sheet at 400px cells, 4 per
@@ -854,14 +944,15 @@ fn main() {
             svg.push_str(&format!(
                 "<rect x='{x0:.1}' y='{y0:.1}' width='{cell}' height='{cell}' rx='14' fill='#efe9e4'/>"
             ));
-            // draw_full centres on (cx, cy) with its own 172-unit scale, so
-            // scale the whole group up to fill the review cell.
+            // draw_full centres on (120, 120); carry the review-cell scale
+            // on its primitives so the serialized tree remains flat.
             let s = cell / 240.0;
-            svg.push_str(&format!(
-                "<g transform='translate({:.1} {:.1}) scale({s:.4})'>{}</g>",
-                x0 + cell / 2.0 - 120.0 * s,
-                y0 + cell / 2.0 - 120.0 * s,
+            svg.push_str(&tree_fragment(
                 draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                &[
+                    render::translate(x0 + cell / 2.0 - 120.0 * s, y0 + cell / 2.0 - 120.0 * s),
+                    render::scale(s, s),
+                ],
             ));
             svg.push_str(&format!(
                 "<text x='{:.1}' y='{:.1}' font-family='monospace' font-size='13' fill='#8f8a96'>#{seed}</text>",
@@ -1009,13 +1100,14 @@ fn main() {
                     "<rect x='{x0:.1}' y='{y:.1}' width='{size}' height='{size}' rx='{:.1}' fill='#efe9e4'/>",
                     size / 6.0,
                 ));
-                // draw_full works in a 240-unit cell; scale that to `size`.
+                // draw_full works in a 240-unit cell; scale that tree to `size`.
                 let k = size / 240.0;
-                svg.push_str(&format!(
-                    "<g transform='translate({:.2} {:.2}) scale({k:.4})'>{}</g>",
-                    x0 + size / 2.0 - 120.0 * k,
-                    y + size / 2.0 - 120.0 * k,
+                svg.push_str(&tree_fragment(
                     draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                    &[
+                        render::translate(x0 + size / 2.0 - 120.0 * k, y + size / 2.0 - 120.0 * k),
+                        render::scale(k, k),
+                    ],
                 ));
             }
             y += size + 10.0;
@@ -1061,11 +1153,12 @@ fn main() {
                     "<rect x='{x0:.1}' y='{y0:.1}' width='{cell}' height='{cell}' rx='12' fill='#efe9e4'/>"
                 ));
                 let s = cell / 240.0;
-                svg.push_str(&format!(
-                    "<g transform='translate({:.1} {:.1}) scale({s:.4})'>{}</g>",
-                    x0 + cell / 2.0 - 120.0 * s,
-                    y0 + cell / 2.0 - 120.0 * s,
+                svg.push_str(&tree_fragment(
                     draw_full(&c, *m, 120.0, 120.0),
+                    &[
+                        render::translate(x0 + cell / 2.0 - 120.0 * s, y0 + cell / 2.0 - 120.0 * s),
+                        render::scale(s, s),
+                    ],
                 ));
                 svg.push_str(&format!(
                     "<text x='{:.1}' y='{:.1}' font-family='monospace' font-size='11' fill='#8f8a96'>#{seed}</text>",
@@ -1077,7 +1170,10 @@ fn main() {
         svg.push_str("</svg>");
         std::fs::create_dir_all("/tmp/ava-playground").expect("mkdir");
         std::fs::write("/tmp/ava-playground/moods.svg", &svg).expect("write");
-        println!("moods: {} seeds x 7 -> /tmp/ava-playground/moods.svg ({w:.0}x{h:.0})", seeds.len());
+        println!(
+            "moods: {} seeds x 7 -> /tmp/ava-playground/moods.svg ({w:.0}x{h:.0})",
+            seeds.len()
+        );
         return;
     }
     if let Some(i) = args.iter().position(|a| a == "--inspect") {
@@ -1126,7 +1222,10 @@ fn main() {
             };
             let v = if creature.voronoi { "+v" } else { "" };
             cell_bg(&mut svg, cx, cy, &format!("#{seed} {tag}{v}"));
-            svg.push_str(&draw_full(&creature, mood::Mood::Neutral, cx, cy));
+            svg.push_str(&tree_fragment(
+                draw_full(&creature, mood::Mood::Neutral, 120.0, 120.0),
+                &[render::translate(cx - 120.0, cy - 120.0)],
+            ));
         }
     }
     svg.push_str("</svg>");
@@ -1145,7 +1244,10 @@ fn main() {
             let cx = PAD + c as f64 * (CELL + PAD) + CELL / 2.0;
             let cy = PAD + r as f64 * (CELL + PAD) + CELL / 2.0 + 28.0;
             cell_bg(&mut svg2, cx, cy, &format!("#{seed} {}", mood::name(m)));
-            svg2.push_str(&draw_full(&creature, m, cx, cy));
+            svg2.push_str(&tree_fragment(
+                draw_full(&creature, m, 120.0, 120.0),
+                &[render::translate(cx - 120.0, cy - 120.0)],
+            ));
         }
     }
     svg2.push_str("</svg>");
@@ -1163,10 +1265,12 @@ fn main() {
         svg3.push_str(&format!(
             "<rect x='{x0:.1}' y='4' width='36' height='36' rx='6' fill='#efe9e4'/>",
         ));
-        let inner = draw_full(&creature, mood::Mood::Neutral, 0.0, 0.0);
-        svg3.push_str(&format!(
-            "<g transform='translate({:.2} 22) scale({k:.4})'>{inner}</g>",
-            x0 + 18.0,
+        svg3.push_str(&tree_fragment(
+            draw_full(&creature, mood::Mood::Neutral, 120.0, 120.0),
+            &[
+                render::translate(x0 + 18.0 - 120.0 * k, 22.0 - 120.0 * k),
+                render::scale(k, k),
+            ],
         ));
     }
     svg3.push_str("</svg>");
