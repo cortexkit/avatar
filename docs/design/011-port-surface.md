@@ -343,10 +343,51 @@ avatars is on the order of 350,000 segments where the same list of
 classic avatars is about 6,000. It is also memory in any tree cache.
 
 Not urgent and deliberately not fixed here — the preview path tolerates
-it. But it is a real constraint on the wild pipeline, and the fix is
-known: fit curves to the extracted contours rather than shipping their
-flattened polylines. That belongs with the fixed-point port, where the
-contour extraction is being rewritten anyway.
+it. But it is a real constraint on the wild pipeline.
+
+### The obvious fix does not work, measured
+
+This note previously asserted the remedy: fit curves to the extracted
+contours instead of shipping their flattened polylines. That assertion
+was wrong, and `playground/src/fit.rs` plus `--fit` exists to say so with
+numbers rather than to leave it standing.
+
+Fitting cubics to the contours the pipeline produces today, with
+reparameterization and corner preservation, collapses 2388 segments to
+1027 curves at a half-milliunit tolerance and 732 at two milliunits.
+That is **2.3x to 3.3x**, against the 10x to 60x the weight table needs.
+Worse, the true geometric deviation lands at 0.4 to 1.9 canvas units and
+barely responds to tolerance at all.
+
+The reason is that these contours are not a smooth curve sampled densely.
+They are already decimated, so there is little redundancy left to remove,
+and what remains is a mix of real features and marching-squares grid
+noise that no smooth curve passes through. The fit bottoms out at
+roughly two points per curve. One pass of 3-point smoothing before
+fitting moves the ratio by under ten percent, which rules out jaggedness
+as the limiter.
+
+So the win is not downstream of the flattening; it is the flattening.
+The pipeline tessellates a spline, merges the tessellation with a signed
+distance field, and re-extracts a polyline by marching squares — curve
+information is destroyed in the middle and cannot be recovered by fitting
+afterwards. Getting a light tree means carrying curves through the merge,
+or extracting the merged contour at a resolution high enough that fitting
+has something to work with. That is a real piece of design, not a
+transform to apply at the end, and it belongs with the fixed-point port.
+
+Three things the spike established that are worth keeping:
+
+- Reparameterization is not optional. Without it the fitter's error
+  metric measures the wrong distance, so tightening tolerance buys more
+  curves and no accuracy — counts move, deviation does not.
+- Corners must be cut before fitting, and the ring seam must be tested
+  for being a corner like any other point. A seam is an arbitrary index,
+  so forcing a smooth closure there rounds away one feature per shape at
+  a position nobody chose.
+- A representation change must not change the silhouette, so the corner
+  test is the load-bearing one. It caught reparameterization rounding a
+  square, which is exactly the failure a ratio would have hidden.
 
 Measured on device rather than guessed, by the iOS client: all thirty
 heavy trees decode and rasterize in well under the screen's first

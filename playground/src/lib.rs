@@ -2,6 +2,7 @@
 pub mod body;
 pub mod coverage;
 pub mod face;
+pub mod fit;
 pub mod genome;
 pub mod merge;
 pub mod mood;

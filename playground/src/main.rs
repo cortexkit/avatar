@@ -5,7 +5,9 @@
 //!   sheet 2 (grid10-moods.svg): 4 cast seeds x all 7 moods on wild bodies.
 //!   sheet 3 (grid10-strip.svg): natural-size 36px cells — icon legibility.
 
-use ava_playground::{body, coverage, face, genome, merge, mood, palette, render, surface, wild};
+use ava_playground::{
+    body, coverage, face, fit, genome, merge, mood, palette, render, surface, wild,
+};
 use avatar_svg::{Effect, GradientStop, Paint, Primitive, RenderTree, StrokeCap, StrokeJoin, Q32};
 
 const CELL: f64 = 240.0;
@@ -944,6 +946,69 @@ fn main() {
         run_fixtures(start_seed, count, std::path::Path::new(out_dir));
         return;
     }
+    // Measurement only: reports what curve fitting would buy on real
+    // contours without changing anything the pipeline draws.
+    if let Some(i) = args.iter().position(|a| a == "--fit") {
+        let start: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
+        let count: u64 = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(8);
+        println!(
+            "{:>6}  {:>7}  {:>26}  {:>26}",
+            "seed", "points", "tol 0.5mu", "tol 2.0mu"
+        );
+        let (mut sum_pts, mut sum_a, mut sum_b) = (0usize, 0usize, 0usize);
+        for seed in start..start + count {
+            let creature = decode_full(seed);
+            let outline = outline_for(&creature, 120.0, 120.0);
+            // Second variant: one pass of 3-point averaging before the
+            // fit. Marching-squares contours are grid-quantized, so they
+            // arrive as staircases rather than as a smooth curve sampled
+            // densely; a fitter cannot collapse a staircase without
+            // exceeding tolerance at every step.
+            let smoothed: Vec<(f64, f64)> = (0..outline.len())
+                .map(|i| {
+                    let p = outline[(i + outline.len() - 1) % outline.len()];
+                    let c = outline[i];
+                    let n = outline[(i + 1) % outline.len()];
+                    ((p.0 + 2.0 * c.0 + n.0) / 4.0, (p.1 + 2.0 * c.1 + n.1) / 4.0)
+                })
+                .collect();
+            let mut row = format!("{seed:>6}  {:>7}", outline.len());
+            for (slot, tol) in [(0, 0.005_f64), (1, 0.02_f64)] {
+                // The outline is in canvas units and the render tree
+                // stores milliunits, 100 per canvas unit. So these
+                // tolerances are 0.5 and 2 milliunits: one below what the
+                // tree can represent at all, one at the smallest
+                // difference it can express.
+                let curves = fit::fit_closed(&outline, tol);
+                let dev = fit::deviation(&outline, &curves);
+                row.push_str(&format!(
+                    "  {:>8} curves {:>6.3}mu dev",
+                    curves.len(),
+                    dev * 100.0
+                ));
+                if slot == 0 {
+                    sum_a += curves.len();
+                } else {
+                    sum_b += curves.len();
+                }
+            }
+            let sc = fit::fit_closed(&smoothed, 0.02);
+            row.push_str(&format!(
+                "  | smoothed {:>4} curves {:>6.3}mu",
+                sc.len(),
+                fit::deviation(&outline, &sc) * 100.0
+            ));
+            sum_pts += outline.len();
+            println!("{row}");
+        }
+        println!(
+            "\ntotals: {sum_pts} segments -> {sum_a} curves ({:.1}x) at 0.5mu, {sum_b} curves ({:.1}x) at 2mu",
+            sum_pts as f64 / sum_a.max(1) as f64,
+            sum_pts as f64 / sum_b.max(1) as f64,
+        );
+        return;
+    }
+
     if let Some(i) = args.iter().position(|a| a == "--check") {
         let n = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(200);
         run_checker(n);
