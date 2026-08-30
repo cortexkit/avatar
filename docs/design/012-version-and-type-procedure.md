@@ -100,14 +100,22 @@ is still under review. They land with the schema.
   fails silently the day the pipeline emits something before it.
   The corpus must gate that exactly one primitive carries the role, so
   "skip the shadow" cannot quietly become "skip nothing".
-- **Ink-coverage normalization.** The extent fit already scales every
-  creature until one axis touches the wall, so bounding boxes are
-  normalized. Measured ink coverage across 24 creatures still spans
-  0.146 to 0.407, a 2.8x spread, because equal boxes are not equal
-  visual weight: a spindly star and a solid blob both touch the wall.
-  The open decision is whether to compress that range or equalize it,
-  and it is the operator's, because it trades individuality against
-  uniformity rather than being a correctness question.
+- ~~**Ink-coverage normalization.**~~ RULED: LEAVE AS IS. The extent fit
+  already scales every creature until one axis touches the wall, so
+  bounding boxes are normalized and that part works — measured from
+  pixels, every creature fills 0.854 to 0.997 of its largest axis. Ink
+  coverage still spans 0.146 to 0.407, a 2.8x spread, because equal
+  boxes are not equal visual weight: a spindly star and a solid blob
+  both touch the wall and the star has a third of the ink. Offered as
+  compress-toward-1.5x or equalize; the operator chose neither. Density
+  is a trait at full range, so a dense little imp and an airy sprawling
+  thing stay as different in weight as their genomes make them.
+
+  The consequence worth stating, because it binds consumers: NOTHING
+  DOWNSTREAM MAY NORMALIZE VISUAL WEIGHT EITHER. A client-side crop to
+  alpha bounds, a per-avatar scale nudge to make a row look even — each
+  of those quietly re-decides this, in one surface, with nothing
+  failing. The variance is chosen, not tolerated.
 
 ## What a client does with a version or type it does not know
 
