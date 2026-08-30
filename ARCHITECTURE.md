@@ -7,9 +7,9 @@
 **Key Characteristics:**
 - **Deterministic Pure Pipeline:** Maps fixed-size bitstrings (DNA) through typed phenotype parameters to intermediate geometry render trees and SVG text output.
 - **Arithmetic Invariance across Languages:** Pinned integer arithmetic (`i64` milliunits and `Q32.32` fixed point), custom lookup tables, and a single half-away-from-zero rounding helper eliminate floating-point non-determinism across Rust, TypeScript, and Swift.
-- **Canonical Rust Core with Mirror Ports:** Canonical implementation lives in Rust workspace crates (`crates/`), mirrored byte-for-byte in TypeScript (`ports/ts/`) and Swift (`ports/swift/`).
+- **Single Generator, Decoding Consumers:** Generation lives in Rust (`crates/`). Consumers receive a resolved `RenderTree` and draw it rather than reimplementing the generator, because comparing independent implementations against a corpus proves agreement on a finite sample of a 2^8192 input space and cannot prove equivalence. TypeScript (`ports/ts/`) and Swift (`ports/swift/`) each carry the tree type, a fail-closed JSON decoder, and byte gates. Both also still carry a full generator for the one creature type that predates this decision; new types are implemented once, in Rust. See `docs/design/011`.
 - **Render-Time Mood Decoupling:** DNA and phenotype encode identity, body geometry, face composition, and color palette. Agent mood is provided at render time to modify facial feature transforms without altering identity.
-- **Golden Vector Conformance:** Enforces output parity across languages at two boundaries (phenotype JSON and rendered SVG) via CI-gated golden vector tests in `vectors/`.
+- **Golden Vector Conformance:** CI-gated golden vector tests in `vectors/` at four boundaries: DNA to phenotype JSON (`phenotype/`), phenotype to SVG (`svg/`), tree to canonical JSON (`tree/`), and tree to SVG through the generic serializer (`tree-svg/`). The last two pin the transport a consumer decodes and the rendering every consumer must reproduce.
 
 ## Layers
 
@@ -65,12 +65,22 @@
 4. Geometry builder consumes `Phenotype` and render-time `RenderParams` (mood, growth) to assemble a `RenderTree` — `crates/avatar-svg/src/build.rs`
 5. Serializer formats `RenderTree` into canonical SVG byte stream — `crates/avatar-svg/src/serialize.rs`
 
-**Swift Native Render Tree Pipeline:**
+**Consumer Pipelines — two ways a client obtains a tree:**
 
-1. Swift client supplies stored `Genome` bytes, avatar type, version, and target mood — `ports/swift/Sources/AvatarKit/AvatarKit.swift`
+*Built locally, for the creature type the ports implement:*
+
+1. Client supplies stored `Genome` bytes, avatar type, version, and target mood — `ports/swift/Sources/AvatarKit/AvatarKit.swift`
 2. `AvatarKit` decodes genome to phenotype using native table-driven Swift logic — `ports/swift/Sources/AvatarKit/`
 3. `TreeBuilder` evaluates geometry passes to construct native `RenderTree` primitives — `ports/swift/Sources/AvatarKit/TreeBuilder.swift`
 4. Client walks `RenderTree` primitives directly to construct native SwiftUI paths without SVG parsing
+
+*Decoded, for a type that exists only in Rust:*
+
+1. Rust emits a canonical JSON encoding of the tree — `crates/avatar-svg/src/tree_json.rs`
+2. Consumer decodes it fail-closed: an unknown tag, a missing field or a non-integer throws, because a silently defaulted primitive draws a wrong creature that looks right — `ports/swift/Sources/AvatarKit/RenderTree.swift`, `ports/ts/src/tree.ts`
+3. Consumer draws the primitives, or serializes them to SVG — `ports/ts/src/tree-serialize.ts`
+
+This second path is what lets a new creature type ship without being implemented three times.
 
 **Fleet PNG Export Pipeline:**
 
@@ -82,7 +92,7 @@
 
 1. Conformance test reads golden hex DNA vectors from disk — `crates/avatar-vectors/src/lib.rs`
 2. Test executes local implementation pipeline to produce phenotype JSON and SVG output
-3. Output is byte-compared against expected golden assets in `vectors/phenotype/` and `vectors/svg/`
+3. Output is byte-compared against expected golden assets in `vectors/phenotype/`, `vectors/svg/`, `vectors/tree/` and `vectors/tree-svg/`
 4. Cross-language test runners execute equivalent checks in TS (`ports/ts/tests/golden-conformance.test.ts`) and Swift (`ports/swift/Tests/AvatarKitTests/GoldenConformanceTests.swift`)
 
 ## Key Abstractions

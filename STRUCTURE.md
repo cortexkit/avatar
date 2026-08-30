@@ -18,11 +18,13 @@
 │   └── avatar-vectors/           # Golden vector conformance test suite
 ├── ports/                        # Port implementations in secondary languages
 │   ├── swift/                    # Swift AvatarKit framework and CBlake3 vendor source
-│   └── ts/                       # TypeScript renderer package and Bun test suite
+│   └── ts/                       # TypeScript renderer, tree decoder, and Bun test suite
 ├── vectors/                      # Golden vector corpus for cross-language conformance
 │   ├── dna/                      # Raw 8192-bit hex DNA files
 │   ├── phenotype/                # Canonical decoded phenotype JSON files
-│   └── svg/                      # Pinned golden SVG output files
+│   ├── svg/                      # Pinned golden SVG output files
+│   ├── tree/                     # Canonical render-tree JSON, the consumer transport
+│   └── tree-svg/                 # Generic serializer output every consumer must match
 ├── scripts/                      # Verification, CI check, and table import scripts
 ├── docs/                         # Architecture charter and design decision notes
 └── playground/                   # Exploratory prototypes and visual probe web app
@@ -73,7 +75,8 @@
 **`vectors/`:**
 - Purpose: Shared golden vector corpus pinning phenotype JSON and SVG rendering across all language implementations.
 - Contains: Hex DNA vectors, JSON phenotype expectations, golden SVG files, vector manifest.
-- Key files: `vectors/manifest.json`, `vectors/contact-sheet.html`, `vectors/dna/`, `vectors/phenotype/`, `vectors/svg/`.
+- Key files: `vectors/manifest.json`, `vectors/contact-sheet.html`, `vectors/dna/`, `vectors/phenotype/`, `vectors/svg/`, `vectors/tree/`, `vectors/tree-svg/`.
+- Note: `manifest.json`'s `corpus_revision` counts re-mints. It is not the version a registry row carries, which lives in `crates/avatar-svg/src/dispatch.rs`.
 
 **`scripts/`:**
 - Purpose: Automation scripts for CI checks, parity validation, and asset updating.
