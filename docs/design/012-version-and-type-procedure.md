@@ -83,6 +83,32 @@ off the body. Something a user would call a defect rather than a style.
    it says nothing about a consumer's ability to parse the envelope
    those bytes arrive in.
 
+## Requirements banked for the next phenotype schema
+
+Not implemented, deliberately: adding these to the tree now would change
+a contract two ports have already pinned, for no benefit while the look
+is still under review. They land with the schema.
+
+- **A `role` on each primitive**, a small closed enum, distinct from
+  `label`. Label is presentational and the generic serializer ignores
+  it; role is semantic and a consumer may act on it. The first case is
+  `ground_shadow`: a creature drawn beside a floating element has no
+  ground for its shadow to fall on, and that is a property of the
+  PLACEMENT rather than of the creature, so the consumer decides and one
+  tree still serves both. Requested by the iOS client, who correctly
+  refused to identify the shadow by primitive index — that coupling
+  fails silently the day the pipeline emits something before it.
+  The corpus must gate that exactly one primitive carries the role, so
+  "skip the shadow" cannot quietly become "skip nothing".
+- **Ink-coverage normalization.** The extent fit already scales every
+  creature until one axis touches the wall, so bounding boxes are
+  normalized. Measured ink coverage across 24 creatures still spans
+  0.146 to 0.407, a 2.8x spread, because equal boxes are not equal
+  visual weight: a spindly star and a solid blob both touch the wall.
+  The open decision is whether to compress that range or equalize it,
+  and it is the operator's, because it trades individuality against
+  uniformity rather than being a correctness question.
+
 ## What a client does with a version or type it does not know
 
 Draws nothing. Not a default creature, not a previous version's
