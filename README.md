@@ -23,19 +23,38 @@ by agent id alone. Deriving a genome from an id (`avatar-export
 --stable-id`) is the seeding path and the GitHub-App path, not the
 consumption path.
 
-Three implementations produce **byte-identical SVG** from the same
-DNA + mood + generator version, enforced by a golden-vector corpus at
-both pipeline boundaries (`vectors/`, CI-gated in every language):
+## One generator, several consumers
 
-| Implementation | Where | Conformance |
+Generation lives in Rust. Consumers receive a **render tree** — a flat
+list of drawing primitives with every value already resolved — and draw
+it. They do not reimplement the generator.
+
+That is a correctness decision, not a cost one. Comparing independent
+implementations against a corpus proves they agree on a finite sample of
+a 2^8192 input space; a divergence that fires for one genome in 10^9
+stays invisible until it renders on somebody's screen, and the rarer a
+feature is the larger the sample needed to catch it. One generator makes
+divergence unrepresentable instead of undetected. `docs/design/011` has
+the argument.
+
+| Implementation | Where | Role | Conformance |
+| --- | --- | --- | --- |
+| Rust | `crates/` | generates, mints the corpus | `cargo test -p avatar-vectors` |
+| TypeScript | `ports/ts/` | decodes a tree, renders SVG | `bun test` |
+| Swift (`AvatarKit`, SPM by git URL) | `Package.swift` → `ports/swift/` | decodes a tree, draws it | `swift test` |
+
+The ports still carry a full generator for `creature.classic`, which
+predates this decision and is byte-gated. New creature types are
+implemented once, in Rust.
+
+Four corpus boundaries in `vectors/`, CI-gated in every language:
+
+| Boundary | Directory | Pins |
 | --- | --- | --- |
-| Rust (canonical, mints the corpus) | `crates/` | `cargo test -p avatar-vectors` |
-| TypeScript | `ports/ts/` | `bun test` |
-| Swift (`AvatarKit`, SPM by git URL) | `Package.swift` → `ports/swift/` | `swift test` |
-
-The Swift package's primary API is a flat, pre-resolved **render tree**
-(SwiftUI draws it without parsing SVG); SVG is a serializer over the
-same tree.
+| DNA → phenotype | `phenotype/` | decode |
+| phenotype → SVG | `svg/` | the classic renderer, byte for byte |
+| tree → JSON | `tree/` | the transport a consumer decodes |
+| tree → SVG | `tree-svg/` | the generic renderer every consumer must match |
 
 ## Consuming from Swift
 
@@ -96,3 +115,8 @@ Either way: re-mint only the new arm's vectors (`UPDATE_GOLDEN=1 cargo test
 -p avatar-vectors`), review `vectors/contact-sheet.html` by eye, and every
 port's conformance leg must re-pass before it ships. `docs/design/012` has
 the full procedure.
+
+The manifest's `corpus_revision` is **not** that version. It counts
+re-mints, moves when a vector or a boundary is added, and implies nothing
+about what any creature looks like. The version a row carries is
+`CLASSIC_VERSION` in `crates/avatar-svg/src/dispatch.rs`.
