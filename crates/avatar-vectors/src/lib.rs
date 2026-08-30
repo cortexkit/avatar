@@ -50,6 +50,9 @@ pub(crate) mod test_util {
 }
 
 #[cfg(test)]
+mod tree_fixture;
+
+#[cfg(test)]
 mod tests {
     use std::{
         collections::BTreeSet,
@@ -61,13 +64,15 @@ mod tests {
 
     use avatar_genome::{decode, derive_genome, Genome, SeatIdentity};
     use avatar_phenotype::{from_canonical_json, to_canonical_json, Q32};
-    use avatar_svg::{build_render_tree, render_svg, serialize_tree_json, Mood, RenderParams};
+    use avatar_svg::{
+        build_render_tree, render_svg, serialize_tree, serialize_tree_json, Mood, RenderParams,
+    };
     use serde::Deserialize;
 
     // v2: body point-count floor raised 4..=16 (2- and 3-point bodies were
     // unrecognizable slivers). Decoder mapping change, so every vector's
     // observable output potentially moves.
-    const GENERATOR_VERSION: u16 = 3;
+    const GENERATOR_VERSION: u16 = 4;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
 
@@ -81,6 +86,12 @@ mod tests {
         Mood::Sad,
         Mood::Sleepy,
     ];
+
+    // Including file names and lengths makes this pin sensitive to boundary
+    // changes, not only to the concatenated SVG payloads.
+    const TREE_SVG_BOUNDARY_SIZE: usize = 772_266;
+    const TREE_SVG_BOUNDARY_HASH: &str =
+        "bebdbf715411b5e2ce38ec138be6e7a16a249e80f97e366592142d600836cc78";
 
     /// Tree fixtures for the second creature type, which Swift cannot build
     /// natively. They exist to exercise the primitive variants the shipped
@@ -189,6 +200,11 @@ mod tests {
                 assert_current(&svg_path(vector.name, mood), &svg);
             }
         }
+
+        for name in tree_fixture_file_names() {
+            let tree = read_tree_fixture(&name);
+            assert_current(&tree_svg_fixture_path(&name), &serialize_tree(&tree));
+        }
     }
 
     #[test]
@@ -214,13 +230,14 @@ mod tests {
             "phenotype".to_owned(),
             "svg".to_owned(),
             "tree".to_owned(),
+            "tree-svg".to_owned(),
         ]);
         assert_directory_entry_names("vectors", &expected_root);
         assert!(
             manifest_path().is_file(),
             "vectors/manifest.json is not a file"
         );
-        for directory in ["dna", "phenotype", "svg", "tree"] {
+        for directory in ["dna", "phenotype", "svg", "tree", "tree-svg"] {
             assert!(
                 corpus_root().join(directory).is_dir(),
                 "vectors/{directory} is not a directory"
@@ -244,8 +261,13 @@ mod tests {
         }
         assert_file_names("dna", &expected_dna);
         assert_file_names("phenotype", &expected_phenotype);
+        let expected_tree_svg = expected_tree
+            .iter()
+            .map(|name| tree_svg_fixture_name(name))
+            .collect();
         assert_file_names("svg", &expected_svg);
         assert_file_names("tree", &expected_tree);
+        assert_file_names("tree-svg", &expected_tree_svg);
     }
 
     #[test]
@@ -288,6 +310,32 @@ mod tests {
     }
 
     #[test]
+    fn tree_svg_fixtures_are_hash_pinned() {
+        if update_golden_enabled() {
+            return;
+        }
+
+        let mut total_size = 0;
+        let mut hasher = blake3::Hasher::new();
+        for name in entry_names(&corpus_root().join("tree-svg")) {
+            let path = corpus_root().join("tree-svg").join(&name);
+            let bytes =
+                fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            total_size += bytes.len();
+            hasher.update(name.as_bytes());
+            hasher.update(&[0]);
+            hasher.update(&(bytes.len() as u64).to_le_bytes());
+            hasher.update(&bytes);
+        }
+        assert_eq!(total_size, TREE_SVG_BOUNDARY_SIZE, "tree-svg size drifted");
+        assert_eq!(
+            hasher.finalize().to_hex().as_str(),
+            TREE_SVG_BOUNDARY_HASH,
+            "tree-svg bytes drifted"
+        );
+    }
+
+    #[test]
     fn svg_smoke() {
         if update_golden_enabled() {
             return;
@@ -303,11 +351,19 @@ mod tests {
                 crate::test_util::assert_well_formed_svg(&path.display().to_string(), svg);
             }
         }
+        for name in tree_fixture_file_names() {
+            let path = tree_svg_fixture_path(&name);
+            let bytes =
+                fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            let svg = std::str::from_utf8(&bytes)
+                .unwrap_or_else(|error| panic!("{} is not UTF-8: {error}", path.display()));
+            crate::test_util::assert_well_formed_svg(&path.display().to_string(), svg);
+        }
     }
 
     fn mint_corpus() {
         let root = corpus_root();
-        for directory in ["dna", "phenotype", "svg", "tree"] {
+        for directory in ["dna", "phenotype", "svg", "tree", "tree-svg"] {
             fs::create_dir_all(root.join(directory))
                 .unwrap_or_else(|error| panic!("create vectors/{directory}: {error}"));
         }
@@ -340,6 +396,11 @@ mod tests {
                 });
                 write_corpus_file(&svg_path(vector.name, mood), &svg);
             }
+        }
+
+        for name in tree_fixture_file_names() {
+            let tree = read_tree_fixture(&name);
+            write_corpus_file(&tree_svg_fixture_path(&name), &serialize_tree(&tree));
         }
 
         let producer_sha = producer_sha(&root);
@@ -588,6 +649,42 @@ mod tests {
         corpus_root()
             .join("svg")
             .join(format!("{name}__{}.svg", mood_name(mood)))
+    }
+
+    fn tree_fixture_file_names() -> BTreeSet<String> {
+        let mut names = WILD_TREE_FIXTURES
+            .iter()
+            .map(|(name, _, _)| (*name).to_owned())
+            .collect::<BTreeSet<_>>();
+        for vector in vector_specs() {
+            for mood in vector.moods {
+                names.insert(format!("{}__{}.json", vector.name, mood_name(*mood)));
+            }
+        }
+        names
+    }
+
+    fn read_tree_fixture(name: &str) -> avatar_svg::RenderTree {
+        let path = corpus_root().join("tree").join(name);
+        let bytes =
+            fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+        crate::tree_fixture::decode_tree_fixture(&bytes)
+            .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
+    }
+
+    fn tree_svg_fixture_name(tree_fixture_name: &str) -> String {
+        format!(
+            "{}.svg",
+            tree_fixture_name
+                .strip_suffix(".json")
+                .expect("tree fixture name must end in .json")
+        )
+    }
+
+    fn tree_svg_fixture_path(tree_fixture_name: &str) -> PathBuf {
+        corpus_root()
+            .join("tree-svg")
+            .join(tree_svg_fixture_name(tree_fixture_name))
     }
 
     fn update_golden_enabled() -> bool {
