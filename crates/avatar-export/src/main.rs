@@ -11,8 +11,9 @@
 //!     system fontconfig — the SVG contains no text), so the same input
 //!     yields the same PNG bytes on every run and host.
 //!   - Regeneration on demand IS the model: consumers re-run the export
-//!     when a genome-affecting change ships (generator_version bump or an
-//!     identity-migration era event); nothing is cached here.
+//!     when what a row renders to changes — a new avatar_version chosen
+//!     for that row, a new avatar_type, or a re-rolled genome. Nothing is
+//!     cached here.
 //!
 //! Usage:
 //!   avatar-export --stable-id pj-0000000000000001 --out ava.png

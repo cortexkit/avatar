@@ -69,10 +69,15 @@ mod tests {
     };
     use serde::Deserialize;
 
-    // v2: body point-count floor raised 4..=16 (2- and 3-point bodies were
-    // unrecognizable slivers). Decoder mapping change, so every vector's
-    // observable output potentially moves.
-    const GENERATOR_VERSION: u16 = 4;
+    // How many times this corpus has been re-minted. It is NOT the version
+    // a registry row carries and must never be read as one: that lives in
+    // `avatar_svg::dispatch` as CLASSIC_VERSION, is currently 2, and
+    // changes only to fix a generation bug that would otherwise alter an
+    // agent's face. This counter moves whenever the corpus is re-minted for
+    // any reason at all — a new boundary, a new vector — none of which
+    // implies a creature changed. Two numbers with one name is how a
+    // routine re-mint gets mistaken for a face-changing event.
+    const CORPUS_REVISION: u16 = 4;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
 
@@ -136,7 +141,7 @@ mod tests {
 
     #[derive(Deserialize)]
     struct Manifest {
-        generator_version: u16,
+        corpus_revision: u16,
         genome_version: u16,
         producer_sha: String,
         vectors: Vec<ManifestVector>,
@@ -214,7 +219,7 @@ mod tests {
         }
 
         let manifest = read_manifest();
-        assert_eq!(manifest.generator_version, GENERATOR_VERSION);
+        assert_eq!(manifest.corpus_revision, CORPUS_REVISION);
         assert_eq!(manifest.genome_version, GENOME_VERSION);
         assert_valid_git_sha(&manifest.producer_sha);
         assert_eq!(
@@ -712,7 +717,7 @@ mod tests {
 
     fn manifest_bytes(producer_sha: &str) -> Vec<u8> {
         let mut manifest = format!(
-            "{{\"generator_version\":{GENERATOR_VERSION},\"genome_version\":{GENOME_VERSION},\"producer_sha\":\"{producer_sha}\",\"vectors\":["
+            "{{\"corpus_revision\":{CORPUS_REVISION},\"genome_version\":{GENOME_VERSION},\"producer_sha\":\"{producer_sha}\",\"vectors\":["
         );
         for (index, vector) in vector_specs().iter().enumerate() {
             if index != 0 {
@@ -760,7 +765,7 @@ mod tests {
             .position(|(expected, actual)| expected != actual)
             .unwrap_or(expected.len().min(actual.len()));
         panic!(
-            "golden corpus drift in {}: first differing byte offset {offset} (expected {}, found {}); regenerate with UPDATE_GOLDEN=1 cargo test -p avatar-vectors; any regeneration is a generator_version event per docs/design/001-genome-phenotype-determinism.md §7",
+            "golden corpus drift in {}: first differing byte offset {offset} (expected {}, found {}); if the change to the renderer was intended, regenerate with UPDATE_GOLDEN=1 cargo test -p avatar-vectors and LOOK at vectors/contact-sheet.html before committing. Changing what a shipped row renders to is a version event, and versions are added rather than edited: see docs/design/012-version-and-type-procedure.md",
             corpus_relative_path(path),
             described_byte(expected.get(offset)),
             described_byte(actual.get(offset)),
