@@ -270,6 +270,21 @@ stricter (subc's JSON corpus pins semantic shape; we must pin **bytes**):
 
 ## 7. Versioning
 
+> **Superseded by `docs/design/012`.** The definition below treats any
+> observable output change as a version bump, which would move every
+> agent's face whenever the renderer improves. The operator ruled the
+> opposite: a version exists ONLY to fix a generation bug, an upgrade is
+> chosen per row, and a change of depiction is a new TYPE rather than a
+> version. A version arm is added and never edited. The paragraph is kept
+> as written because later notes argue against it; read 012 for the rule
+> in force.
+>
+> Two further drifts from this section: `era history` describes a store
+> this library never owned — the genome lives on the agent's registry row
+> and prefrontal owns it. And the corpus manifest field once called
+> `generator_version` is now `corpus_revision`, because it counts
+> re-mints and says nothing about what a creature looks like.
+
 - `genome_version` — bit-layout major. Bumps only on layout breaks
   (ideally never; reserves exist to prevent this).
 - `generator_version` — any observable output change (decoder or
