@@ -1,10 +1,10 @@
 // Numeric formatting for SVG output (transcribed from
 // crates/avatar-svg/src/format.rs).
 //
-// Two pinned formatters cover every number the renderer emits. Coordinates
-// are exact (milliunits divide evenly into two decimal places of a viewBox
-// unit); scale factors carry six fractional digits. Neither path ever sees a
-// float.
+// Pinned formatters cover the decimal contracts emitted by the SVG serializers.
+// Coordinates are exact (milliunits divide evenly into two decimal places of a
+// viewBox unit); fixed-point values use the precision selected by each canonical
+// projection. No formatting path converts through a float.
 
 /**
  * Formats a bigint milliunit value as an exact decimal string in viewBox
@@ -74,4 +74,28 @@ export function formatQ32Decimal(value: bigint): string {
     }
   }
   return text;
+}
+
+/**
+ * Formats Q32.32 with the generic tree serializer's rounded nine-digit
+ * precision. The classic serializer intentionally keeps using its six-digit
+ * truncating representation above because those byte contracts are distinct.
+ */
+export function formatQ32Rounded(value: bigint): string {
+  const SCALE = 1n << 32n;
+  const DIGITS = 1_000_000_000n;
+  const magnitude = value < 0n ? -value : value;
+  let whole = magnitude / SCALE;
+  let fraction = ((magnitude % SCALE) * DIGITS + SCALE / 2n) / SCALE;
+
+  if (fraction === DIGITS) {
+    whole += 1n;
+    fraction = 0n;
+  }
+
+  const sign = value < 0n ? "-" : "";
+  if (fraction === 0n) {
+    return `${sign}${whole}`;
+  }
+  return `${sign}${whole}.${fraction.toString().padStart(9, "0").replace(/0+$/, "")}`;
 }
