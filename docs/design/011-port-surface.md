@@ -403,6 +403,51 @@ and path fill rules all drew with zero changes to the client's
 rasterizer, so introducing a second creature type did not change the
 contract its consumers depend on.
 
+## Numeric primitives the port needs and does not have
+
+The fixed-point spike proved the NEW machinery portable — SDF fields,
+marching squares, Lloyd relaxation, integer sqrt. It never inventoried
+what the pipeline calls that the shipped crates cannot supply, which is
+a different question and the one that costs a refactor if it surfaces
+mid-port. Answered here.
+
+`avatar-tables` exposes exactly `div_round_half_away`, `sin_q30`,
+`cos_q30` and the easing tables. Against that:
+
+- **Integer sqrt is missing entirely.** Wild needs it on the render
+  path in at least three places: SDF distance (`merge.rs`), arc-length
+  accumulation while resampling, and the belly crown ramp. The spike
+  proved a 64-step restoring algorithm exact, but it lives in a
+  playground binary. It belongs in `avatar-tables`, hash-pinned with
+  the other primitives, because a second implementation of sqrt is a
+  second place for the rounding to differ.
+
+- **Integer atan2 exists but is in the wrong place, and is O(16384).**
+  `lashes.rs` carries a private `atan2_bam` that scans every fourth BAM
+  angle and takes the maximum dot product. Correct and portable, and
+  fine for the handful of lash tangents classic asks of it. A second
+  consumer would not find it, and would pay 16,384 dot products per
+  call if it did.
+
+  Wild's only need for it is the SVG-arc-to-cubic adapter in
+  `render.rs`, which computes a start angle and a sweep angle. That
+  adapter has exactly THREE call sites, all in `face.rs`, and it exists
+  only because those shapes were authored as SVG arc markup while the
+  tree is cubic-only. Circles and ellipses do not go through it — they
+  are native tree primitives.
+
+  So the adapter should not be ported. Re-authoring three shapes as
+  direct cubics removes inverse trig from the wild path entirely,
+  rather than promoting a linear scan into a hot path to serve them.
+
+- **Forward trig is already covered.** `wild.rs` uses cos/sin for spoke
+  placement, extremity roots and spines, the half-plane fold test and
+  ray casting, all of which map onto the existing BAM tables.
+
+- **The genome float is cosmetic.** `Bits::lin` returns f64, but it is
+  a linear map of an integer draw and ports as a multiply and a shift.
+  The splitmix64 bit source underneath is already pure integer.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The
