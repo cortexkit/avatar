@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    # train/** is the CI-gated landing path: a train branch is pushed
+    # first, CI here is the gate, and main is fast-forwarded only on a
+    # green run. Without this trigger a train push gets no check at all,
+    # and required status checks would make main unpushable.
+    branches: [master, 'train/**']
   pull_request:
   # Reusable so a future release workflow gates on the exact same matrix.
   workflow_call:
