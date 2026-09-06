@@ -55,10 +55,9 @@ more point information than TOG's whole 1024-bit body block.
 | Byte | Field | Mapping |
 | --- | --- | --- |
 | 0 | `spoke_count` | mod 12 → 5..=16 half-side spokes (widened from 5..=13 with budget recovered from SURFACE) |
-| 1 | `domestication` | EASE_LINEAR → Q [0.12, 0.72]; population center ~0.32. The wild↔tame axis: radius smoothing + concavity floor + tension pull-to-1 + ground flatten all key off this one value |
-| 2 | `ground_sit` | EASE_LINEAR → Q [0.06, 0.22] flatten band |
-| 3 | reserved (body plan door) | |
-| 4..=51 | 16 × spoke slots: (radius, tension, θ-jitter) 1 byte each | radius EASE_LINEAR → Q [0.12, 1.35]; tension EASE_LINEAR → Q [0.4, 2.6] (overshoot loops included — fill-rule turns self-crossings into character); jitter EASE_LINEAR → ±0.45 slot-widths |
+| 1 | consumed and DISCARDED | Was the free-form mirror flag. The reference reads and drops it so existing seeds keep their creatures; see the open question below before giving it a meaning |
+| 2 | reserved (body plan door) | |
+| 2..=49 | 16 × spoke slots: (θ-jitter, radius, tension) 1 byte each, IN THAT ORDER | radius EASE_LINEAR → Q [0.12, 1.35]; tension EASE_LINEAR → Q [0.4, 2.6] (overshoot loops included — fill-rule turns self-crossings into character); jitter EASE_LINEAR → ±0.45 slot-widths |
 | 43–63 | reserved (per-spoke overrides, denser rings) | |
 
 All 16 slots decode regardless of `spoke_count` (dormant-region law);
@@ -210,6 +209,37 @@ The spike's real value was the risks it found that are NOT arithmetic:
 
 Verdict: this layout is portable. Note 010 inherits the sqrt primitive
 and both tiebreak rules as normative.
+
+## OPEN: does domestication vary per creature?
+
+This note described `domestication` as a decoded BODY byte over
+[0.12, 0.72] with the population centred near 0.32. THE REFERENCE
+IMPLEMENTATION DOES NOT DECODE IT. Both renderers pin `dom = 0.32` as a
+literal, and the byte this note assigned to it is read and thrown away
+(it was the free-form mirror flag, kept only so existing seeds keep
+their creatures).
+
+The table above is corrected to match the reference, because the
+reference is what has been reviewed and the note is what would be
+ported. Left as written, a port implementing this note would consume an
+extra byte before the spoke slots and shift every one of them — the same
+seed would grow a different creature, and nothing would fail.
+
+That leaves a real decision, and it is not mine:
+
+- **Pin it.** Every creature sits at the same point on the wild↔tame
+  axis. That is what every grid, sheet and device preview has shown, so
+  it is the population the look was judged on. The byte returns to
+  reserve.
+- **Decode it.** The population gains an axis that NO review artefact
+  has ever displayed: some creatures markedly wilder, some rounder and
+  tamer. Grid 7 explored the range with a slider and found both ends
+  legible, which is why the note claimed the byte in the first place —
+  but a slider proves a value is reachable, not that a population
+  spread over it reads well together.
+
+The lab still exposes the slider, so the second option can be inspected
+before it is chosen rather than after.
 
 ## What this note is NOT
 
