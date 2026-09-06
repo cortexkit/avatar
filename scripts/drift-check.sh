@@ -109,6 +109,14 @@ PY
   fi
 done
 
+# The sampling-free half. The loop above compares rendered geometry for a
+# sample of seeds; this compares the tuning constants themselves, which a
+# sample cannot reach exhaustively. It exists because the geometry half
+# reported agreement while the lab drew every mouth 0.8r high.
+if ! python3 "$(dirname "$0")/const-drift.py"; then
+  fails=$((fails + 1))
+fi
+
 if [[ $fails -eq 0 ]]; then
   printf '\033[32m%d seeds: renderers agree\033[0m\n' "$COUNT"
   exit 0
