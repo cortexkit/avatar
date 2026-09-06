@@ -603,6 +603,13 @@ function bboxOf(outline) {
   for (const [x,y] of outline) { a=Math.min(a,x); b=Math.min(b,y); c=Math.max(c,x); d=Math.max(d,y); }
   return [a,b,c,d];
 }
+// Where the mouth is DRAWN, derived from the placement the search returned.
+// Mirrors Rust mouth_y_for. Shared by the renderer and the drift probe so
+// the probe cannot report a mouth the renderer does not draw: this file
+// carried its own literal (1.9) and drifted 0.8r below canonical's 2.706
+// while every placement field still agreed.
+function mouthYFor(eyeY, r) { return eyeY + (r / 0.085) * 0.23; }
+
 // SDF-verified placement (mirrors Rust place_face): both eye centers must
 // have interior depth for the disc plus 22% margin; search y-band x spacing.
 function placeFace(outline, mouthW = 1, mouthD = 1) {
@@ -854,6 +861,10 @@ function creatureSVG(k, moodName, size) {
           pts: outline.length, bbox: [minX, minY, maxX, maxY],
           fx: p.fx, eyeY: p.eyeY, ipd: p.ipd, r: p.r,
           mouthFits: p.mouthFits === false ? 0 : 1,
+          // Probed because it is DERIVED at draw time rather than produced
+          // by the search: every placement field agreed while this drew
+          // 0.8r high, because nothing compared this step's output.
+          mouthY: mouthYFor(p.eyeY, p.r),
           belly: 0, // filled in below, once the patch is built
         },
       };
@@ -931,7 +942,7 @@ function creatureSVG(k, moodName, size) {
       s += drawBrow(brows, x, f.y, f.r, side, colors.ink);
     }
     const mouthKind = spec.mouth === 0 ? k.mouth : spec.mouth === 1 ? 2 : spec.mouth === 2 ? 6 : spec.mouth === 3 ? 4 : 7;
-    const my = f.y + p.r*1.9;
+    const my = mouthYFor(f.y, p.r);
     let mouthSvg = p.mouthFits === false
       ? ""
       : drawMouth(mouthKind, p.fx, my, p.r, colors.outline, colors.ink);
@@ -1174,6 +1185,7 @@ if (params.has("probe")) {
       + ` vor=${q.vor} pts=${q.pts}`
       + ` bbox=${q.bbox.map(f1).join(",")}`
       + ` face=${f1(q.fx)},${f1(q.eyeY)},${f1(q.ipd)},${f1(q.r)},${q.mouthFits}`
+      + ` mouthy=${f1(q.mouthY)}`
       + ` belly=${q.belly}`;
   }
   document.body.innerHTML = `<pre id="probe">${line}</pre>`;

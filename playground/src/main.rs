@@ -228,6 +228,20 @@ struct FacePlacement {
 }
 
 /// Widest-band scan with eye-fit shrink (the EVM-free findRect).
+/// Where the mouth is DRAWN, derived from the placement the search
+/// returned. Shared by the renderer and the drift probe so the probe
+/// cannot report a mouth the renderer does not draw — the lab carried its
+/// own literal for this and drifted 0.8r without any placement field
+/// disagreeing.
+///
+/// The face box sits at eye_y + 0.08h and the mouth at +0.15h within it,
+/// where h is the shim height r/0.085. `place_face` tests fit at a
+/// slightly lower 2.71r on purpose: checking a hair below where the mouth
+/// lands is conservative, and tightening it would move placements.
+fn mouth_y_for(eye_y: f64, r: f64) -> f64 {
+    eye_y + (r / 0.085) * 0.23
+}
+
 /// SDF-verified face placement. The widest-scanline approach checked fit
 /// only HORIZONTALLY at one y — eye discs crossed the silhouette vertically
 /// on notched crowns and landed on thin masses (manta wings, Ufuk's grid-10
@@ -705,7 +719,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> Vec<Primitive> {
         // Per-creature mouth proportion. The placement search already tested
         // fit at exactly these factors, so a wide mouth was accounted for
         // when the face was positioned rather than overflowing afterwards.
-        let mouth_y = face_cy + shim.height * 0.15;
+        let mouth_y = mouth_y_for(p.eye_y, p.r);
         if (st.mouth_w - 1.0).abs() > 0.02 || (st.mouth_d - 1.0).abs() > 0.02 {
             render::prepend_transform(
                 &mut mouth,
@@ -1124,8 +1138,12 @@ fn main() {
         let belly = p
             .map(|pl| belly_patch(&outline, pl.eye_y + pl.r * 3.4, 0.72).len())
             .unwrap_or(0);
+        // Probed because it is DERIVED at draw time rather than produced by
+        // the search: the lab agreed on every placement field and still drew
+        // its mouths 0.8r high, because nothing compared this step's output.
+        let mouth_y = p.map(|pl| mouth_y_for(pl.eye_y, pl.r));
         println!(
-            "seed={seed} spokes={} exts={} topo={} vor={} pts={} bbox={:.1},{:.1},{:.1},{:.1} face={} belly={}",
+            "seed={seed} spokes={} exts={} topo={} vor={} pts={} bbox={:.1},{:.1},{:.1},{:.1} face={} mouthy={} belly={}",
             c.wb.spokes.len(),
             c.exts.len(),
             c.topology,
@@ -1137,6 +1155,10 @@ fn main() {
                     "{:.1},{:.1},{:.1},{:.1},{}",
                     pl.fx, pl.eye_y, pl.ipd, pl.r, u8::from(pl.mouth_fits)
                 ),
+                None => "none".to_owned(),
+            },
+            match mouth_y {
+                Some(v) => format!("{v:.1}"),
                 None => "none".to_owned(),
             },
             belly,
