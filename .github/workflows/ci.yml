@@ -125,6 +125,17 @@ jobs:
           cargo test --locked
           cargo run --locked -q --bin grid -- --check 300
 
+      # The renderers' tuning constants, compared as sets. This is the half
+      # of the drift check that needs no browser, and it was reachable only
+      # through the half that does — so the gate that catches a constant
+      # edited in one renderer and not the other ran on one machine and
+      # never on the runner. drift-check.sh itself stays local because it
+      # drives a headless browser; this does not, and had no reason to
+      # inherit that dependency.
+      - name: Renderer constants agree
+        if: ${{ !cancelled() }}
+        run: python3 scripts/const-drift.py
+
       # A generated file edited by hand is invisible to every test above.
       # Compares against the snapshot rather than requiring an empty tree,
       # so the delta is attributable to the build.

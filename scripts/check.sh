@@ -111,6 +111,23 @@ run "playground fmt"    bash -c 'cd playground && cargo fmt --all -- --check'
 run "playground clippy" bash -c 'cd playground && cargo clippy --all-targets --locked -- -D warnings'
 run "playground tests"  bash -c 'cd playground && cargo test --locked'
 run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin grid -- --check 300'
+# NOT gated here, deliberately, and the reason is worth more than the
+# step would be. `--bin grid -- --coverage` is a REPORT: it prints how
+# often each divergence-prone branch is reached and solves a minimal
+# covering set. It has no failure condition, so wiring it in would add
+# runtime and produce a green tick that means nothing.
+#
+# It cannot honestly become pass/fail either. It currently shows the
+# placement eyes-only fallback at 0 of 4000 seeds, and that branch SHOULD
+# be unreachable: it is the guarantee that a creature always has a face,
+# for bodies the population does not contain but the genome space allows.
+# A gate on "no unreached branches" would demand deleting a safety net or
+# faking its coverage. Run it by hand when choosing corpus vectors or
+# after changing the decoder.
+# Runs here as well as inside drift-check.sh: this half needs no browser,
+# and reaching it only through the half that does made it skippable on any
+# machine without one.
+run "renderer consts"   python3 scripts/const-drift.py
 
 # playground/web/index.html is a JavaScript twin of the Rust generator,
 # and it is what a human opens to review creature designs. If the two
