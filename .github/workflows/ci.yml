@@ -50,6 +50,12 @@ jobs:
         run: git status --porcelain | sort > "$RUNNER_TEMP/tree-before.txt"
         shell: bash
 
+      # First, because a broken precondition invalidates everything after
+      # it: a narrowed trigger means this run does not gate a train at all.
+      # Seconds, so it fails fast rather than after the suite.
+      - name: Train preconditions
+        run: ./scripts/check-train-preconditions.sh
+
       - name: Format check
         run: cargo fmt --all -- --check
 

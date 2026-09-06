@@ -128,6 +128,9 @@ run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin gr
 # and reaching it only through the half that does made it skippable on any
 # machine without one.
 run "renderer consts"   python3 scripts/const-drift.py
+# Facts about ci.yml that a train landing depends on, re-asserted rather
+# than trusted from the day they were verified.
+run "train precond"     ./scripts/check-train-preconditions.sh
 
 # playground/web/index.html is a JavaScript twin of the Rust generator,
 # and it is what a human opens to review creature designs. If the two
