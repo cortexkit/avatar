@@ -25,6 +25,11 @@ struct Creature {
     mouth: face::MouthKind,
     /// 0 = merged silhouette, 1 = layered tone fills, 2 = layered accent.
     topology: u8,
+    /// The wild↔tame axis. Pinned at 0.32 for every creature today; note
+    /// 009 records the open question of whether it should be decoded. It
+    /// lives here rather than as a literal in the renderer so the two
+    /// populations can be rendered side by side before the choice is made.
+    dom: f64,
     voronoi: bool,
     belly_variant: u8,
     /// Per-creature face variation. Measured against TOG, the vocabulary
@@ -95,6 +100,7 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
     let ext_fills: Vec<u8> = exts.iter().map(|_| b.byte() % 3).collect();
     // Topology: merged is a real character class, weighted 1/3.
     let topology = b.byte() % 3;
+    let dom = PINNED_DOM;
     // Voronoi mottle on ~40% of the population.
     let voronoi = b.byte() % 5 < 2;
     // Trailing read on purpose: appending keeps every earlier field's bytes
@@ -127,6 +133,7 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
         eyes,
         mouth,
         topology,
+        dom,
         voronoi,
         belly_variant,
         face_style,
@@ -238,6 +245,12 @@ struct FacePlacement {
 /// where h is the shim height r/0.085. `place_face` tests fit at a
 /// slightly lower 2.71r on purpose: checking a hair below where the mouth
 /// lands is conservative, and tightening it would move placements.
+/// The domestication every creature currently gets. Note 009 assigned a
+/// genome byte to this and the decoder never read it; whether it should
+/// vary per creature is an open question recorded there, and `--domspread`
+/// renders the alternative population so the answer can be seen.
+const PINNED_DOM: f64 = 0.32;
+
 fn mouth_y_for(eye_y: f64, r: f64) -> f64 {
     eye_y + (r / 0.085) * 0.23
 }
@@ -355,7 +368,7 @@ fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<Face
 
 fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> Vec<Primitive> {
     let colors = palette::resolve(c.recipe, c.hue);
-    let dom = 0.32;
+    let dom = c.dom;
     let spec = mood::spec(m);
 
     let raw = wild::build_raw(&c.wb, dom);
@@ -803,7 +816,7 @@ fn cell_bg(svg: &mut String, cx: f64, cy: f64, label: &str) {
 /// the eyes-inside checker. Kept beside draw_full in the same file so the
 /// two can never drift silently.
 fn outline_for(c: &Creature, cx: f64, cy: f64) -> Vec<(f64, f64)> {
-    let dom = 0.32;
+    let dom = c.dom;
     let raw = wild::build_raw(&c.wb, dom);
     let mean_r = c.wb.spokes.iter().map(|s| s.r).sum::<f64>() / c.wb.spokes.len() as f64;
     // Must match draw_full exactly — a checker that rebuilds the geometry
@@ -843,6 +856,65 @@ fn outline_for(c: &Creature, cx: f64, cy: f64) -> Vec<(f64, f64)> {
     } else {
         raw.pts.iter().map(|&p| t(p)).collect()
     }
+}
+
+/// Renders the pinned population above the decoded one, same seeds, so
+/// the open domestication question can be answered by looking.
+///
+/// The decoded value is read from the BODY byte note 009 assigned to it
+/// and the decoder discards — so this shows exactly the population that
+/// note described, not an invented one.
+fn write_domspread(start: u64, n: usize) {
+    let cell = 260.0_f64;
+    let pad = 8.0;
+    let label = 22.0;
+    let w = pad + n as f64 * (cell + pad);
+    let h = pad + 2.0 * (cell + pad + label);
+    let mut svg = format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='{w:.0}' height='{h:.0}' viewBox='0 0 {w:.0} {h:.0}'><rect width='100%' height='100%' fill='#141318'/>"
+    );
+    for (band, title) in [
+        (0usize, "pinned 0.32 (ships today)"),
+        (1, "decoded per creature"),
+    ] {
+        let y0 = pad + band as f64 * (cell + pad + label);
+        svg.push_str(&format!(
+            "<text x='{pad:.0}' y='{:.0}' font-family='monospace' font-size='13' fill='#8f8a96'>{title}</text>",
+            y0 + 14.0
+        ));
+        for k in 0..n {
+            let seed = start + k as u64;
+            let mut c = decode_full(seed);
+            if band == 1 {
+                // The byte note 009 named, read the way it specified.
+                let mut b = genome::Bits::new(seed);
+                let _spoke_count = b.byte();
+                c.dom = 0.12 + (b.byte() as f64 / 255.0) * 0.60;
+            }
+            let x0 = pad + k as f64 * (cell + pad);
+            let yc = y0 + label;
+            svg.push_str(&format!(
+                "<rect x='{x0:.1}' y='{yc:.1}' width='{cell}' height='{cell}' rx='12' fill='#efe9e4'/><text x='{:.1}' y='{:.1}' font-family='monospace' font-size='10' fill='#8f8a96'>#{seed} d={:.2}</text>",
+                x0 + 7.0,
+                yc + 14.0,
+                c.dom,
+            ));
+            // Same transform shape the review sheet uses, so the two are
+            // directly comparable rather than merely similar.
+            let s = cell / 240.0;
+            svg.push_str(&tree_fragment(
+                draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                &[
+                    render::translate(x0 + cell / 2.0 - 120.0 * s, yc + cell / 2.0 - 120.0 * s),
+                    render::scale(s, s),
+                ],
+            ));
+        }
+    }
+    svg.push_str("</svg>");
+    let path = "/tmp/ava-playground/domspread.svg";
+    std::fs::write(path, svg).expect("write domspread");
+    println!("domspread: {n} seeds, pinned vs decoded -> {path}");
 }
 
 /// Eyes-inside sweep: SDF-verifies both eye discs for a seed range. Run
@@ -1064,6 +1136,20 @@ fn main() {
     // snaggle bugs both survived several sheet reviews and were caught only
     // when someone looked at one creature big). Review resolution has to
     // match the defect scale.
+    // --domspread START N renders the SAME seeds twice: the shipped
+    // population, where every creature sits at PINNED_DOM, and the one
+    // note 009 assumed, where domestication is decoded per creature. The
+    // question the open decision turns on is not whether either end of
+    // the axis is legible — grid 7's slider settled that — but whether a
+    // population spread across it reads as one cast. That needs two
+    // populations side by side, which no artefact has ever shown.
+    if let Some(i) = args.iter().position(|a| a == "--domspread") {
+        let start: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
+        let n: usize = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(12);
+        write_domspread(start, n);
+        return;
+    }
+
     if let Some(i) = args.iter().position(|a| a == "--review") {
         let start: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
         let n: usize = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(40);
