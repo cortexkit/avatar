@@ -43,6 +43,33 @@ fn selectors(p: &Phenotype) -> Vec<(&'static str, i64)> {
         ),
         ("lashes.count", p.face.lashes.count as i64),
         ("lashes.removed", p.face.lashes.removed as i64),
+        // Added after the list was found to be an INVENTORY OF WHAT I
+        // REMEMBERED rather than of what steers a path. Every one below
+        // meets the criterion already stated here, and the gate reported
+        // full coverage without them: a hand-enumerated axis list makes a
+        // coverage claim about its own contents, not about the decoder.
+        ("eyes.position_mode", p.face.eyes.position_mode as i64),
+        ("eyes.height_bias_gate", p.face.eyes.height_bias_gate as i64),
+        (
+            "eyes.vertical_pull_gate",
+            p.face.eyes.vertical_pull_gate as i64,
+        ),
+        // NOT here, and the reason is the second half of the same lesson.
+        // lid_extension_gate, lid_extension_side, circler.point_reduce and
+        // voronoi.index look like selectors — they are small integers with
+        // names like "gate" and "index" — but they are RAW BYTES that the
+        // renderer maps into a discriminant: voronoi.index becomes
+        // index * (VORONOI_PATTERNS.len()-1) / 255, point_reduce becomes
+        // 8 * EASE_IN_QUINT[byte]. Listing the byte reports 256 values with
+        // ~21 covered, which is a true statement about a quantity nobody
+        // branches on, and it buries the real gaps under four walls of
+        // numbers.
+        //
+        // The right axis is the DERIVED discriminant, which this example
+        // must not recompute: a second copy of the mapping agrees with the
+        // renderer only until one of them is edited. It needs the renderer
+        // to expose what it resolved, which is a change to a shipped crate
+        // and belongs with the port rather than here.
         // Deliberately NOT here: lashes.direction, eye coefficients, and
         // every other continuous field. They are raw bytes normalized into
         // a curve, so an uncovered value means only "a different number" —
