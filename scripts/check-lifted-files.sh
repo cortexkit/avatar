@@ -27,6 +27,24 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# The sha these files were lifted from, and the reference the comparison
+# is made against.
+#
+# This originally diffed against the upstream WORKING TREE, which was the
+# same defect it exists to catch, one level up: it answered "does my copy
+# match that directory right now" while being read as "is my copy current
+# with upstream". Those coincide only by accident, and they did not. The
+# checkout was 16 commits ahead of origin/main, so both files carrying the
+# fixes I had just verified existed nowhere but one machine.
+#
+# Pinning the sha makes the reference explicit and the answer stable: the
+# comparison is against content, not against whatever a directory holds
+# this minute, and the check reports whether that sha has reached the
+# published branch yet. An unpushed pin is not an error — it is how a
+# fleet fix reaches seats before it is published — but it must be VISIBLE,
+# because the failure mode is a fix that lives on one machine and is
+# believed to be upstream.
+LIFT_SHA="${LIFT_SHA:-7e1679dbaac691df40c9c9fc3b825c67b501229c}"
 UPSTREAM="${LIFT_UPSTREAM:-../aft}"
 FILES=(
   scripts/train-push.sh
@@ -42,14 +60,20 @@ if [[ ! -d $UPSTREAM ]]; then
   exit 0
 fi
 
+if ! git -C "$UPSTREAM" cat-file -e "$LIFT_SHA^{commit}" 2>/dev/null; then
+  echo "lifted files: NOT VERIFIED - $UPSTREAM does not have $LIFT_SHA"
+  echo "  Fetch it, or re-lift and update LIFT_SHA. This is not a pass."
+  exit 0
+fi
+
 drift=0
 for file in "${FILES[@]}"; do
-  if [[ ! -f "$UPSTREAM/$file" ]]; then
-    echo "lifted files: $file is missing UPSTREAM - it may have been renamed or retired"
+  if ! git -C "$UPSTREAM" cat-file -e "$LIFT_SHA:$file" 2>/dev/null; then
+    echo "lifted files: $file does not exist at $LIFT_SHA - renamed or retired upstream"
     drift=1
-  elif ! diff -q "$UPSTREAM/$file" "$file" >/dev/null 2>&1; then
-    lines=$(diff "$UPSTREAM/$file" "$file" | grep -c '^[<>]')
-    echo "lifted files: $file differs from upstream ($lines lines)"
+  elif ! git -C "$UPSTREAM" show "$LIFT_SHA:$file" | diff -q - "$file" >/dev/null 2>&1; then
+    lines=$(git -C "$UPSTREAM" show "$LIFT_SHA:$file" | diff - "$file" | grep -c '^[<>]')
+    echo "lifted files: $file differs from the pinned lift ($lines lines)"
     drift=1
   fi
 done
@@ -60,4 +84,14 @@ if [[ $drift -ne 0 ]]; then
   exit 1
 fi
 
-echo "lifted files: ${#FILES[@]} verbatim against $UPSTREAM"
+# Say what the copy is verbatim AGAINST. "Verbatim" with no reference is
+# the claim that was false for an hour without anything noticing.
+short="${LIFT_SHA:0:9}"
+if git -C "$UPSTREAM" merge-base --is-ancestor "$LIFT_SHA" origin/main 2>/dev/null; then
+  echo "lifted files: ${#FILES[@]} verbatim at $short (published on origin/main)"
+else
+  ahead=$(git -C "$UPSTREAM" rev-list --count origin/main.."$LIFT_SHA" 2>/dev/null || echo '?')
+  echo "lifted files: ${#FILES[@]} verbatim at $short - NOT YET ON origin/main ($ahead commits ahead)"
+  echo "  Fine to run; the fixes are real and verified here. But a fresh clone of"
+  echo "  the upstream does not have them, so do not cite this as upstream state."
+fi
