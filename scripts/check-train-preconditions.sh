@@ -78,7 +78,19 @@ def walk(node, where):
             walk(value, f"{where}[{index}]")
 
 
-walk(doc.get("jobs", {}), "jobs")
+jobs = doc.get("jobs") or {}
+# The check inspects what it finds under `jobs`. If that key ever stops
+# resolving — renamed, restructured, parsed differently by a future PyYAML
+# — the walk finds nothing, reports no path-dependent conditions, and
+# passes while inspecting an empty dict. Assert it saw a workflow rather
+# than trusting that it did.
+if not isinstance(jobs, dict) or not jobs:
+    failures.append(
+        "no jobs found to inspect - the condition scan would pass "
+        "trivially, which is indistinguishable from passing honestly"
+    )
+
+walk(jobs, "jobs")
 for where, condition in conditions:
     if "github.ref" in condition or "github.event_name" in condition:
         failures.append(
