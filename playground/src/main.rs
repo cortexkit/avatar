@@ -242,6 +242,14 @@ fn mouth_y_for(eye_y: f64, r: f64) -> f64 {
     eye_y + (r / 0.085) * 0.23
 }
 
+/// Where the belly patch starts, derived from the placement. Shared for
+/// the same reason as `mouth_y_for`: the drift probe reported this by
+/// recomputing the expression rather than by asking the renderer, so the
+/// two agreed only for as long as nobody edited one of them.
+fn belly_top_for(eye_y: f64, r: f64) -> f64 {
+    eye_y + r * 3.4
+}
+
 /// SDF-verified face placement. The widest-scanline approach checked fit
 /// only HORIZONTALLY at one y — eye discs crossed the silhouette vertically
 /// on notched crowns and landed on thin masses (manta wings, Ufuk's grid-10
@@ -544,7 +552,7 @@ fn draw_full(c: &Creature, m: mood::Mood, cx: f64, cy: f64) -> Vec<Primitive> {
         // lumpy body (seed 5001) and as a smear across the gap between two
         // legs (seed 5022). Shrinking the silhouette itself cannot produce
         // either: the patch is always the creature's own shape.
-        let belly_top = p.eye_y + p.r * 3.4;
+        let belly_top = belly_top_for(p.eye_y, p.r);
         let belly = belly_patch(&outline, belly_top, 0.72);
         if belly.len() >= 3 {
             let mut primitive = render::filled(
@@ -1136,7 +1144,7 @@ fn main() {
         let (bx0, by0, bx1, by1) = wild::bbox(&outline);
         let p = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d);
         let belly = p
-            .map(|pl| belly_patch(&outline, pl.eye_y + pl.r * 3.4, 0.72).len())
+            .map(|pl| belly_patch(&outline, belly_top_for(pl.eye_y, pl.r), 0.72).len())
             .unwrap_or(0);
         // Probed because it is DERIVED at draw time rather than produced by
         // the search: the lab agreed on every placement field and still drew

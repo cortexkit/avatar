@@ -609,6 +609,9 @@ function bboxOf(outline) {
 // carried its own literal (1.9) and drifted 0.8r below canonical's 2.706
 // while every placement field still agreed.
 function mouthYFor(eyeY, r) { return eyeY + (r / 0.085) * 0.23; }
+// Belly patch start, shared for the same reason: a derivation duplicated
+// across renderers agrees only until someone edits one copy.
+function bellyTopFor(eyeY, r) { return eyeY + r * 3.4; }
 
 // SDF-verified placement (mirrors Rust place_face): both eye centers must
 // have interior depth for the disc plus 22% margin; search y-band x spacing.
@@ -906,7 +909,7 @@ function creatureSVG(k, moodName, size) {
     // one mass, with a sqrt ramp closing the crown to a point. Mirrors Rust
     // belly_patch — an ellipse read as a ball on lumpy bodies and a smear
     // across split legs.
-    const bellyPts = bellyPatch(outline, p.eyeY + p.r*3.4, 0.72);
+    const bellyPts = bellyPatch(outline, bellyTopFor(p.eyeY, p.r), 0.72);
     if (lastMetrics && lastMetrics.probe) lastMetrics.probe.belly = bellyPts.length;
     if (bellyPts.length >= 3) {
       s += `<path d='${bellyPts.map((q,i) => (i?'L':'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ')} Z' fill='${bellyFill(k.recipe, k.hue, k.bellyVariant ?? 0)}'/>`;
