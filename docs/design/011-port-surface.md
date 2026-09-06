@@ -429,16 +429,30 @@ mid-port. Answered here.
   consumer would not find it, and would pay 16,384 dot products per
   call if it did.
 
-  Wild's only need for it is the SVG-arc-to-cubic adapter in
-  `render.rs`, which computes a start angle and a sweep angle. That
-  adapter has exactly THREE call sites, all in `face.rs`, and it exists
-  only because those shapes were authored as SVG arc markup while the
-  tree is cubic-only. Circles and ellipses do not go through it — they
-  are native tree primitives.
+  CORRECTED after resolving the call graph rather than the call sites:
+  wild needs it NOWHERE. The SVG-arc-to-cubic adapter in `render.rs` is
+  the only caller of inverse trig, and its three call sites are all
+  inside `face::eyes` — a blob-era function the wild path never reaches,
+  since it draws through `face::eyes_inked` instead. So `arc_to` is
+  transitively dead here.
 
-  So the adapter should not be ported. Re-authoring three shapes as
-  direct cubics removes inverse trig from the wild path entirely,
-  rather than promoting a linear scan into a hot path to serve them.
+  The first pass counted call sites and stopped, which answers "how many
+  places would I have to change" rather than "is any of this reached".
+  Circles and ellipses never went through the adapter anyway — they are
+  native tree primitives.
+
+  Consequence for the port: THE WILD PATH NEEDS NO INVERSE TRIG AT ALL.
+  Nothing to re-author, nothing to promote out of `lashes.rs`, and one
+  fewer numeric primitive to pin. The adapter and its callers should be
+  deleted from the playground before the port reads it as a source.
+
+- **A caveat on this whole inventory.** It was assembled by searching
+  for calls, and the `atan2` entry above shows what that misses: a
+  symbol can be called from code that is itself unreachable. The
+  playground is structured as a lib, so `pub` suppresses dead-code
+  analysis entirely — `cargo clippy -D warnings` passes over an entire
+  retired generator. Anything ported out of here must be checked for
+  REACHABILITY from `decode_full`/`draw_full`, not merely for callers.
 
 - **Forward trig is already covered.** `wild.rs` uses cos/sin for spoke
   placement, extremity roots and spines, the half-plane fold test and

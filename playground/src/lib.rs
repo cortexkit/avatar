@@ -7,7 +7,6 @@ pub mod genome;
 pub mod merge;
 pub mod mood;
 pub mod palette;
-pub mod parts;
 pub mod render;
 pub mod surface;
 pub mod wild;
