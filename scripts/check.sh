@@ -131,6 +131,11 @@ run "renderer consts"   python3 scripts/const-drift.py
 # Facts about ci.yml that a train landing depends on, re-asserted rather
 # than trusted from the day they were verified.
 run "train precond"     ./scripts/check-train-preconditions.sh
+# The lifted fleet tooling against its upstream. A copy with no drift
+# check is a fork that has not noticed yet: upstream fixed a real defect
+# in watch-ci.sh within an hour of the lift and nothing here would have
+# said so.
+run "lifted files"      ./scripts/check-lifted-files.sh
 
 # playground/web/index.html is a JavaScript twin of the Rust generator,
 # and it is what a human opens to review creature designs. If the two
