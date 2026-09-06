@@ -185,6 +185,25 @@ fn manifest_ids(text: &str) -> Vec<String> {
     out
 }
 
+/// Pixel size for the raster, defaulting only when the flag is ABSENT.
+///
+/// This read `.parse().ok().unwrap_or(400)`, so `--size 51w` silently
+/// minted 400px images: a ceremony would produce a whole fleet at the
+/// wrong size with nothing reporting it. A default for a missing flag is
+/// a default; a default for an unreadable one is a swallowed error, and
+/// `--mood` on the next line had always failed closed.
+fn parse_size(raw: Option<&str>) -> Result<u32, String> {
+    const RANGE: std::ops::RangeInclusive<u32> = 16..=4096;
+    match raw {
+        None => Ok(400),
+        Some(text) => match text.parse::<u32>() {
+            Ok(v) if RANGE.contains(&v) => Ok(v),
+            Ok(v) => Err(format!("--size {v} is outside 16..=4096")),
+            Err(e) => Err(format!("--size {text}: {e}")),
+        },
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let get = |flag: &str| -> Option<String> {
@@ -193,7 +212,13 @@ fn main() {
             .and_then(|i| args.get(i + 1).cloned())
     };
 
-    let size: u32 = get("--size").and_then(|v| v.parse().ok()).unwrap_or(400);
+    let size = match parse_size(get("--size").as_deref()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
     let mood = match mood_from(&get("--mood").unwrap_or_else(|| "neutral".into())) {
         Ok(m) => m,
         Err(e) => {
@@ -296,6 +321,25 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn size_defaults_only_when_the_flag_is_absent() {
+        use super::parse_size;
+        // Absent is the only case that may default.
+        assert_eq!(parse_size(None), Ok(400));
+        assert_eq!(parse_size(Some("512")), Ok(512));
+        // Present-but-unreadable must NOT become the default. Before this
+        // was a Result, `--size 51w` rendered at 400 and said nothing.
+        assert!(parse_size(Some("51w")).is_err());
+        assert!(parse_size(Some("")).is_err());
+        assert!(parse_size(Some("-1")).is_err());
+        assert!(parse_size(Some("400px")).is_err());
+        // Parseable but unrenderable is refused too, for the same reason:
+        // a 0px PNG is a broken asset produced without complaint.
+        assert!(parse_size(Some("0")).is_err());
+        assert!(parse_size(Some("8")).is_err());
+        assert!(parse_size(Some("999999")).is_err());
+    }
+
     use super::*;
 
     #[test]
