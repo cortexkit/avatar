@@ -118,6 +118,21 @@ def main():
         if int_lab:
             print(f"    lab:       {show(int_lab)}")
 
+    # A baseline entry that no longer occurs excuses nothing, and it widens
+    # the exemption set for a value that is not there. Two of these are dead
+    # blob-era code queued for deletion, so the day that lands the baseline
+    # must shrink with it — and the script's own instruction is to shrink it
+    # and never grow it, which needs something that notices.
+    stale_rust = sorted(BASELINE_RUST - set(rust_only))
+    stale_lab = sorted(BASELINE_JS - set(lab_only))
+    if stale_rust or stale_lab:
+        print("BASELINE STALE: entries that no longer occur, delete them")
+        if stale_rust:
+            print("  canonical: " + " ".join(str(v) for v in stale_rust))
+        if stale_lab:
+            print("  lab:       " + " ".join(str(v) for v in stale_lab))
+        return 1
+
     if not new_rust and not new_lab:
         print(f"constants: {len(rust & lab)} shared, baseline unchanged")
         return 0
