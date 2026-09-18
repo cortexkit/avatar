@@ -68,7 +68,22 @@ run() {
 # This is a hard gate rather than a warning: if stable has moved, CI is
 # already running rules this machine cannot see, so "green" here would be
 # a measurement of the wrong thing.
-if rustup check 2>/dev/null | grep -q '^stable-.*Update available'; then
+#
+# `grep -c` rather than `grep -q`, and the difference is not style. Under
+# `set -o pipefail`, `grep -q` exits at the FIRST MATCH and closes the
+# pipe; a producer still writing takes SIGPIPE and dies 141, which
+# pipefail propagates, so the `if` is FALSE. Measured here:
+#
+#     needle absent                     exit 1    guard silent (correct)
+#     needle present, 300-byte output   exit 0    guard fires  (correct today)
+#     needle present, large output      exit 141  GUARD SILENT
+#
+# `rustup check` emits ~300 bytes, so today's answer is right by size
+# rather than by construction — and the inverted case is the one where
+# stable HAS moved, which is precisely the condition this gate exists to
+# catch. `grep -c` reads to EOF and cannot early-close. (SUBC's finding,
+# 2026-09-18; the same shape inverted a live signing alarm on their host.)
+if [ "$(rustup check 2>/dev/null | grep -c '^stable-.*Update available')" -gt 0 ]; then
   printf '\033[31m▸ toolchain drift\033[0m: CI uses floating @stable and yours is behind.\n'
   rustup check | grep '^stable-'
   printf '  run: rustup update stable\n'
