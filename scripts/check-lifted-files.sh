@@ -44,7 +44,21 @@ cd "$(dirname "$0")/.."
 # fleet fix reaches seats before it is published — but it must be VISIBLE,
 # because the failure mode is a fix that lives on one machine and is
 # believed to be upstream.
-LIFT_SHA="${LIFT_SHA:-7e1679dbaac691df40c9c9fc3b825c67b501229c}"
+#
+# AND THEN THE PIN ITSELF WENT STALE, which is the same defect a third
+# time. Pinning fixed "what am I comparing against" and introduced "the
+# comparison never moves": the check reported 4 files verbatim, green,
+# every run for twelve days while upstream landed EIGHT fixes to these
+# files — among them a watch-ci correction for resolving a sha to its push
+# run rather than whichever trigger fired last, which matters here because
+# this repo's workflow fires on both master and train/**.
+#
+# So upstream moving past the pin FAILS rather than warning. A warning is
+# what the previous two versions effectively were, and twelve days is the
+# measurement of what a warning is worth. The remedy is two commands and
+# bumping the pin is an explicit, diff-visible act — which is the point:
+# staleness becomes a decision rather than a default.
+LIFT_SHA="${LIFT_SHA:-6aef824ef1bce91ffabff097273b54b564df2305}"
 UPSTREAM="${LIFT_UPSTREAM:-../aft}"
 FILES=(
   scripts/train-push.sh
@@ -81,6 +95,26 @@ done
 if [[ $drift -ne 0 ]]; then
   echo "  Re-copy from $UPSTREAM rather than patching here; read the diff first,"
   echo "  since upstream changes have twice been defect fixes worth knowing about."
+  exit 1
+fi
+
+# The copy matches the pin. Now ask whether the PIN is still current,
+# which is the question the previous version could not ask at all.
+ahead_files=()
+for file in "${FILES[@]}"; do
+  if ! git -C "$UPSTREAM" diff --quiet "$LIFT_SHA" HEAD -- "$file" 2>/dev/null; then
+    ahead_files+=("$file")
+  fi
+done
+
+if [[ ${#ahead_files[@]} -gt 0 ]]; then
+  commits=$(git -C "$UPSTREAM" rev-list --count "$LIFT_SHA"..HEAD -- "${FILES[@]}" 2>/dev/null || echo '?')
+  echo "lifted files: PIN IS STALE - upstream has $commits commit(s) touching these files since ${LIFT_SHA:0:9}"
+  for file in "${ahead_files[@]}"; do
+    echo "    moved: $file"
+  done
+  echo "  Read them, then re-copy and bump LIFT_SHA:"
+  echo "    git -C $UPSTREAM log ${LIFT_SHA:0:9}..HEAD -- ${FILES[*]}"
   exit 1
 fi
 

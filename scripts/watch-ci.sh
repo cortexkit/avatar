@@ -44,6 +44,13 @@ fi
 # (cost-gate, testbox), so resolving a run BY SHA has to name the gating one or
 # it can latch a run that says nothing about the tests.
 WORKFLOW="${WATCH_CI_WORKFLOW:-tests.yml}"
+# Which trigger produced the run. A sha is not unique across triggers either: a
+# commit that a schedule (or workflow_dispatch) later re-ran carries several
+# runs of the same workflow with possibly different conclusions, and the
+# newest-first list then answers for whichever fired last. A landing asks
+# whether THIS PUSH is green, so the default is the push run; set the event to
+# watch a different trigger's run for the same sha.
+EVENT="${WATCH_CI_EVENT:-push}"
 # How long to wait for a run to appear for a sha: 40 tries, 15s apart, is ten
 # minutes of patience for a queue that normally produces a run in seconds. Both
 # knobs exist so tests can drive the resolver without waiting out that budget.
@@ -92,14 +99,14 @@ if [ -z "$RID" ]; then
     WATCH_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
   fi
   for _ in $(seq 1 "$RESOLVE_ATTEMPTS"); do
-    RID=$("$OPERATOR_GH" run list --repo "$REPO" --workflow "$WORKFLOW" --limit 40 \
+    RID=$("$OPERATOR_GH" run list --repo "$REPO" --workflow "$WORKFLOW" --event "$EVENT" --limit 40 \
       --json databaseId,headSha \
       --jq ".[] | select(.headSha==\"$WATCH_SHA\") | .databaseId" | head -1)
     [ -n "$RID" ] && break
     sleep "$RESOLVE_SLEEP"
   done
   if [ -z "$RID" ]; then
-    echo "no $WORKFLOW run appeared for $WATCH_SHA" >&2
+    echo "no $WORKFLOW run (event=$EVENT) appeared for $WATCH_SHA" >&2
     exit 2
   fi
 fi
@@ -114,12 +121,13 @@ fi
 
 while true; do
   STATUS=$("$OPERATOR_GH" run view "$RID" --repo "$REPO" --json status --jq '.status' 2>/dev/null || echo poll-error)
-  # 'Bash permission e2e (Windows)' is continue-on-error in PR mode
-  # (_unit-suite.yml strict=false): its job-level conclusion still reads
-  # 'failure' in the API, but it does not gate the run. Fail-fast must not
-  # fire on it; the run-level conclusion check below remains authoritative.
+  # Advisory (continue-on-error) jobs read 'failure' at the job level but do
+  # not gate the run: 'Bash permission e2e (Windows)' in PR mode
+  # (_unit-suite.yml strict=false) and 'OpenCode 2 (Linux Docker)' until its
+  # matrix is green and the check is required. Fail-fast must not fire on
+  # them; the run-level conclusion check below remains authoritative.
   FAILED_JOB=$("$OPERATOR_GH" run view "$RID" --repo "$REPO" --json jobs \
-    --jq '[.jobs[] | select(.conclusion=="failure") | select(.name | contains("Bash permission") | not)][0] | if . == null then "" else .name + "|" + (.databaseId|tostring) end' 2>/dev/null || echo "")
+    --jq '[.jobs[] | select(.conclusion=="failure") | select(.name | test("Bash permission|OpenCode 2 \\(Linux Docker\\)") | not)][0] | if . == null then "" else .name + "|" + (.databaseId|tostring) end' 2>/dev/null || echo "")
 
   if [ -n "$FAILED_JOB" ] && [ "$FAILED_JOB" != "null" ]; then
     NAME="${FAILED_JOB%%|*}"; JID="${FAILED_JOB##*|}"
@@ -137,8 +145,23 @@ while true; do
 
   if [ "$STATUS" = "completed" ]; then
     CONC=$("$OPERATOR_GH" run view "$RID" --repo "$REPO" --json conclusion --jq '.conclusion')
-    echo "CI_DONE run=$RID conclusion=$CONC"
-    [ "$CONC" = "success" ] && exit 0 || exit 1
+    if [ "$CONC" = "success" ]; then
+      echo "CI_DONE run=$RID conclusion=$CONC"
+      exit 0
+    fi
+    # An advisory job cancelled at its own time cap makes the RUN read
+    # 'cancelled' while every gating job passed (train 114 round 2: only
+    # 'OpenCode 2 (Linux Docker)' was cancelled and main's 25 required checks
+    # were all green). The sha is landable then, so the verdict is the set of
+    # non-advisory jobs, not the run's summary conclusion.
+    GATING_BAD=$("$OPERATOR_GH" run view "$RID" --repo "$REPO" --json jobs \
+      --jq '[.jobs[] | select(.conclusion!="success" and .conclusion!="skipped") | select(.name | test("Bash permission|OpenCode 2 \\(Linux Docker\\)") | not) | .name] | join("; ")')
+    if [ -z "$GATING_BAD" ]; then
+      echo "CI_DONE run=$RID conclusion=$CONC advisory_only=1"
+      exit 0
+    fi
+    echo "CI_DONE run=$RID conclusion=$CONC gating_failed='$GATING_BAD'"
+    exit 1
   fi
 
   sleep 45
