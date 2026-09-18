@@ -96,6 +96,24 @@ required behaviour.
 - `docs/design/012` — how a face is allowed to change: type vs version, and
   the procedure for each
 
+## Contributing
+
+**Open an issue before writing code, and wait for an explicit go.** Tag it
+`design discussion` or `bug`. A pull request that arrives without one gets
+asked for the issue rather than reviewed — not as a formality, but because
+the conversation that belongs in ten lines of an issue costs hundreds of
+lines and several review rounds once an implementation exists, and a
+reviewer looking at working code is under quiet pressure to find a way to
+take it.
+
+Bug fixes with an obvious shape move fast: issue, reproduction, fix. The
+gate is cheap because most issues get a go quickly.
+
+This repo has a specific reason to hold the line. Every visual change is
+somebody's agent's face, and faces do not change because we shipped — see
+`docs/design/012` for which changes are a version bump, which are a new
+type, and why a rendering path is added to rather than edited.
+
 ## Determinism rules (the short version)
 
 Integer/fixed-point math only, one pinned rounding rule, trig and easing
