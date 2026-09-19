@@ -189,6 +189,10 @@ if [[ "$(git status --porcelain | sort)" != "$tree_before" ]]; then
   FAILED+=("tracked-file guard")
 fi
 
+# Not a gate: a notice, exit 0 always. The scheduled run's result arrives
+# when nobody is looking, so the gate that IS read carries it.
+./scripts/check-scheduled-run.sh || true
+
 printf '\n'
 if [[ ${#FAILED[@]} -eq 0 ]]; then
   printf '\033[32mall gates green\033[0m\n'

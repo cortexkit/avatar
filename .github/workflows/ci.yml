@@ -8,6 +8,19 @@ on:
     # and required status checks would make main unpushable.
     branches: [master, 'train/**']
   pull_request:
+  # Daily, because this repo CAN go red with no commit of mine and I said
+  # in the fleet channel that it could not. Every cargo dependency is a
+  # pinned crates.io version with no git or path edges, which is what I
+  # was thinking of — but the TOOLCHAIN floats: `dtolnay/rust-toolchain@stable`
+  # installs whatever stable is that morning, and this repo already ran red
+  # for seven consecutive commits when stable gained clippy's chunks_exact
+  # lint. A push gate asks "is this change good"; this asks "is what already
+  # landed still good against a toolchain that moved overnight".
+  #
+  # 11:00Z deliberately: the fleet's crons bunch in the early morning and
+  # land four to five hours late on a shared queue.
+  schedule:
+    - cron: '0 11 * * *'
   # Reusable so a future release workflow gates on the exact same matrix.
   workflow_call:
 
