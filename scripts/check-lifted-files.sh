@@ -58,7 +58,7 @@ cd "$(dirname "$0")/.."
 # measurement of what a warning is worth. The remedy is two commands and
 # bumping the pin is an explicit, diff-visible act — which is the point:
 # staleness becomes a decision rather than a default.
-LIFT_SHA="${LIFT_SHA:-6aef824ef1bce91ffabff097273b54b564df2305}"
+LIFT_SHA="${LIFT_SHA:-18ff45eb0f8fafc28cc16f9811899b3ea3ab8d0c}"
 UPSTREAM="${LIFT_UPSTREAM:-../aft}"
 FILES=(
   scripts/train-push.sh
@@ -98,31 +98,49 @@ if [[ $drift -ne 0 ]]; then
   exit 1
 fi
 
-# The copy matches the pin. Now ask whether the PIN is still current,
-# which is the question the previous version could not ask at all.
+# The copy matches the pin. Now ask whether the PIN is still current —
+# against origin/main, NOT against the upstream checkout's HEAD.
+#
+# Comparing to HEAD was wrong in both directions and I hit both within an
+# hour. Lifting FROM HEAD took files that existed on one machine (the
+# checkout was 16 commits ahead, so two files I had just "verified" were
+# unpublished). Then pinning a PUBLISHED sha and comparing to HEAD
+# reported permanent staleness, because the upstream had an unpushed
+# commit touching train-push.sh — a fix I must not take, since no other
+# seat can fetch it and the fleet's blob census would not match mine.
+#
+# Published is the only reference that means the same thing on every
+# machine. A lift from anything else is a copy of someone's desk.
+UPSTREAM_REF="${LIFT_UPSTREAM_REF:-origin/main}"
+if ! git -C "$UPSTREAM" rev-parse --verify -q "$UPSTREAM_REF" >/dev/null; then
+  echo "lifted files: NOT VERIFIED - $UPSTREAM has no $UPSTREAM_REF to compare against"
+  echo "  Fetch it. This is not a pass."
+  exit 0
+fi
+
 ahead_files=()
 for file in "${FILES[@]}"; do
-  if ! git -C "$UPSTREAM" diff --quiet "$LIFT_SHA" HEAD -- "$file" 2>/dev/null; then
+  if ! git -C "$UPSTREAM" diff --quiet "$LIFT_SHA" "$UPSTREAM_REF" -- "$file" 2>/dev/null; then
     ahead_files+=("$file")
   fi
 done
 
 if [[ ${#ahead_files[@]} -gt 0 ]]; then
-  commits=$(git -C "$UPSTREAM" rev-list --count "$LIFT_SHA"..HEAD -- "${FILES[@]}" 2>/dev/null || echo '?')
-  echo "lifted files: PIN IS STALE - upstream has $commits commit(s) touching these files since ${LIFT_SHA:0:9}"
+  commits=$(git -C "$UPSTREAM" rev-list --count "$LIFT_SHA".."$UPSTREAM_REF" -- "${FILES[@]}" 2>/dev/null || echo '?')
+  echo "lifted files: PIN IS STALE - $UPSTREAM_REF has $commits commit(s) touching these files since ${LIFT_SHA:0:9}"
   for file in "${ahead_files[@]}"; do
     echo "    moved: $file"
   done
-  echo "  Read them, then re-copy and bump LIFT_SHA:"
-  echo "    git -C $UPSTREAM log ${LIFT_SHA:0:9}..HEAD -- ${FILES[*]}"
+  echo "  Read them, then re-copy from $UPSTREAM_REF and bump LIFT_SHA:"
+  echo "    git -C $UPSTREAM log ${LIFT_SHA:0:9}..$UPSTREAM_REF -- ${FILES[*]}"
   exit 1
 fi
 
 # Say what the copy is verbatim AGAINST. "Verbatim" with no reference is
 # the claim that was false for an hour without anything noticing.
 short="${LIFT_SHA:0:9}"
-if git -C "$UPSTREAM" merge-base --is-ancestor "$LIFT_SHA" origin/main 2>/dev/null; then
-  echo "lifted files: ${#FILES[@]} verbatim at $short (published on origin/main)"
+if git -C "$UPSTREAM" merge-base --is-ancestor "$LIFT_SHA" "$UPSTREAM_REF" 2>/dev/null; then
+  echo "lifted files: ${#FILES[@]} verbatim at $short (published on '"$UPSTREAM_REF"')"
 else
   ahead=$(git -C "$UPSTREAM" rev-list --count origin/main.."$LIFT_SHA" 2>/dev/null || echo '?')
   echo "lifted files: ${#FILES[@]} verbatim at $short - NOT YET ON origin/main ($ahead commits ahead)"
