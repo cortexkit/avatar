@@ -58,7 +58,7 @@ cd "$(dirname "$0")/.."
 # measurement of what a warning is worth. The remedy is two commands and
 # bumping the pin is an explicit, diff-visible act — which is the point:
 # staleness becomes a decision rather than a default.
-LIFT_SHA="${LIFT_SHA:-18ff45eb0f8fafc28cc16f9811899b3ea3ab8d0c}"
+LIFT_SHA="${LIFT_SHA:-4c13f9d4cfbf8478c568f760529d1586d94203f4}"
 UPSTREAM="${LIFT_UPSTREAM:-../aft}"
 FILES=(
   scripts/train-push.sh
