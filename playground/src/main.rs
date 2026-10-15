@@ -986,6 +986,49 @@ fn run_checker(n: u64) {
     }
 }
 
+/// Per-tree build cost: genome bytes in, RenderTree out, which is exactly
+/// what an embedded generator would do on a phone. Holds every tree the
+/// way a dock holds its row, so peak RSS measured around this run is the
+/// scenario cost rather than one tree's transient.
+///
+/// Measures the f64 playground pipeline. The shipped port is fixed-point
+/// integer maths over the same algorithms, which is a DIFFERENT program:
+/// take this as the order of magnitude, not the shipping number.
+fn run_bench(start_seed: u64, count: usize) {
+    let mut timings = Vec::with_capacity(count);
+    let mut trees = Vec::with_capacity(count);
+    let mut primitives_total = 0usize;
+    for offset in 0..count {
+        let seed = start_seed + offset as u64;
+        let start = std::time::Instant::now();
+        let creature = decode_full(seed);
+        let tree = RenderTree {
+            canvas: 240,
+            background: None,
+            primitives: draw_full(&creature, mood::Mood::Neutral, 120.0, 120.0),
+        };
+        timings.push(start.elapsed().as_secs_f64() * 1000.0);
+        primitives_total += tree.primitives.len();
+        trees.push(tree);
+    }
+    timings.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let total: f64 = timings.iter().sum();
+    println!(
+        "built {count} trees in {total:.1} ms  ({} primitives held)",
+        primitives_total
+    );
+    println!(
+        "  per tree: min {:.2} ms  median {:.2} ms  max {:.2} ms  mean {:.2} ms",
+        timings[0],
+        timings[count / 2],
+        timings[count - 1],
+        total / count as f64,
+    );
+    // Touch the held trees so the optimiser cannot discard the Vec and
+    // report a cost for work it never did.
+    println!("  held {} trees", trees.len());
+}
+
 fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
     std::fs::create_dir_all(out_dir)
         .unwrap_or_else(|error| panic!("create fixture directory {}: {error}", out_dir.display()));
@@ -1223,6 +1266,13 @@ fn main() {
     // what Ufuk reviews; if it drifts from canonical, the review is of the
     // wrong thing — the same family as every other instrument that was true
     // about something else.
+    if let Some(i) = args.iter().position(|a| a == "--bench") {
+        let seed = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(5000);
+        let count = args.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(30);
+        run_bench(seed, count);
+        return;
+    }
+
     if let Some(i) = args.iter().position(|a| a == "--probe") {
         let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
         let c = decode_full(seed);
