@@ -27,6 +27,18 @@ public func renderTreeViaCore(
         genomeBytes: genome.bytes, type: type, version: version, moodName: mood.rawValue)
 }
 
+/// Renders type-specific genome bytes without imposing the classic Genome size.
+/// The bundled Rust core validates the type, version, and required byte count.
+public func renderTreeViaCore(
+    genomeBytes: [UInt8],
+    type: String,
+    version: UInt32,
+    mood: Mood
+) throws -> RenderTree {
+    try renderTreeViaCoreBytes(
+        genomeBytes: genomeBytes, type: type, version: version, moodName: mood.rawValue)
+}
+
 func checkCoreStatus(_ status: Int32) throws {
     switch status {
     case Int32(AVATAR_STATUS_OK): return
