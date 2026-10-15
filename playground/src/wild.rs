@@ -12,7 +12,7 @@
 //! domestication 0.0 = raw TOG chaos; 1.0 = near-blob. The dial is itself a
 //! candidate genome axis: the fleet should SPAN scrappy-weird to soft-round.
 
-use crate::genome::Bits;
+use crate::genome::lin;
 
 /// One radial spoke of a wild body.
 #[derive(Clone, Copy, Debug)]
@@ -36,30 +36,29 @@ pub struct WildBody {
     pub mirrored: bool,
 }
 
-/// Decode a wild body from the bit source. Spoke count reaches 13 (26 ring
-/// points after mirroring) — more point information than TOG's 1024-bit
-/// region, per the redesign direction.
-pub fn decode(b: &mut Bits) -> WildBody {
+/// Decode the BODY region. Byte 1 (the former mirror flag) and inactive
+/// spoke slots are ignored because bodies always use mirrored geometry.
+pub fn decode(bytes: &[u8]) -> WildBody {
     // 5..=16 half-side spokes (10..=32 ring points). Widened from 5..=13
     // with budget recovered from the surface region: silhouette is the
     // channel humans discriminate first, so it should be the best-funded
     // one — the inverse of TOG/v1, which spent its bits on face micro-detail
     // that avatar sizes cannot resolve.
-    let spoke_count = 5 + (b.byte() % 12) as usize;
-    let _legacy = b.byte(); // was the mirror flag; kept so seeds stay stable
+    let spoke_count = 5 + (bytes[0] % 12) as usize;
     let mut spokes = Vec::with_capacity(spoke_count);
     let n = spoke_count as f64;
     for i in 0..spoke_count {
+        let slot = 2 + 3 * i;
         let base = (i as f64 / n) * std::f64::consts::TAU;
-        let jitter = (b.lin(-0.45, 0.45)) * std::f64::consts::TAU / n;
+        let jitter = lin(bytes[slot], -0.45, 0.45) * std::f64::consts::TAU / n;
         // Radius range is DEEP on purpose: near-center spokes carve real
         // concavities. Tension reaches TOG-overshoot territory (>2 loops the
         // spline past its control point — the abstract-art accidents that
         // made TOGs unique; fill-rule turns self-crossings into cutouts).
         spokes.push(Spoke {
             theta: base + jitter,
-            r: b.lin(0.12, 1.35),
-            tension: b.lin(0.4, 2.6),
+            r: lin(bytes[slot + 1], 0.12, 1.35),
+            tension: lin(bytes[slot + 2], 0.4, 2.6),
         });
     }
     WildBody {
@@ -87,22 +86,28 @@ pub struct Extremity {
     pub taper: f64,
 }
 
-/// Decode 0..=3 extremity PAIRS (mirrored with the body).
-pub fn decode_extremities(b: &mut Bits) -> Vec<Extremity> {
+/// Each active ten-byte EXTREMITIES slot describes one limb pair. The
+/// renderer mirrors its geometry across the body's vertical axis.
+pub fn decode_extremities(bytes: &[u8]) -> Vec<Extremity> {
     // 0..=4 pairs (was 0..=3): limbs proved the strongest species-level
     // lever in grid 8, so recovered budget buys one more pair.
-    let count = (b.byte() % 5) as usize;
+    let count = (bytes[0] % 5) as usize;
     let mut out = Vec::with_capacity(count);
-    for _ in 0..count {
+    for i in 0..count {
+        let slot = 4 + 10 * i;
         // Anchor in the upper-and-side band (SVG y-down: PI..TAU is the
         // upper half); feet territory stays clear so ground-sit survives.
-        let theta = b.lin(std::f64::consts::PI * 0.95, std::f64::consts::TAU * 1.02);
+        let theta = lin(
+            bytes[slot],
+            std::f64::consts::PI * 0.95,
+            std::f64::consts::TAU * 1.02,
+        );
         out.push(Extremity {
             theta,
-            len: b.lin(0.35, 1.15),
-            width: b.lin(0.10, 0.30),
-            curl: b.lin(-1.3, 1.3),
-            taper: b.lin(0.15, 0.85),
+            len: lin(bytes[slot + 1], 0.35, 1.15),
+            width: lin(bytes[slot + 2], 0.10, 0.30),
+            curl: lin(bytes[slot + 3], -1.3, 1.3),
+            taper: lin(bytes[slot + 4], 0.15, 0.85),
         });
     }
     out

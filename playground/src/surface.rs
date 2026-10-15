@@ -22,7 +22,7 @@ pub struct Site {
 /// Sites are decoded on the RIGHT half and mirrored, so the pattern shares
 /// the body's symmetry axis (grid-8 review: an asymmetric mottle on a
 /// symmetric body reads as a symmetry BUG, not as texture).
-pub fn decode_sites(b: &mut Bits) -> Vec<Site> {
+pub fn decode_sites(bytes: &[u8]) -> Vec<Site> {
     // 8..=13 pairs -> 16..=26 cells. The earlier 6..=12 cells were so large
     // that every edge was a long straight chord — zoomed review read them as
     // crumpled-paper facets, not mottle. Smaller cells + sparser shading
@@ -36,8 +36,8 @@ pub fn decode_sites(b: &mut Bits) -> Vec<Site> {
     // spokes and limb pairs. Lloyd relaxation evens the sites afterwards
     // anyway, which is exactly why their exact stored positions were never
     // worth their cost.
-    let pairs = 8 + (b.byte() % 6) as usize;
-    let seed = ((b.byte() as u64) << 8) | b.byte() as u64;
+    let pairs = 8 + (bytes[1] % 6) as usize;
+    let seed = ((bytes[2] as u64) << 8) | bytes[3] as u64;
     let mut r = Bits::new(seed ^ 0x5175_7266_6163_6501);
     let mut sites = Vec::with_capacity(pairs * 2);
     for _ in 0..pairs {

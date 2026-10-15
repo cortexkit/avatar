@@ -10,10 +10,14 @@ use ava_playground::{
 };
 use avatar_svg::{Effect, GradientStop, Paint, Primitive, RenderTree, StrokeCap, StrokeJoin, Q32};
 
+mod baseline;
+#[cfg(test)]
+mod decoder_tests;
+
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
 
-/// Everything one seed decodes to on the full pipeline.
+/// Everything one genome decodes to on the full pipeline.
 struct Creature {
     wb: wild::WildBody,
     exts: Vec<wild::Extremity>,
@@ -25,10 +29,9 @@ struct Creature {
     mouth: face::MouthKind,
     /// 0 = merged silhouette, 1 = layered tone fills, 2 = layered accent.
     topology: u8,
-    /// The wild↔tame axis. Pinned at 0.32 for every creature today; note
-    /// 009 records the open question of whether it should be decoded. It
-    /// lives here rather than as a literal in the renderer so the two
-    /// populations can be rendered side by side before the choice is made.
+    /// The wild↔tame axis is pinned at 0.32, not decoded. Keeping it on the
+    /// creature lets the diagnostic domestication sheet compare populations
+    /// without changing the renderer's geometry formulas.
     dom: f64,
     voronoi: bool,
     belly_variant: u8,
@@ -67,29 +70,33 @@ fn decode_full(seed: u64) -> Creature {
     decode_full_counted(seed).0
 }
 
-/// Decode plus the bytes it actually consumed. One decode path, so a DNA
-/// measurement can never drift from the decoder it claims to measure.
+/// Report active genome bytes, excluding generated site randomness and padding.
 fn decode_full_counted(seed: u64) -> (Creature, usize) {
-    let mut b = genome::Bits::new(seed);
-    let wb = wild::decode(&mut b);
-    let exts = wild::decode_extremities(&mut b);
-    let sites = surface::decode_sites(&mut b);
-    let rsel = b.byte() % 8;
+    let creature = decode_genome(&genome::probe_genome(seed));
+    let consumed = 1 + 3 * creature.wb.spokes.len() + 2 + 6 * creature.exts.len() + 4 + 7 + 4;
+    (creature, consumed)
+}
+
+fn decode_genome(bytes: &[u8; genome::GENOME_LEN]) -> Creature {
+    let wb = wild::decode(&bytes[..64]);
+    let exts = wild::decode_extremities(&bytes[64..160]);
+    let sites = surface::decode_sites(&bytes[240..304]);
+    let rsel = bytes[160] % 8;
     let recipe = match rsel {
         0..=2 => 0,
         3..=4 => 2,
         5..=6 => 4,
         _ => 3,
     };
-    let hue = (b.byte() as f64 / 255.0 + b.byte() as f64 / 65535.0) * 360.0;
-    let eyes = match b.byte() % 5 {
+    let hue = (bytes[161] as f64 / 255.0 + bytes[162] as f64 / 65535.0) * 360.0;
+    let eyes = match bytes[176] % 5 {
         0 => face::EyeKind::DotShine,
         1 => face::EyeKind::Lidded,
         2 => face::EyeKind::HappyArc,
         3 => face::EyeKind::Uneven,
         _ => face::EyeKind::HalfLid,
     };
-    let mouth = match b.byte() % 6 {
+    let mouth = match bytes[179] % 6 {
         0 => face::MouthKind::Arc,
         1 => face::MouthKind::CatW,
         2 => face::MouthKind::OpenHappy,
@@ -97,33 +104,32 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
         4 => face::MouthKind::Flat,
         _ => face::MouthKind::Fangs,
     };
-    let ext_fills: Vec<u8> = exts.iter().map(|_| b.byte() % 3).collect();
+    let ext_fills: Vec<u8> = (0..exts.len())
+        .map(|i| bytes[64 + 4 + 10 * i + 5] % 3)
+        .collect();
     // Topology: merged is a real character class, weighted 1/3.
-    let topology = b.byte() % 3;
+    let topology = bytes[65] % 3;
     let dom = PINNED_DOM;
     // Voronoi mottle on ~40% of the population.
-    let voronoi = b.byte() % 5 < 2;
-    // Trailing read on purpose: appending keeps every earlier field's bytes
-    // stable for a given seed.
-    let belly_variant = b.byte() % 4;
-    // Trailing block: appended so every earlier field's bytes stay put.
+    let voronoi = bytes[240] % 5 < 2;
+    let belly_variant = bytes[163] % 4;
     let face_style = FaceStyle {
-        eye_aspect: b.lin(0.80, 1.28),
+        eye_aspect: genome::lin(bytes[177], 0.80, 1.28),
         // SIGNED: negative shrinks the left eye, positive the right, so the
         // smaller eye is not always on the same side fleet-wide.
-        eye_wonk: b.lin(-0.20, 0.20),
-        mouth_w: b.lin(0.75, 1.30),
-        mouth_d: b.lin(0.70, 1.35),
+        eye_wonk: genome::lin(bytes[178], -0.20, 0.20),
+        mouth_w: genome::lin(bytes[180], 0.75, 1.30),
+        mouth_d: genome::lin(bytes[181], 0.70, 1.35),
         // Most creatures rest brow-less; a resting brow is a strong
         // personality mark and reads as permanent attitude.
-        brow: match b.byte() % 8 {
+        brow: match bytes[182] % 8 {
             0 | 1 => 1,
             2 => 2,
             3 => 3,
             _ => 0,
         },
     };
-    let creature = Creature {
+    Creature {
         wb,
         exts,
         ext_fills,
@@ -137,8 +143,7 @@ fn decode_full_counted(seed: u64) -> (Creature, usize) {
         voronoi,
         belly_variant,
         face_style,
-    };
-    (creature, b.consumed())
+    }
 }
 
 /// Belly patch: the body outline scaled toward a low anchor, then clipped
@@ -1064,6 +1069,9 @@ fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if baseline::command(&args) {
+        return;
+    }
     if let Some(i) = args.iter().position(|argument| argument == "--fixtures") {
         let usage = "--fixtures <start-seed> <count> <out-dir>";
         let start_seed = args

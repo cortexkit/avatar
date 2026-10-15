@@ -32,3 +32,36 @@ impl Bits {
         lo + (hi - lo) * (self.byte() as f64 / 255.0)
     }
 }
+
+pub const GENOME_LEN: usize = 16_384;
+
+/// Expand exploration seeds into a complete genome, so changing which fields
+/// the decoder reads cannot shift the bytes assigned to other fields.
+pub fn probe_genome(seed: u64) -> [u8; GENOME_LEN] {
+    let mut bits = Bits::new(seed);
+    std::array::from_fn(|_| bits.byte())
+}
+
+/// Byte eased linearly into [lo, hi], shared by the region decoders.
+pub fn lin(byte: u8, lo: f64, hi: f64) -> f64 {
+    lo + (hi - lo) * (byte as f64 / 255.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_expands_every_byte_of_the_splitmix_stream() {
+        let bytes = probe_genome(0);
+        assert_eq!(
+            &bytes[..16],
+            &[123, 161, 128, 114, 81, 116, 31, 201, 65, 54, 60, 5, 224, 152, 0, 151]
+        );
+        let mut source = Bits::new(0);
+        for byte in bytes {
+            assert_eq!(byte, source.byte());
+        }
+        assert_eq!(source.consumed(), GENOME_LEN);
+    }
+}

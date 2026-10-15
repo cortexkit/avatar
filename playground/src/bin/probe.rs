@@ -4,9 +4,9 @@ use ava_playground::{genome, wild};
 
 fn main() {
     for seed in 3000u64..3006 {
-        let mut b = genome::Bits::new(seed);
-        let wb = wild::decode(&mut b);
-        let exts = wild::decode_extremities(&mut b);
+        let bytes = genome::probe_genome(seed);
+        let wb = wild::decode(&bytes[..64]);
+        let exts = wild::decode_extremities(&bytes[64..160]);
         let outline = wild::outline(&wb, 0.32, 120.0, 120.0, 172.0);
         let body_asym = wild::asymmetry(&outline, 120.0);
         let mean_r = wb.spokes.iter().map(|s| s.r).sum::<f64>() / wb.spokes.len() as f64;

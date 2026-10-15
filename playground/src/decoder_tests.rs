@@ -1,0 +1,82 @@
+use super::*;
+
+#[test]
+fn region_offsets_and_slot_strides_match_the_byte_table() {
+    let mut bytes = [0; genome::GENOME_LEN];
+    bytes[0] = 11;
+    for i in 0..16 {
+        bytes[2 + 3 * i] = 255;
+        bytes[3 + 3 * i] = 0;
+        bytes[4 + 3 * i] = 255;
+    }
+    bytes[64] = 4;
+    bytes[65] = 2;
+    for i in 0..4 {
+        let slot = 68 + 10 * i;
+        bytes[slot..slot + 5].copy_from_slice(&[255, 0, 255, 0, 255]);
+        bytes[slot + 5] = i as u8;
+    }
+    bytes[160..164].copy_from_slice(&[7, 255, 255, 3]);
+    bytes[176..183].copy_from_slice(&[4, 255, 0, 5, 255, 0, 3]);
+    bytes[240..244].copy_from_slice(&[2, 5, 0x12, 0x34]);
+    let c = decode_genome(&bytes);
+    assert_eq!(c.wb.spokes.len(), 16);
+    for (i, spoke) in c.wb.spokes.iter().enumerate() {
+        let expected_theta =
+            (i as f64 / 16.0) * std::f64::consts::TAU + 0.45 * std::f64::consts::TAU / 16.0;
+        assert_eq!(spoke.theta, expected_theta);
+        assert_eq!(spoke.r, 0.12);
+        assert_eq!(spoke.tension, 2.6);
+    }
+    assert_eq!(c.exts.len(), 4);
+    assert_eq!(c.ext_fills, [0, 1, 2, 0]);
+    for ext in &c.exts {
+        assert_eq!(ext.theta, std::f64::consts::TAU * 1.02);
+        assert_eq!(ext.len, 0.35);
+        assert_eq!(ext.width, 0.30);
+        assert_eq!(ext.curl, -1.3);
+        assert_eq!(ext.taper, 0.85);
+    }
+    assert_eq!(c.topology, 2);
+    assert_eq!(c.recipe, 3);
+    assert_eq!(c.hue, (1.0 + 255.0 / 65535.0) * 360.0);
+    assert!(c.hue > 360.0);
+    assert_eq!(c.belly_variant, 3);
+    assert!(matches!(c.eyes, face::EyeKind::HalfLid));
+    assert!(matches!(c.mouth, face::MouthKind::Fangs));
+    assert_eq!(c.face_style.eye_aspect, 1.28);
+    assert_eq!(c.face_style.eye_wonk, -0.20);
+    assert_eq!(c.face_style.mouth_w, 1.30);
+    assert_eq!(c.face_style.mouth_d, 0.70);
+    assert_eq!(c.face_style.brow, 3);
+    assert_eq!(c.dom, 0.32);
+    assert!(!c.voronoi);
+    assert_eq!(c.sites.len(), 26);
+    let mut source = genome::Bits::new(0x1234 ^ 0x5175_7266_6163_6501);
+    assert_eq!(c.sites[0].x, source.lin(0.04, 1.05));
+    assert_eq!(c.sites[0].y, source.lin(-1.05, 1.05));
+    assert_eq!(c.sites[1].x, -c.sites[0].x);
+}
+
+#[test]
+fn ignored_bytes_and_inactive_slots_do_not_change_the_tree() {
+    let bytes = [0; genome::GENOME_LEN];
+    let json = |bytes: &[u8; genome::GENOME_LEN]| {
+        avatar_svg::serialize_tree_json(&RenderTree {
+            canvas: 240,
+            background: None,
+            primitives: draw_full(&decode_genome(bytes), mood::Mood::Neutral, 120.0, 120.0),
+        })
+    };
+    let expected = json(&bytes);
+    let mut changed = bytes;
+    let mut active = vec![0, 64, 65, 160, 161, 162, 163, 240, 241, 242, 243];
+    active.extend(2..17);
+    active.extend(176..183);
+    for (i, byte) in changed.iter_mut().enumerate() {
+        if !active.contains(&i) {
+            *byte = 255;
+        }
+    }
+    assert_eq!(json(&changed), expected);
+}

@@ -12,7 +12,7 @@
 //!
 //! Findings are printed as a report; run: `cargo run --bin fixedspike`.
 
-use ava_playground::{genome::Bits, merge, wild};
+use ava_playground::{genome::probe_genome, merge, wild};
 
 // ---------------------------------------------------------------- Q32.32
 
@@ -171,8 +171,8 @@ fn main() {
     );
 
     // 2. SDF agreement on a real wild body.
-    let mut b = Bits::new(4009);
-    let wb = wild::decode(&mut b);
+    let bytes = probe_genome(4009);
+    let wb = wild::decode(&bytes[..64]);
     let raw = wild::build_raw(&wb, 0.32);
     let outline: Vec<(f64, f64)> = raw
         .pts

@@ -150,40 +150,43 @@ function bits(seed) {
   };
 }
 
-// ============ genome decode (mirrors grid-10 decode_full byte order) ============
-function decodeFull(seed) {
+// One region decoder serves both the page and the geometry probe.
+function decodeGenome(seed) {
   const b = bits(seed);
+  const bytes = Array.from({ length: 16384 }, () => b.byte());
+  const lin = (offset, lo, hi) => lo + (hi - lo) * (bytes[offset] / 255);
   // 5..=16 spokes: silhouette is the best-funded channel now (budget moved
   // over from the surface region). Mirrors Rust wild::decode.
-  const spokeCount = 5 + (b.byte() % 12);
-  b.byte(); // legacy mirror flag slot
+  const spokeCount = 5 + (bytes[0] % 12);
   const spokes = [];
   for (let i = 0; i < spokeCount; i++) {
+    const slot = 2 + 3 * i;
     const base = (i / spokeCount) * Math.PI * 2;
-    const jitter = b.lin(-0.45, 0.45) * Math.PI * 2 / spokeCount;
-    spokes.push({ theta: base + jitter, r: b.lin(0.12, 1.35), tension: b.lin(0.4, 2.6) });
+    const jitter = lin(slot, -0.45, 0.45) * Math.PI * 2 / spokeCount;
+    spokes.push({ theta: base + jitter, r: lin(slot + 1, 0.12, 1.35), tension: lin(slot + 2, 0.4, 2.6) });
   }
-  const extCount = b.byte() % 5; // 0..=4 pairs: limbs are the species lever
+  const extCount = bytes[64] % 5;
   const exts = [];
   for (let i = 0; i < extCount; i++) {
+    const slot = 64 + 4 + 10 * i;
     exts.push({
-      theta: b.lin(Math.PI * 0.95, Math.PI * 2 * 1.02),
-      len: b.lin(0.35, 1.15),
-      width: b.lin(0.10, 0.30),
-      curl: b.lin(-1.3, 1.3),
-      taper: b.lin(0.15, 0.85),
+      theta: lin(slot, Math.PI * 0.95, Math.PI * 2 * 1.02),
+      len: lin(slot + 1, 0.35, 1.15),
+      width: lin(slot + 2, 0.10, 0.30),
+      curl: lin(slot + 3, -1.3, 1.3),
+      taper: lin(slot + 4, 0.15, 0.85),
     });
   }
   // 8..=13 pairs, sparse shading (2-in-4 skip): hide spots, not tiling.
   // Sites GENERATED from a 16-bit seed rather than stored (24 genome bits
   // instead of 200-320) — Lloyd relaxation evens them anyway, so their
   // exact stored positions never earned their cost. Mirrors Rust.
-  const pairCount = 8 + (b.byte() % 6);
+  const pairCount = 8 + (bytes[241] % 6);
   // Same domain constant as Rust surface::decode_sites — a different XOR
   // here would silently give the lab and the sheets different mottle for
   // the same seed, which is exactly the cross-renderer drift the corpus
   // exists to prevent.
-  const siteSeed = (BigInt((b.byte() << 8) | b.byte())) ^ 0x5175726661636501n;
+  const siteSeed = (BigInt((bytes[242] << 8) | bytes[243])) ^ 0x5175726661636501n;
   const r = bits(siteSeed);
   const sites = [];
   for (let i = 0; i < pairCount; i++) {
@@ -191,24 +194,24 @@ function decodeFull(seed) {
     const s3 = r.byte() % 4, shade = s3 === 0 ? 0 : s3 === 1 ? 1 : 2;
     sites.push({ x, y, shade }, { x: -x, y, shade });
   }
-  const rsel = b.byte() % 8;
+  const rsel = bytes[160] % 8;
   const recipe = rsel <= 2 ? 0 : rsel <= 4 ? 2 : rsel <= 6 ? 4 : 3;
-  const hue = (b.byte() / 255 + b.byte() / 65535) * 360;
-  const eyes = b.byte() % 5;
-  const mouth = b.byte() % 6;
-  const extFills = exts.map(() => b.byte() % 3);
-  const topology = b.byte() % 3;
-  const voronoi = (b.byte() % 5) < 2;
-  const bellyVariant = b.byte() % 4; // trailing read; earlier fields stable
+  const hue = (bytes[161] / 255 + bytes[162] / 65535) * 360;
+  const eyes = bytes[176] % 5;
+  const mouth = bytes[179] % 6;
+  const extFills = exts.map((_, i) => bytes[64 + 4 + 10 * i + 5] % 3);
+  const topology = bytes[65] % 3;
+  const voronoi = (bytes[240] % 5) < 2;
+  const bellyVariant = bytes[163] % 4;
   // Face-parameter block (mirrors Rust FaceStyle): per-creature proportion
   // and resting posture. Without it the whole population shared 30 faces,
   // since two creatures with the same eye+mouth archetype rendered
-  // identically. eyeWonk decodes but is dormant in both renderers.
-  const eyeAspect = b.lin(0.80, 1.28);
-  const eyeWonk = b.lin(-0.20, 0.20); // signed: negative shrinks the left eye
-  const mouthW = b.lin(0.75, 1.30);
-  const mouthD = b.lin(0.70, 1.35);
-  const browRoll = b.byte() % 8;
+  // identically. Signed eye wonk shrinks one eye without enlarging the other.
+  const eyeAspect = lin(177, 0.80, 1.28);
+  const eyeWonk = lin(178, -0.20, 0.20); // signed: negative shrinks the left eye
+  const mouthW = lin(180, 0.75, 1.30);
+  const mouthD = lin(181, 0.70, 1.35);
+  const browRoll = bytes[182] % 8;
   const brow = browRoll <= 1 ? 1 : browRoll === 2 ? 2 : browRoll === 3 ? 3 : 0;
   return { spokes, exts, extFills, sites, recipe, hue, eyes, mouth, topology, voronoi, bellyVariant,
            eyeAspect, eyeWonk, mouthW, mouthD, brow, dom: 0.32 };
@@ -981,7 +984,7 @@ function syncOutputs() {
 /// params, so a raw decode would render as NaN geometry — the sweep must
 /// speak the renderer's input shape or it measures nothing.
 function paramsFromSeed(seed) {
-  const d = decodeFull(seed);
+  const d = decodeGenome(seed);
   return {
     ...d,
     dom: d.dom,
@@ -1066,7 +1069,7 @@ function stressSweep(n) {
 }
 function loadSeed() {
   const seed = parseInt($("seed").value, 10) || 0;
-  state = decodeFull(seed);
+  state = decodeGenome(seed);
   $("spokes").value = state.spokes.length;
   $("dom").value = state.dom;
   $("extCount").value = state.exts.length;
