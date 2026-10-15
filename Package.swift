@@ -10,10 +10,15 @@ import PackageDescription
 
 let package = Package(
     name: "AvatarKit",
+    platforms: [.iOS(.v13), .macOS(.v11)],
     products: [
         .library(name: "AvatarKit", targets: ["AvatarKit"])
     ],
     targets: [
+        .binaryTarget(
+            name: "AvatarCore",
+            path: "ports/swift/AvatarCore.xcframework"
+        ),
         // Vendored BLAKE3 reference implementation, portable-only build.
         // The BLAKE3_NO_* defines disable every x86 SIMD path; the upstream
         // NEON path keys off BLAKE3_USE_NEON (autodetected as 1 on AArch64),
@@ -33,7 +38,10 @@ let package = Package(
         ),
         .target(
             name: "AvatarKit",
-            dependencies: ["CBlake3"],
+            dependencies: [
+                "CBlake3",
+                .target(name: "AvatarCore", condition: .when(platforms: [.iOS, .macOS])),
+            ],
             path: "ports/swift/Sources/AvatarKit"
         ),
         .testTarget(

@@ -1,0 +1,4 @@
+module AvatarCore {
+    header "AvatarCore.h"
+    export *
+}

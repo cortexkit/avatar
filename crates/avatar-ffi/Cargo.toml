@@ -1,0 +1,11 @@
+[package]
+name = "avatar-ffi"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+avatar-genome = { path = "../avatar-genome" }
+avatar-svg = { path = "../avatar-svg" }
