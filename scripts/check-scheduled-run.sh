@@ -39,8 +39,8 @@ cd "$(dirname "$0")/.."
 command -v gh >/dev/null 2>&1 || exit 0
 
 sched=$(gh run list --event schedule --limit 1 \
-  --json conclusion,createdAt,headSha \
-  --jq '.[] | "\(.conclusion) \(.createdAt[0:16]) \(.headSha[0:8])"' 2>/dev/null || true)
+  --json status,conclusion,createdAt,headSha \
+  --jq '.[] | "\(.status) \(.conclusion // "-") \(.createdAt[0:16]) \(.headSha[0:8])"' 2>/dev/null || true)
 
 if [[ -z $sched ]]; then
   if grep -lq 'cron:' .github/workflows/*.yml 2>/dev/null; then
@@ -66,8 +66,26 @@ if [[ -n ${age_hours:-} ]] && [[ $age_hours =~ ^[0-9]+$ ]] && ((age_hours > 48))
   printf '  A cron that stopped firing leaves a green last run and looks healthy.\n'
 fi
 
+# Four outcomes, not two. A run that was CANCELLED or is still QUEUED is
+# not a failure and must not be reported as one: nothing broke, the
+# sample was simply never taken. Saying "not green" sends the reader
+# hunting a break that does not exist, and the true problem — that the
+# daily measurement has silently stopped happening — goes unnamed.
 case $sched in
-  success*) ;;
+  completed\ success*) ;;
+  completed\ cancelled*)
+    printf '\n\033[33m▸ notice\033[0m: the last SCHEDULED run was CANCELLED, not failed:\n'
+    printf '  %s\n' "$sched"
+    printf '  Nothing broke; the sample was never taken. A push to the same ref\n'
+    printf '  sharing its concurrency group is the usual cause.\n'
+    ;;
+  queued*|in_progress*|waiting*|pending*|requested*)
+    printf '\n\033[33m▸ notice\033[0m: the last SCHEDULED run has NOT RUN:\n'
+    printf '  %s\n' "$sched"
+    printf '  A run stuck queued looks alive — it is recent, so no staleness\n'
+    printf '  check fires — while producing no measurement at all. If it is\n'
+    printf '  hours old, no runner is serving this label.\n'
+    ;;
   *)
     printf '\n\033[33m▸ notice\033[0m: the last SCHEDULED run was not green:\n'
     printf '  %s\n' "$sched"

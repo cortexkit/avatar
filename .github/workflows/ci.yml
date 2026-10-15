@@ -28,7 +28,17 @@ concurrency:
   # Rapid pushes to the same ref cancel earlier runs; only the tip is
   # verified. Per-commit evidence (bisects, release tags) must not rely on
   # this workflow's run history.
-  group: ci-${{ github.ref }}
+  #
+  # EVENT NAME IS IN THE GROUP because a scheduled run and a push to the
+  # same ref otherwise share it, and the push cancels the cron. Measured
+  # here: 6 of the last 20 scheduled runs were cancelled that way, and the
+  # last one that actually completed was eight days before I looked. A
+  # cancelled run is not a failure — it is A SAMPLE NEVER TAKEN — and it
+  # is invisible, because nothing is red and the schedule looks alive.
+  # The daily run exists precisely to measure an unchanged sha against a
+  # moving world, so letting a push cancel it destroys the one measurement
+  # no push can make.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
