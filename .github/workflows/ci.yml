@@ -1,49 +1,22 @@
+# MANUAL ONLY. The gate for this repository is scripts/check.sh, run
+# locally and enforced by the pre-push hook on every push to master.
+#
+# Nothing triggers this workflow automatically, so nothing can queue
+# against a runner pool that is not serving it. That happened for a day:
+# every job sat `queued` with no conclusion, so nothing was ever red, and
+# a cron that kept CREATING runs which never started kept refreshing their
+# timestamp, so no staleness check fired either. A gate that is silently
+# off is worse than no gate, because it is still trusted.
+#
+# The jobs are kept so the same matrix can be run on demand from the
+# Actions tab, on GitHub-hosted runners.
 name: CI
 
 on:
-  push:
-    # train/** is the CI-gated landing path: a train branch is pushed
-    # first, CI here is the gate, and main is fast-forwarded only on a
-    # green run. Without this trigger a train push gets no check at all,
-    # and required status checks would make main unpushable.
-    branches: [master, 'train/**']
-  pull_request:
-  # Daily, because this repo CAN go red with no commit of mine and I said
-  # in the fleet channel that it could not. Every cargo dependency is a
-  # pinned crates.io version with no git or path edges, which is what I
-  # was thinking of — but the TOOLCHAIN floats: `dtolnay/rust-toolchain@stable`
-  # installs whatever stable is that morning, and this repo already ran red
-  # for seven consecutive commits when stable gained clippy's chunks_exact
-  # lint. A push gate asks "is this change good"; this asks "is what already
-  # landed still good against a toolchain that moved overnight".
-  #
-  # 11:00Z deliberately: the fleet's crons bunch in the early morning and
-  # land four to five hours late on a shared queue.
-  schedule:
-    - cron: '0 11 * * *'
-  # Reusable so a future release workflow gates on the exact same matrix.
-  workflow_call:
-
-concurrency:
-  # Rapid pushes to the same ref cancel earlier runs; only the tip is
-  # verified. Per-commit evidence (bisects, release tags) must not rely on
-  # this workflow's run history.
-  #
-  # EVENT NAME IS IN THE GROUP because a scheduled run and a push to the
-  # same ref otherwise share it, and the push cancels the cron. Measured
-  # here: 6 of the last 20 scheduled runs were cancelled that way, and the
-  # last one that actually completed was eight days before I looked. A
-  # cancelled run is not a failure — it is A SAMPLE NEVER TAKEN — and it
-  # is invisible, because nothing is red and the schedule looks alive.
-  # The daily run exists precisely to measure an unchanged sha against a
-  # moving world, so letting a push cancel it destroys the one measurement
-  # no push can make.
-  group: ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
   # Linux only for now: this repo is pure computation (no I/O, no platform
   # paths, no networking), and its whole design goal is that outputs are
@@ -59,7 +32,7 @@ jobs:
   # Revert to ubuntu-latest if the repo becomes public.
   test:
     name: Test (ubuntu)
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -72,12 +45,6 @@ jobs:
       - name: Snapshot tree state
         run: git status --porcelain | sort > "$RUNNER_TEMP/tree-before.txt"
         shell: bash
-
-      # First, because a broken precondition invalidates everything after
-      # it: a narrowed trigger means this run does not gate a train at all.
-      # Seconds, so it fails fast rather than after the suite.
-      - name: Train preconditions
-        run: ./scripts/check-train-preconditions.sh
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -183,7 +150,7 @@ jobs:
   # identifies the affected implementation directly in the CI job list.
   ts-port:
     name: TypeScript port (ubuntu)
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -218,7 +185,7 @@ jobs:
   # under ports/swift/) so the package is consumable by git URL.
   swift-port:
     name: Swift port (ubuntu)
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     container: swift:6.0
     steps:
       - uses: actions/checkout@v5

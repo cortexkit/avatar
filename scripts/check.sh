@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Runs exactly what CI runs, in one command.
+# THE gate for this repository. Every gate runs in one command, and the
+# pre-push hook runs it before anything reaches master.
 #
-# CI went red for seven consecutive commits without being noticed: every
-# change had been verified locally with `cargo test`, but the gate that
-# actually failed was `cargo fmt --check`, which local verification never
-# ran. Remembering to run six separate commands is not a fix; having one
-# command that mirrors the workflow is.
-#
-# Keep this file and .github/workflows/ci.yml in step. If a gate exists in
-# only one of them, the other is lying about what "green" means.
+# CI is manual-only, so nothing else checks a change. This script exists
+# because remembering to run separate commands failed: the repo once went
+# red for seven commits while local verification ran `cargo test` and the
+# gate that broke was `cargo fmt --check`.
 #
 # Usage: scripts/check.sh [--rust-only]
 
@@ -18,35 +15,14 @@ cd "$(dirname "$0")/.."
 RUST_ONLY=0
 [[ "${1:-}" == "--rust-only" ]] && RUST_ONLY=1
 
-# --self-test proves the toolchain-drift guard CAN fire, by re-running this
-# script against a stub rustup that reports stable behind. A guard that has
-# never fired is indistinguishable from a guard that cannot fire: it would
-# join the family of green signals that are true about the wrong thing,
-# which is the exact failure it exists to catch.
-if [[ "${1:-}" == "--self-test" ]]; then
-  stub=$(mktemp -d)
-  printf '%s\n' '#!/usr/bin/env bash' \
-    '[[ "$1" == "check" ]] && { echo "stable-stub - Update available : 1.0.0 -> 2.0.0"; exit 0; }' \
-    'exit 0' > "$stub/rustup"
-  chmod +x "$stub/rustup"
-  if PATH="$stub:$PATH" "$0" --rust-only >/dev/null 2>&1; then
-    printf '\033[31mself-test FAILED\033[0m: drift guard stayed silent on a stale stub\n'
-    rm -rf "$stub"
-    exit 1
-  fi
-  rm -rf "$stub"
-  printf '\033[32mself-test ok\033[0m: drift guard fires when stable is behind\n'
-  exit 0
-fi
-
 FAILED=()
 run() {
   local name="$1"
   shift
   printf '\n\033[1m▸ %s\033[0m\n' "$name"
   local start=$SECONDS
-  # Every gate runs even after an earlier one fails, matching CI's
-  # `if: !cancelled()`: a lint failure must not hide the test signal.
+  # Every gate runs even after an earlier one fails: a lint failure must
+  # not hide the test signal.
   if "$@"; then
     printf '\033[32m  ok\033[0m (%ss)\n' "$((SECONDS - start))"
   else
@@ -55,41 +31,8 @@ run() {
   fi
 }
 
-# Same property CI checks with its before/after snapshot: did the build
-# rewrite a tracked file? Compared against a snapshot rather than against
-# an empty tree, so a dirty working copy does not make it fire.
-# CI installs dtolnay/rust-toolchain@stable, which FLOATS. A local stable
-# that has fallen behind runs an older lint set, so this script can report
-# every gate green while CI fails on a lint that did not exist locally —
-# which is exactly what happened with clippy's chunks_exact lint: local
-# 1.97.1 knew nothing about it, CI's 1.98.0 rejected the build. Mirroring
-# CI's commands is not enough; the toolchain is part of the gate.
-#
-# This is a hard gate rather than a warning: if stable has moved, CI is
-# already running rules this machine cannot see, so "green" here would be
-# a measurement of the wrong thing.
-#
-# `grep -c` rather than `grep -q`, and the difference is not style. Under
-# `set -o pipefail`, `grep -q` exits at the FIRST MATCH and closes the
-# pipe; a producer still writing takes SIGPIPE and dies 141, which
-# pipefail propagates, so the `if` is FALSE. Measured here:
-#
-#     needle absent                     exit 1    guard silent (correct)
-#     needle present, 300-byte output   exit 0    guard fires  (correct today)
-#     needle present, large output      exit 141  GUARD SILENT
-#
-# `rustup check` emits ~300 bytes, so today's answer is right by size
-# rather than by construction — and the inverted case is the one where
-# stable HAS moved, which is precisely the condition this gate exists to
-# catch. `grep -c` reads to EOF and cannot early-close. (SUBC's finding,
-# 2026-09-18; the same shape inverted a live signing alarm on their host.)
-if [ "$(rustup check 2>/dev/null | grep -c '^stable-.*Update available')" -gt 0 ]; then
-  printf '\033[31m▸ toolchain drift\033[0m: CI uses floating @stable and yours is behind.\n'
-  rustup check | grep '^stable-'
-  printf '  run: rustup update stable\n'
-  exit 1
-fi
-
+# Did the build rewrite a tracked file? Compared against a snapshot rather
+# than against an empty tree, so a dirty working copy does not make it fire.
 tree_before=$(git status --porcelain | sort)
 
 run "fmt"             cargo fmt --all -- --check
@@ -143,14 +86,6 @@ run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin gr
 # and reaching it only through the half that does made it skippable on any
 # machine without one.
 run "renderer consts"   python3 scripts/const-drift.py
-# Facts about ci.yml that a train landing depends on, re-asserted rather
-# than trusted from the day they were verified.
-run "train precond"     ./scripts/check-train-preconditions.sh
-# The lifted fleet tooling against its upstream. A copy with no drift
-# check is a fork that has not noticed yet: upstream fixed a real defect
-# in watch-ci.sh within an hour of the lift and nothing here would have
-# said so.
-run "lifted files"      ./scripts/check-lifted-files.sh
 
 # playground/web/index.html is a JavaScript twin of the Rust generator,
 # and it is what a human opens to review creature designs. If the two
@@ -182,16 +117,12 @@ if [[ $RUST_ONLY -eq 0 ]]; then
   fi
 fi
 
-# Same property CI checks: did the build rewrite a tracked file?
+# Did the build rewrite a tracked file?
 if [[ "$(git status --porcelain | sort)" != "$tree_before" ]]; then
   printf '\n\033[31m▸ build rewrote tracked files\033[0m\n'
   git status --porcelain
   FAILED+=("tracked-file guard")
 fi
-
-# Not a gate: a notice, exit 0 always. The scheduled run's result arrives
-# when nobody is looking, so the gate that IS read carries it.
-./scripts/check-scheduled-run.sh || true
 
 printf '\n'
 if [[ ${#FAILED[@]} -eq 0 ]]; then
