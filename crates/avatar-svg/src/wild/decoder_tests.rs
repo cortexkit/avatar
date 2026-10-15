@@ -62,7 +62,7 @@ fn region_offsets_and_slot_strides_match_the_byte_table() {
 fn ignored_bytes_and_inactive_slots_do_not_change_the_tree() {
     let bytes = [0; genome::GENOME_LEN];
     let json = |bytes: &[u8; genome::GENOME_LEN]| {
-        avatar_svg::serialize_tree_json(&RenderTree {
+        crate::serialize_tree_json(&RenderTree {
             canvas: 240,
             background: None,
             primitives: draw_full(&decode_genome(bytes), mood::Mood::Neutral, 120.0, 120.0),
@@ -79,4 +79,32 @@ fn ignored_bytes_and_inactive_slots_do_not_change_the_tree() {
         }
     }
     assert_eq!(json(&changed), expected);
+}
+
+#[test]
+fn wild_totality_extremes_and_64_probe_genomes_at_every_mood() {
+    let genomes = [[0; GENOME_LEN], [255; GENOME_LEN]]
+        .into_iter()
+        .chain((0..64).map(probe_genome));
+    for (index, bytes) in genomes.enumerate() {
+        for mood in mood::ALL {
+            let tree = crate::render_tree_for_bytes(&bytes, crate::WILD, 1, mood)
+                .unwrap_or_else(|error| panic!("genome {index}, mood {mood:?}: {error}"));
+            assert_eq!(tree.canvas, 240);
+            assert_eq!(tree.background, None);
+            assert!(!tree.primitives.is_empty());
+        }
+    }
+}
+
+#[test]
+fn comparison_preserves_finite_order_and_equal_signed_zeros() {
+    use std::cmp::Ordering;
+    for a in [-f64::MAX, -1.0, -0.0, 0.0, 1.0, f64::MAX] {
+        for b in [-f64::MAX, -1.0, -0.0, 0.0, 1.0, f64::MAX] {
+            assert_eq!(math::compare(a, b), a.partial_cmp(&b).unwrap());
+        }
+    }
+    assert_eq!(math::compare(-0.0, 0.0), Ordering::Equal);
+    assert_eq!(math::compare(f64::NAN, 0.0), f64::NAN.total_cmp(&0.0));
 }

@@ -54,20 +54,10 @@ import os
 import re
 import sys
 
-# The CURRENT justified difference, each entry checked individually rather
-# than labelled in bulk:
-#   0.09, 0.58  blob-era face code (blush_with_color, face::belly). The
-#               wild path never reaches them and the lab never implemented
-#               them. These leave when that dead code does.
-#   5.1, 6.3    not constants at all: the format specifiers {pct:>5.1} and
-#               {:>6.3}, which a numeric extractor cannot distinguish from
-#               numbers.
-#   1.6         a lab slider bound. UI, not pipeline.
-#
-# A NEW entry is the signal this exists for. Shrink the baseline when the
-# dead code goes; never grow it to make the check pass.
-BASELINE_RUST = {0.09, 0.58, 5.1, 6.3}
-BASELINE_JS = {1.6}
+# A new renderer-only fractional constant signals unmatched tuning. Shrink
+# these exception sets when code leaves; never grow them merely to pass.
+BASELINE_RUST = set()
+BASELINE_JS = set()
 
 NUM = re.compile(
     r"(?<![\w.])(\d[\d_]*(?:\.\d[\d_]*)?)"
@@ -85,7 +75,7 @@ def constants(text):
 def main():
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     rust = set()
-    sources = sorted(glob.glob(os.path.join(root, "playground/src/*.rs")))
+    sources = sorted(glob.glob(os.path.join(root, "crates/avatar-svg/src/wild/**/*.rs"), recursive=True))
     if not sources:
         print("const-drift: no Rust sources found", file=sys.stderr)
         return 2
@@ -94,7 +84,10 @@ def main():
             rust |= constants(handle.read())
     lab_path = os.path.join(root, "playground/web/index.html")
     with open(lab_path, encoding="utf-8") as handle:
-        lab = constants(handle.read())
+        # Static HTML slider bounds are UI, not generation constants. Scan
+        # every script body so the full renderer remains covered.
+        scripts = re.findall(r"<script\b[^>]*>(.*?)</script>", handle.read(), re.S)
+        lab = constants("\n".join(scripts))
 
     rust_only = sorted(v for v in rust - lab if v != int(v))
     lab_only = sorted(v for v in lab - rust if v != int(v))

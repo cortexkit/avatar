@@ -1,5 +1,4 @@
-//! Mood morphs for grid 4: the 7-mood wire contract expressed on the new
-//! face vocabulary.
+//! The seven wire moods expressed on the wild face vocabulary.
 //!
 //! Approach: moods are LAYERED morphs, not per-archetype redraws — a lid
 //! overlay in body color (coverage + angle), on-demand brows (neutral faces
@@ -9,20 +8,10 @@
 //! the vocabulary freezes; wherever it fails, the archetype changes, not the
 //! contract.
 
-use avatar_svg::{Primitive, StrokeCap, StrokeJoin};
+pub use crate::Mood;
+use crate::{Primitive, StrokeCap, StrokeJoin};
 
-use crate::render;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mood {
-    Neutral,
-    Working,
-    Happy,
-    Waiting,
-    Blocked,
-    Sad,
-    Sleepy,
-}
+use super::render;
 
 pub const ALL: [Mood; 7] = [
     Mood::Neutral,

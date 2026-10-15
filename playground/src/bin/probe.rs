@@ -1,17 +1,18 @@
 //! Symmetry probe: measures body-outline and extremity-pair asymmetry per
 //! seed, in ring/cell units. Evidence tool for the grid-8 symmetry review.
-use ava_playground::{genome, wild};
+use ava_playground::wild::asymmetry;
+use avatar_svg::wild::{decode_genome, outline_for, probe_genome, shape as wild};
 
 fn main() {
     for seed in 3000u64..3006 {
-        let bytes = genome::probe_genome(seed);
-        let wb = wild::decode(&bytes[..64]);
-        let exts = wild::decode_extremities(&bytes[64..160]);
-        let outline = wild::outline(&wb, 0.32, 120.0, 120.0, 172.0);
-        let body_asym = wild::asymmetry(&outline, 120.0);
+        let c = decode_genome(&probe_genome(seed));
+        let wb = &c.wb;
+        let exts = &c.exts;
+        let outline = outline_for(&c, 120.0, 120.0);
+        let body_asym = asymmetry(&outline, 120.0);
         let mean_r = wb.spokes.iter().map(|s| s.r).sum::<f64>() / wb.spokes.len() as f64;
         let mut ext_asym = 0.0_f64;
-        for e in &exts {
+        for e in exts {
             let right = wild::extremity_outline(e, mean_r, mean_r, false);
             let left = wild::extremity_outline(e, mean_r, mean_r, true);
             let mirrored: Vec<(f64, f64)> = right.iter().map(|p| (-p.0, p.1)).collect();

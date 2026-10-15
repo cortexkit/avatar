@@ -1,13 +1,4 @@
-//! The playground's bit source.
-//!
-//! The blob-era decoder that lived here (RandomCreature, decode) is gone
-//! with the generator it fed: the wild pipeline reads its own bands in
-//! main.rs::decode_full and never called it. It survived a clippy run
-//! with -D warnings only because this crate is a lib, where `pub` means
-//! "someone outside might call this" and dead-code analysis stops asking.
-
-/// splitmix64: tiny, seedable, good-enough bit source for the playground.
-/// Counts bytes served so decoders can report their real DNA appetite.
+//! Splitmix byte source for wild surface sites and exploration genomes.
 pub struct Bits(u64, usize);
 
 impl Bits {

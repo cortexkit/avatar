@@ -4,6 +4,12 @@
 
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
+/// Preserve numeric ordering, including equal signed zeros, without panicking
+/// if a diagnostic caller supplies NaN. Genomes themselves decode finite values.
+pub(super) fn compare(a: f64, b: f64) -> std::cmp::Ordering {
+    a.partial_cmp(&b).unwrap_or_else(|| a.total_cmp(&b))
+}
+
 /// Sine for the bounded angles used by wild geometry, without platform libm.
 pub fn sin(angle: f64) -> f64 {
     let x = angle - (angle / TAU).round() * TAU;

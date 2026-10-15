@@ -40,7 +40,7 @@ mod voronoi {
 pub use avatar_phenotype::{Bam16, Rgb, Q32};
 
 pub use build::build_render_tree;
-pub use dispatch::{render_tree_for, render_tree_for_bytes, DispatchError, CLASSIC};
+pub use dispatch::{render_tree_for, render_tree_for_bytes, DispatchError, CLASSIC, WILD};
 pub use geometry::{body_geometry, BodyGeometry};
 pub use serialize::serialize_svg;
 pub use svg::{render_body_svg, render_svg, Mood, RenderError, RenderParams};

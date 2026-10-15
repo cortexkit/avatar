@@ -84,7 +84,7 @@ pub fn merged_outline(
     let dx = (x1 - x0) / n as f64;
     let dy = (y1 - y0) / n as f64;
 
-    // Field sampling.
+    // Sample the blended signed-distance field at every grid point.
     let mut field = vec![0.0_f64; (n + 1) * (n + 1)];
     for j in 0..=n {
         for i in 0..=n {
@@ -128,7 +128,6 @@ pub fn merged_outline(
             if pts_on_edges.len() == 2 {
                 segs.push((pts_on_edges[0], pts_on_edges[1]));
             } else if pts_on_edges.len() == 4 {
-                crate::coverage::hit(&crate::coverage::COUNTERS.saddle);
                 segs.push((pts_on_edges[0], pts_on_edges[1]));
                 segs.push((pts_on_edges[2], pts_on_edges[3]));
             }
@@ -152,27 +151,23 @@ pub fn merged_outline(
             // saddle where two segments qualify, first-by-index chains into
             // an arbitrary branch while nearest follows the contour. The
             // tiebreak is pinned because ports must chain identically:
-            // squared distances compare exactly in fixed point (no sqrt
-            // needed for an ordering), so this rule survives the port.
+            // squared distances avoid a needless square root for ordering.
             let eps2 = eps * eps;
             let mut best: Option<(f64, usize, bool)> = None;
-            let mut candidates = 0usize;
             for (idx, seg) in segs.iter().enumerate() {
                 if used[idx] {
                     continue;
                 }
-                let d0 = (seg.0 .0 - tail.0).powi(2) + (seg.0 .1 - tail.1).powi(2);
-                let d1 = (seg.1 .0 - tail.0).powi(2) + (seg.1 .1 - tail.1).powi(2);
+                let dx0 = seg.0 .0 - tail.0;
+                let dy0 = seg.0 .1 - tail.1;
+                let dx1 = seg.1 .0 - tail.0;
+                let dy1 = seg.1 .1 - tail.1;
+                let d0 = dx0 * dx0 + dy0 * dy0;
+                let d1 = dx1 * dx1 + dy1 * dy1;
                 let (d, head_end) = if d0 <= d1 { (d0, true) } else { (d1, false) };
-                if d < eps2 {
-                    candidates += 1;
-                    if best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
-                        best = Some((d, idx, head_end));
-                    }
+                if d < eps2 && best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
+                    best = Some((d, idx, head_end));
                 }
-            }
-            if candidates > 1 {
-                crate::coverage::hit(&crate::coverage::COUNTERS.chain_tiebreak);
             }
             let extended = match best {
                 Some((_, idx, head_end)) => {
@@ -187,7 +182,9 @@ pub fn merged_outline(
             }
             let head = chain[0];
             let tail = *chain.last().unwrap();
-            if ((head.0 - tail.0).powi(2) + (head.1 - tail.1).powi(2)).sqrt() < eps {
+            let dx = head.0 - tail.0;
+            let dy = head.1 - tail.1;
+            if (dx * dx + dy * dy).sqrt() < eps {
                 break; // closed
             }
         }
@@ -216,7 +213,9 @@ fn resample_smooth(pts: &[(f64, f64)], target: usize) -> Vec<(f64, f64)> {
     for i in 0..n {
         let a = pts[i];
         let b = pts[(i + 1) % n];
-        total += ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        let dx = b.0 - a.0;
+        let dy = b.1 - a.1;
+        total += (dx * dx + dy * dy).sqrt();
         cum.push(total);
     }
     let mut out = Vec::with_capacity(target);

@@ -12,6 +12,9 @@ use crate::{build_render_tree, Mood, RenderError, RenderParams, RenderTree};
 /// The stable registry type for the classic creature representation.
 pub const CLASSIC: &str = "creature.classic";
 
+/// The stable registry type for the wild creature representation.
+pub const WILD: &str = "creature.wild";
+
 const CLASSIC_VERSION: u32 = 2;
 const CLASSIC_GENOME_BYTES: usize = 1_024;
 const CLASSIC_CANVAS: u32 = 10_000;
@@ -107,10 +110,27 @@ pub fn render_tree_for_bytes(
                 requested,
             }),
         },
+        WILD => match version {
+            1 => render_wild_v1(genome_bytes, mood),
+            requested => Err(DispatchError::UnsupportedVersion {
+                avatar_type: avatar_type.to_owned(),
+                requested,
+            }),
+        },
         requested => Err(DispatchError::UnsupportedType {
             requested: requested.to_owned(),
         }),
     }
+}
+
+fn render_wild_v1(genome_bytes: &[u8], mood: Mood) -> Result<RenderTree, DispatchError> {
+    let bytes = genome_bytes
+        .try_into()
+        .map_err(|_| DispatchError::GenomeLength {
+            expected: crate::wild::GENOME_LEN,
+            actual: genome_bytes.len(),
+        })?;
+    Ok(crate::wild::render_tree(bytes, mood))
 }
 
 fn render_classic_v2(genome_bytes: &[u8], mood: Mood) -> Result<RenderTree, DispatchError> {
@@ -164,11 +184,16 @@ mod tests {
 
     #[test]
     fn unknown_type_is_refused_without_rendering() {
-        let result = render_tree_for(&genome(), "creature.wild", CLASSIC_VERSION, Mood::Neutral);
+        let result = render_tree_for(
+            &genome(),
+            "creature.unknown",
+            CLASSIC_VERSION,
+            Mood::Neutral,
+        );
 
         match result {
             Err(DispatchError::UnsupportedType { requested }) => {
-                assert_eq!(requested, "creature.wild");
+                assert_eq!(requested, "creature.unknown");
             }
             other => panic!("expected unsupported type, got {other:?}"),
         }
@@ -206,6 +231,50 @@ mod tests {
                 actual: CLASSIC_GENOME_BYTES - 1,
             })
         );
+    }
+
+    #[test]
+    fn wild_dispatch_renders_every_mood_on_its_own_canvas() {
+        let bytes = crate::wild::probe_genome(0);
+        for mood in crate::wild::mood::ALL {
+            let tree = render_tree_for_bytes(&bytes, WILD, 1, mood).unwrap();
+            assert_eq!(tree.canvas, 240);
+            assert_eq!(tree.extent(), 24_000);
+            assert_eq!(tree.background, None);
+            assert!(!tree.primitives.is_empty());
+            assert_eq!(tree, crate::wild::render_tree(&bytes, mood));
+        }
+    }
+
+    #[test]
+    fn dispatch_checks_type_then_version_then_type_specific_length() {
+        for length in [0, 1_024, 16_383, 16_384, 16_385] {
+            let bytes = vec![0; length];
+            assert_eq!(
+                render_tree_for_bytes(&bytes, "creature.unknown", 1, Mood::Neutral),
+                Err(DispatchError::UnsupportedType {
+                    requested: "creature.unknown".into()
+                })
+            );
+            for version in [0, 2, u32::MAX] {
+                assert_eq!(
+                    render_tree_for_bytes(&bytes, WILD, version, Mood::Neutral),
+                    Err(DispatchError::UnsupportedVersion {
+                        avatar_type: WILD.into(),
+                        requested: version
+                    })
+                );
+            }
+            if length != crate::wild::GENOME_LEN {
+                assert_eq!(
+                    render_tree_for_bytes(&bytes, WILD, 1, Mood::Neutral),
+                    Err(DispatchError::GenomeLength {
+                        expected: crate::wild::GENOME_LEN,
+                        actual: length
+                    })
+                );
+            }
+        }
     }
 }
 

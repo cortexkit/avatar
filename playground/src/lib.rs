@@ -1,12 +1,4 @@
-//! Library view of the playground so probe binaries can reuse the modules.
-pub mod body;
-pub mod coverage;
-pub mod face;
+//! Measurement tools for the playground; geometry comes from the shipped core.
 pub mod fit;
-pub mod genome;
-pub mod merge;
-pub mod mood;
-pub mod palette;
-pub mod render;
-pub mod surface;
 pub mod wild;
+pub use avatar_svg::wild::{genome, merge};

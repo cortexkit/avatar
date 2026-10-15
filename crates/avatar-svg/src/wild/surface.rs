@@ -1,14 +1,13 @@
 //! Surface patterns: REAL Voronoi, computed, not premade.
 //!
-//! TOG shipped a premade voronoi asset because EVM gas made computing one
-//! impossible. Off-chain we can afford exact cells: each site's cell is the
-//! bounding box clipped by the perpendicular-bisector half-plane against
+//! Each site's exact cell is the bounding box clipped by the
+//! perpendicular-bisector half-plane against
 //! every other site (Sutherland-Hodgman, O(n^2) with n <= 12 — trivial).
 //! Cells clip to the body outline via the SVG clipPath the renderer already
 //! maintains, and shade alternation derives from the palette so the mottle
 //! belongs to the creature instead of sitting on it.
 
-use crate::genome::Bits;
+use super::genome::Bits;
 
 /// One Voronoi site with its shade role.
 pub struct Site {
@@ -20,8 +19,8 @@ pub struct Site {
 
 /// Decode sites in unit-square coordinates ([-1,1]^2, scaled by the caller).
 /// Sites are decoded on the RIGHT half and mirrored, so the pattern shares
-/// the body's symmetry axis (grid-8 review: an asymmetric mottle on a
-/// symmetric body reads as a symmetry BUG, not as texture).
+/// the body's symmetry axis: an asymmetric mottle on a symmetric body looks
+/// like a symmetry bug rather than texture.
 pub fn decode_sites(bytes: &[u8]) -> Vec<Site> {
     // 8..=13 pairs -> 16..=26 cells. The earlier 6..=12 cells were so large
     // that every edge was a long straight chord — zoomed review read them as
@@ -93,48 +92,6 @@ pub fn relax(sites: &mut [Site], bbox: (f64, f64, f64, f64), iterations: usize) 
             }
         }
     }
-}
-
-/// Rounded, inset cell path: shrink toward the centroid (grout gap), then
-/// round every corner with quadratics — pebbles, not shards.
-pub fn cell_path(poly: &[(f64, f64)], inset: f64) -> String {
-    let n = poly.len();
-    if n < 3 {
-        return String::new();
-    }
-    let (cx, cy) = centroid(poly);
-    let pts: Vec<(f64, f64)> = poly
-        .iter()
-        .map(|&(x, y)| (cx + (x - cx) * inset, cy + (y - cy) * inset))
-        .collect();
-    // Corner rounding at 0.5 puts every on-curve point at an edge MIDPOINT:
-    // no straight segments survive, so the pebble is fully curved (0.26 left
-    // half of every edge straight — the zoomed shard look).
-    let mut d = String::new();
-    for i in 0..n {
-        let prev = pts[(i + n - 1) % n];
-        let cur = pts[i];
-        let next = pts[(i + 1) % n];
-        let a = (
-            cur.0 + (prev.0 - cur.0) * 0.5,
-            cur.1 + (prev.1 - cur.1) * 0.5,
-        );
-        let b = (
-            cur.0 + (next.0 - cur.0) * 0.5,
-            cur.1 + (next.1 - cur.1) * 0.5,
-        );
-        if i == 0 {
-            d.push_str(&format!("M{:.1} {:.1} ", a.0, a.1));
-        } else {
-            d.push_str(&format!("L{:.1} {:.1} ", a.0, a.1));
-        }
-        d.push_str(&format!(
-            "Q{:.1} {:.1} {:.1} {:.1} ",
-            cur.0, cur.1, b.0, b.1
-        ));
-    }
-    d.push('Z');
-    d
 }
 
 /// Sutherland-Hodgman: clip `poly` to the half-plane of points closer to

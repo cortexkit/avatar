@@ -1,15 +1,15 @@
-//! RenderTree construction helpers for the float-based playground geometry.
+//! RenderTree construction helpers for wild floating-point geometry.
 //!
 //! Geometry stays in `f64` until these helpers create a tree primitive. The
-//! shared milliunit boundary lets the prototype keep its exploratory math while
-//! giving every renderer the shipped coordinate contract.
+//! shared milliunit boundary gives native drawing and SVG the same coordinates.
 
-use avatar_svg::{
+use super::math;
+use crate::{
     Bam16, Effect, FillRule, Paint, Primitive, Rgb, Segment, Shape, Stroke, StrokeCap, StrokeJoin,
     Transform, TransformOp, Q32,
 };
 
-/// Converts one playground coordinate into the render contract's milliunits.
+/// Converts one wild coordinate into the render contract's milliunits.
 pub fn mu(value: f64) -> i64 {
     let scaled = value * 100.0;
     if scaled >= 0.0 {
@@ -60,7 +60,7 @@ pub fn arc_to(
     from: (f64, f64),
     mut rx: f64,
     mut ry: f64,
-    angle_deg: f64,
+    _angle_deg: f64,
     large_arc: bool,
     sweep: bool,
     to: (f64, f64),
@@ -71,21 +71,21 @@ pub fn arc_to(
         return vec![line_to(to.0, to.1)];
     }
 
-    let phi = angle_deg.to_radians();
-    let (sin_phi, cos_phi) = phi.sin_cos();
+    // All wild eye arcs have zero rotation; only their sweep varies.
+    let (sin_phi, cos_phi) = (0.0, 1.0);
     let dx = (from.0 - to.0) / 2.0;
     let dy = (from.1 - to.1) / 2.0;
     let x1p = cos_phi * dx + sin_phi * dy;
     let y1p = -sin_phi * dx + cos_phi * dy;
-    let lambda = x1p.powi(2) / rx.powi(2) + y1p.powi(2) / ry.powi(2);
+    let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
     if lambda > 1.0 {
         let scale = lambda.sqrt();
         rx *= scale;
         ry *= scale;
     }
 
-    let numerator = rx.powi(2) * ry.powi(2) - rx.powi(2) * y1p.powi(2) - ry.powi(2) * x1p.powi(2);
-    let denominator = rx.powi(2) * y1p.powi(2) + ry.powi(2) * x1p.powi(2);
+    let numerator = (rx * rx) * (ry * ry) - (rx * rx) * (y1p * y1p) - (ry * ry) * (x1p * x1p);
+    let denominator = (rx * rx) * (y1p * y1p) + (ry * ry) * (x1p * x1p);
     let factor = if denominator == 0.0 {
         0.0
     } else {
@@ -101,7 +101,7 @@ pub fn arc_to(
 
     let start_vector = ((x1p - cxp) / rx, (y1p - cyp) / ry);
     let end_vector = ((-x1p - cxp) / rx, (-y1p - cyp) / ry);
-    let start = start_vector.1.atan2(start_vector.0);
+    let start = math::atan2(start_vector.1, start_vector.0);
     let mut delta = signed_angle(start_vector, end_vector);
     if !sweep && delta > 0.0 {
         delta -= std::f64::consts::TAU;
@@ -121,9 +121,9 @@ pub fn arc_to(
         .map(|index| {
             let theta = start + step * index as f64;
             let next = theta + step;
-            let alpha = (4.0 / 3.0) * (step / 4.0).tan();
-            let (start_sin, start_cos) = theta.sin_cos();
-            let (end_sin, end_cos) = next.sin_cos();
+            let alpha = (4.0 / 3.0) * math::tan(step / 4.0);
+            let (start_sin, start_cos) = (math::sin(theta), math::cos(theta));
+            let (end_sin, end_cos) = (math::sin(next), math::cos(next));
             let end = if index + 1 == count {
                 to
             } else {
@@ -139,7 +139,7 @@ pub fn arc_to(
 }
 
 fn signed_angle(from: (f64, f64), to: (f64, f64)) -> f64 {
-    (from.0 * to.1 - from.1 * to.0).atan2(from.0 * to.0 + from.1 * to.1)
+    math::atan2(from.0 * to.1 - from.1 * to.0, from.0 * to.0 + from.1 * to.1)
 }
 
 pub fn path(segments: Vec<Segment>, closed: bool) -> Shape {

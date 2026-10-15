@@ -12,7 +12,7 @@
 //!
 //! Findings are printed as a report; run: `cargo run --bin fixedspike`.
 
-use ava_playground::{genome::probe_genome, merge, wild};
+use avatar_svg::wild::{genome::probe_genome, merge, shape as wild};
 
 // ---------------------------------------------------------------- Q32.32
 

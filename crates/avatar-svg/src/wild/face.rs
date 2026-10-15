@@ -1,19 +1,18 @@
-//! Face vocabulary for grid 2: eye archetypes x mouth families, plus the
-//! additive life layer (cheek blush, belly patch).
+//! Eye archetypes and mouth families for wild faces.
 //!
 //! Coordinates are the blob frame (origin at blob center) with the cell center
 //! passed in; every function returns render primitives.
 
-use avatar_svg::{Primitive, StrokeCap, StrokeJoin};
+use crate::{Primitive, StrokeCap, StrokeJoin};
 
-use crate::{
+use super::{
     body::{width_at, BodyParams},
     render,
 };
 
 #[derive(Clone, Copy, Debug)]
 pub enum EyeKind {
-    /// Grid-1 baseline: black dot + white shine.
+    /// Black dot with a white shine.
     DotShine,
     /// Big lidded ovals: white sclera, iris dot, upper lid line.
     Lidded,
@@ -27,7 +26,7 @@ pub enum EyeKind {
 
 #[derive(Clone, Copy, Debug)]
 pub enum MouthKind {
-    /// Small downturned-then-up arc (grid-1 baseline smile).
+    /// Small downturned-then-up smile arc.
     Arc,
     /// Cat mouth: two bumps (omega).
     CatW,
@@ -44,45 +43,6 @@ pub enum MouthKind {
     /// Downturned arc (sad) — mood vocabulary.
     DownArc,
 }
-
-pub struct FacePack {
-    pub name: &'static str,
-    pub eyes: EyeKind,
-    pub mouth: MouthKind,
-}
-
-pub const PACKS: [FacePack; 6] = [
-    FacePack {
-        name: "baseline",
-        eyes: EyeKind::DotShine,
-        mouth: MouthKind::Arc,
-    },
-    FacePack {
-        name: "kitten",
-        eyes: EyeKind::Lidded,
-        mouth: MouthKind::CatW,
-    },
-    FacePack {
-        name: "joy",
-        eyes: EyeKind::HappyArc,
-        mouth: MouthKind::OpenHappy,
-    },
-    FacePack {
-        name: "gremlin",
-        eyes: EyeKind::Uneven,
-        mouth: MouthKind::Snaggle,
-    },
-    FacePack {
-        name: "deadpan",
-        eyes: EyeKind::HalfLid,
-        mouth: MouthKind::Flat,
-    },
-    FacePack {
-        name: "imp",
-        eyes: EyeKind::DotShine,
-        mouth: MouthKind::Fangs,
-    },
-];
 
 /// Eye geometry shared by all archetypes: large, wide-set, low.
 pub struct EyeFrame {
@@ -111,13 +71,6 @@ fn eye_frame(bp: &BodyParams, cx: f64, cy: f64, tilt: f64) -> EyeFrame {
     }
 }
 
-/// Draws an eye pair. `wonk` shrinks the RIGHT eye only (0 = a matched
-/// pair): mismatched eyes are the strongest ugly-cute signal in the whole
-/// vocabulary, and before this it existed only as the `Uneven` archetype's
-/// hardcoded 1.25/0.62 pair — one creature in five could be asymmetric and
-/// the rest could not. Shrinking is the safe direction: an eye that only
-/// gets smaller cannot breach the clearance or separation the placement
-/// search proved for the full radius.
 /// The four colour roles an eye draws with, kept together because they are
 /// chosen together and confusing them is the defect this grouping exists
 /// to prevent: `accent` is the body's outline colour, used for lid and
@@ -309,9 +262,7 @@ pub fn eyes(
 /// Per-side eye radius factor. `wonk` is SIGNED: positive shrinks the right
 /// eye, negative the left. An unsigned shrink would put every wonky
 /// creature's smaller eye on the same side, which across a fleet reads as a
-/// renderer quirk rather than as individual character — the same reason
-/// TOG's hardcoded left-big/right-small `Uneven` pair could never feel like
-/// per-creature variation.
+/// renderer quirk rather than individual character.
 ///
 /// Exposed so mood overlays (lids, squints) and the sclera backing land on
 /// the radius the archetype actually drew; an overlay sized for the full
@@ -516,9 +467,8 @@ pub fn mouth(kind: MouthKind, bp: &BodyParams, cx: f64, cy: f64, accent: &str) -
     }
 }
 
-/// Ink-parameterized wrappers for grid 3: palettes may flip the face ink
-/// (dark bodies need light features), so the archetype functions gain color
-/// arguments while the grid-2 call sites keep their defaults.
+/// Palette-aware wrappers: dark bodies need light line-work without lightening
+/// the pupils, so the archetype functions receive separate colour roles.
 ///
 /// Pupils are NOT ink: ink is line-work (mouth strokes, brows, closed-eye
 /// arcs) and flips light on dark bodies, but a light "pupil" reads as a
@@ -597,80 +547,4 @@ pub fn mouth_inked(
     _ink: &str,
 ) -> Vec<Primitive> {
     mouth(kind, bp, cx, cy, accent)
-}
-
-pub fn blush_colored(bp: &BodyParams, cx: f64, cy: f64, color: &str) -> Vec<Primitive> {
-    blush_with_color(bp, cx, cy, color, 0.8)
-}
-
-pub fn belly_colored(bp: &BodyParams, cx: f64, cy: f64, color: &str) -> Vec<Primitive> {
-    let mut primitives = belly(bp, cx, cy);
-    for primitive in &mut primitives {
-        primitive.paint = avatar_svg::Paint::Solid {
-            color: render::css_rgb(color),
-        };
-    }
-    primitives
-}
-
-/// Cheek blush: soft rosy ellipses outer-low of each eye.
-pub fn blush(bp: &BodyParams, cx: f64, cy: f64) -> Vec<Primitive> {
-    blush_with_color(bp, cx, cy, "#f0808f", 0.35)
-}
-
-fn blush_with_color(
-    bp: &BodyParams,
-    cx: f64,
-    cy: f64,
-    color: &str,
-    opacity: f64,
-) -> Vec<Primitive> {
-    let ey = -bp.height * 0.08;
-    let w = width_at(bp, ey);
-    let bx = w * 0.62;
-    let by = cy + ey + bp.height * 0.09;
-    let rw = w * 0.14;
-    let rh = rw * 0.62;
-    vec![
-        render::filled(
-            render::ellipse(cx - bx, by, rw, rh),
-            color,
-            opacity,
-            None,
-            "wild-blush",
-        ),
-        render::filled(
-            render::ellipse(cx + bx, by, rw, rh),
-            color,
-            opacity,
-            None,
-            "wild-blush",
-        ),
-    ]
-}
-
-/// Belly patch: a lighter inner blob hugging the lower mass.
-pub fn belly(bp: &BodyParams, cx: f64, cy: f64) -> Vec<Primitive> {
-    let half_h = bp.height / 2.0;
-    let top = -half_h * 0.05;
-    let bot = half_h * 0.92;
-    let steps = 24;
-    let mut points = Vec::with_capacity((steps + 1) * 2);
-    for i in 0..=steps {
-        let y = top + (bot - top) * (i as f64 / steps as f64);
-        let x = width_at(bp, y) * 0.58;
-        points.push((cx + x, cy + y));
-    }
-    for i in (0..=steps).rev() {
-        let y = top + (bot - top) * (i as f64 / steps as f64);
-        let x = width_at(bp, y) * 0.58;
-        points.push((cx - x, cy + y));
-    }
-    vec![render::filled(
-        render::polygon(&points),
-        "white",
-        0.42,
-        None,
-        "wild-belly",
-    )]
 }

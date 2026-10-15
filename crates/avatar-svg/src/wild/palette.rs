@@ -1,8 +1,7 @@
-//! Palette recipes for grid 3: procedural harmony instead of lookup tables.
+//! Procedural palette recipes instead of lookup tables.
 //!
 //! Each recipe maps a seat's base hue to a full color set (body, outline,
-//! belly, part accent, blush). Recipes are the future palette-band genome
-//! field; the base hue is the per-seat variance.
+//! belly, part accent, blush). The palette region selects the recipe and hue.
 
 /// Resolved colors for one creature.
 pub struct Colors {
@@ -15,7 +14,7 @@ pub struct Colors {
     /// bodies so line-work keeps contrast.
     pub ink: String,
     /// Pupil fill — always dark. Pupils are not line-work: a light "pupil"
-    /// on a dark body reads as a blank ghost orb (Ufuk's lab find).
+    /// on a dark body reads as a blank ghost orb.
     pub pupil: String,
     /// Light sclera backing drawn behind pupils on dark bodies only; None
     /// on light bodies where the body itself is the backdrop.
@@ -27,11 +26,9 @@ fn hsl(h: f64, s: f64, l: f64) -> String {
     format!("hsl({:.0} {:.0}% {:.0}%)", h.rem_euclid(360.0), s, l)
 }
 
-pub const RECIPES: usize = 6;
-
 /// Voronoi mottle fills (light, dark) keyed to the recipe: same-hue shade
 /// steps of the body color, translucent so the body tone stays dominant.
-/// The grid-8 fixed black/white overlay read as cracked glass — mottle must
+/// A fixed black/white overlay read as cracked glass — mottle must
 /// belong to the creature's own palette.
 pub fn mottle(recipe: usize, h: f64) -> (String, String) {
     let a = |hh: f64, s: f64, l: f64, alpha: f64| {
@@ -49,13 +46,13 @@ pub fn mottle(recipe: usize, h: f64) -> (String, String) {
 
 /// Belly-patch fill: OPAQUE by design — the translucent bellies let the
 /// voronoi mottle bleed through, and an opaque belly is immune to whatever
-/// pattern lives on the hide (Ufuk's review). `variant` is genome-driven:
+/// pattern lives on the hide. `variant` is genome-driven:
 /// 0 = classic near-white, 1 = lighter same-hue tone, 2 = warm cream,
-/// 3 = soft accent tint. Dark gravitas keeps its luminous register.
+/// 3 = soft accent tint. The dark recipe keeps its luminous register.
 pub fn belly_fill(recipe: usize, h: f64, variant: u8) -> String {
     // Every variant stays anchored to the creature's own hue. A fixed warm
     // hue read as a foreign patch on cool bodies — a near-white cream blob
-    // on a green creature looks like a hole punched in it (seed 5033) — so
+    // on a green creature looks like a hole punched in it — so
     // "warm" is now a bounded shift of the body hue rather than a constant.
     let warm = h + warm_shift(h);
     if recipe == 3 {
