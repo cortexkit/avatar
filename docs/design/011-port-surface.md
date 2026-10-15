@@ -429,22 +429,26 @@ mid-port. Answered here.
   consumer would not find it, and would pay 16,384 dot products per
   call if it did.
 
-  CORRECTED after resolving the call graph rather than the call sites:
-  wild needs it NOWHERE. The SVG-arc-to-cubic adapter in `render.rs` is
-  the only caller of inverse trig, and its three call sites are all
-  inside `face::eyes` — a blob-era function the wild path never reaches,
-  since it draws through `face::eyes_inked` instead. So `arc_to` is
-  transitively dead here.
+  WRONG, AND WORTH KEEPING AS A RECORD OF HOW. An earlier revision of
+  this note claimed wild needs inverse trig nowhere: that `arc_to` (the
+  only caller of `atan2` and `tan`) was reached only from `face::eyes`,
+  a blob-era function the wild path never calls because it draws
+  through `face::eyes_inked`. That was false. `eyes_inked` delegates to
+  `eyes`, so the live chain is `draw_full -> eyes_inked -> eyes ->
+  arc_to`, and the Lidded eye's lid band and the HalfLid arc are drawn
+  through it. The port's review panel found it; a call graph confirms
+  it.
 
-  The first pass counted call sites and stopped, which answers "how many
-  places would I have to change" rather than "is any of this reached".
-  Circles and ellipses never went through the adapter anyway — they are
-  native tree primitives.
+  The irony is specific: the "correction" was written to fix a first
+  pass that counted call sites without checking reachability, and it
+  made the same mistake one level up, by checking who called `arc_to`
+  without checking who called its caller. Reachability has to be
+  followed to an entry point, not one hop.
 
-  Consequence for the port: THE WILD PATH NEEDS NO INVERSE TRIG AT ALL.
-  Nothing to re-author, nothing to promote out of `lashes.rs`, and one
-  fewer numeric primitive to pin. The adapter and its callers should be
-  deleted from the playground before the port reads it as a source.
+  Consequence for the port: `arc_to` is live and ports unchanged in
+  control flow. Under the f64 decision below it needs `tan` and `atan2`
+  rebuilt from basic operations, each gated against the standard
+  library, rather than integer versions.
 
 - **A caveat on this whole inventory.** It was assembled by searching
   for calls, and the `atan2` entry above shows what that misses: a
