@@ -47,8 +47,25 @@ for target in "${targets[@]}"; do
     args+=(-library "$archive" -headers "$root/crates/avatar-ffi/include")
 done
 xcodebuild -create-xcframework "${args[@]}" -output "$scratch/AvatarCore.xcframework"
+# xcodebuild lists the slices in Info.plist in a different order on each
+# run, so an unchanged build still produces a diff. Sort them: a binary
+# diff that appears on every rebuild teaches reviewers to skip binary
+# diffs, which is exactly where a stale build would hide.
+python3 - "$scratch/AvatarCore.xcframework/Info.plist" <<'PY'
+import plistlib, sys
+path = sys.argv[1]
+with open(path, "rb") as handle:
+    plist = plistlib.load(handle)
+plist["AvailableLibraries"].sort(key=lambda library: library["LibraryIdentifier"])
+with open(path, "wb") as handle:
+    plistlib.dump(plist, handle, sort_keys=True)
+PY
+
 output="$root/ports/swift/AvatarCore.xcframework"
 rm -rf "$output"
 mv "$scratch/AvatarCore.xcframework" "$output"
+# Record what this binary was built from; check.sh refuses when the source
+# has moved on without a rebuild.
+"$root/scripts/xcframework-source-hash.sh" > "$root/ports/swift/AvatarCore.source-hash"
 echo "Built static-library xcframework: $output"
 du -sh "$output"

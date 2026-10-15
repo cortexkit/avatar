@@ -7,5 +7,4 @@ edition.workspace = true
 crate-type = ["staticlib"]
 
 [dependencies]
-avatar-genome = { path = "../avatar-genome" }
 avatar-svg = { path = "../avatar-svg" }

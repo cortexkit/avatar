@@ -4,8 +4,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
-use avatar_genome::Genome;
-use avatar_svg::{render_tree_for, serialize_tree_json, DispatchError, Mood};
+use avatar_svg::{render_tree_for_bytes, serialize_tree_json, DispatchError, Mood};
 
 const OK: i32 = 0;
 const UNKNOWN_TYPE: i32 = 1;
@@ -43,9 +42,11 @@ pub unsafe extern "C" fn avatar_render_tree_json(
         if genome_ptr.is_null() || type_cstr.is_null() || mood_cstr.is_null() {
             return INVALID_ARGUMENT;
         }
-        if genome_len != 1_024 {
-            return GENOME_LENGTH;
-        }
+        // No length check here. Dispatch checks type, then version, then
+        // the length THAT TYPE requires, and that order is what lets a
+        // client draw nothing for a type it cannot depict while reporting a
+        // malformed row. A fixed length here would refuse every genome of a
+        // newer, differently sized type as corrupt.
         let Ok(avatar_type) = CStr::from_ptr(type_cstr).to_str() else {
             return UNKNOWN_TYPE;
         };
@@ -59,9 +60,8 @@ pub unsafe extern "C" fn avatar_render_tree_json(
             b"sleepy" => Mood::Sleepy,
             _ => return UNKNOWN_MOOD,
         };
-        let mut bytes = [0; 1_024];
-        bytes.copy_from_slice(std::slice::from_raw_parts(genome_ptr, genome_len));
-        let tree = match render_tree_for(&Genome::from_bytes(bytes), avatar_type, version, mood) {
+        let bytes = std::slice::from_raw_parts(genome_ptr, genome_len);
+        let tree = match render_tree_for_bytes(bytes, avatar_type, version, mood) {
             Ok(tree) => tree,
             Err(DispatchError::UnsupportedType { .. }) => return UNKNOWN_TYPE,
             Err(DispatchError::UnsupportedVersion { .. }) => return UNKNOWN_VERSION,
@@ -129,7 +129,7 @@ mod tests {
             assert_eq!(status, OK);
             assert!(!output.is_null());
             let expected = serialize_tree_json(
-                &render_tree_for(&Genome::from_bytes(bytes), avatar_svg::CLASSIC, 2, mood).unwrap(),
+                &render_tree_for_bytes(&bytes, avatar_svg::CLASSIC, 2, mood).unwrap(),
             );
             unsafe {
                 assert_eq!(CStr::from_ptr(output).to_str().unwrap(), expected);
@@ -168,6 +168,23 @@ mod tests {
             assert_eq!(status, expected);
             assert!(output.is_null());
         }
+    }
+
+    #[test]
+    fn an_unknown_type_is_reported_as_unknown_whatever_its_genome_length() {
+        // A row of a type this build does not implement arrives with that
+        // type's own genome size. It must read as "cannot depict" so the
+        // client draws nothing, never as "malformed" so the client raises
+        // a false corruption report for every such row.
+        let newer_type_genome = [0x5a; 16_384];
+        let (status, output) = render(&newer_type_genome, "creature.newer", 1, "neutral");
+        assert_eq!(status, UNKNOWN_TYPE);
+        assert!(output.is_null());
+
+        // The same length under the KNOWN type is still a malformed row.
+        let (status, output) = render(&newer_type_genome, avatar_svg::CLASSIC, 2, "neutral");
+        assert_eq!(status, GENOME_LENGTH);
+        assert!(output.is_null());
     }
 
     #[test]

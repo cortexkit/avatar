@@ -39,7 +39,6 @@ dependencies = [
 name = "avatar-ffi"
 version = "0.1.0"
 dependencies = [
- "avatar-genome",
  "avatar-svg",
 ]
 

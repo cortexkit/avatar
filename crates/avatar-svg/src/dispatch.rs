@@ -80,7 +80,17 @@ pub fn render_tree_for(
     render_tree_for_bytes(genome.as_bytes(), avatar_type, version, mood)
 }
 
-fn render_tree_for_bytes(
+/// Byte-level dispatch for callers holding UNVALIDATED genome bytes, such as
+/// the C boundary an embedded app calls.
+///
+/// Checks run in a fixed order: type, then version, then the genome length
+/// THAT TYPE requires. The order is part of the contract. A client must be
+/// able to tell "this build cannot depict this type", which it answers by
+/// drawing nothing, from "this row is malformed", which it reports. Checking
+/// a length first would turn every row of a newer type, whose genome is a
+/// different size, into a false report of corruption. And the length lives
+/// with the type here, so no caller needs its own copy of it.
+pub fn render_tree_for_bytes(
     genome_bytes: &[u8],
     avatar_type: &str,
     version: u32,

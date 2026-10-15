@@ -86,6 +86,12 @@ run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin gr
 # and reaching it only through the half that does made it skippable on any
 # machine without one.
 run "renderer consts"   python3 scripts/const-drift.py
+# The committed AvatarCore binary is what phones run. Every other test
+# builds from source, so a forgotten rebuild passes them all; this compares
+# the source the binary was built from against the source here.
+run "core binary current" bash -c \
+  '[ "$(cat ports/swift/AvatarCore.source-hash 2>/dev/null)" = "$(./scripts/xcframework-source-hash.sh)" ] \
+   || { echo "  AvatarCore.xcframework is stale: rebuild with scripts/build-xcframework.sh"; exit 1; }'
 
 # playground/web/index.html is a JavaScript twin of the Rust generator,
 # and it is what a human opens to review creature designs. If the two
