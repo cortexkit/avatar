@@ -462,6 +462,66 @@ mid-port. Answered here.
   a linear map of an integer draw and ports as a multiply and a shift.
   The splitmix64 bit source underneath is already pure integer.
 
+## Determinism under single source: IEEE f64, no maths library (2026-10-15)
+
+The fixed-point inventory above assumed the wild port would rewrite the
+pipeline in integer arithmetic, which is how classic is built. That
+discipline was chosen so THREE LANGUAGES could implement the generator
+independently and still agree byte for byte. Single source removed the
+language dimension: only Rust builds trees now, compiled for each
+platform. What remains is whether one Rust codebase yields identical
+bytes on every platform it compiles for, and that was measured rather
+than assumed.
+
+The same 206 wild trees (200 seeds, plus every mood of the first),
+minted by the playground's f64 pipeline on three platforms:
+
+| comparison | identical | differ |
+| --- | --- | --- |
+| macOS arm64 vs Linux arm64, libm trig | 199 | 7 |
+| macOS arm64 vs Linux x86_64, libm trig | 198 | 8 |
+| macOS arm64 vs Linux arm64, trig from + - * / only | 206 | 0 |
+| macOS arm64 vs Linux x86_64, trig from + - * / only | 206 | 0 |
+
+IEEE 754 requires `+ - * /` and `sqrt` to be correctly rounded, Rust
+does not contract them into fused operations, and every platform Rust
+targets implements them in hardware or exactly in software. The
+platform maths library is the only non-portable layer, and on the wild
+path it was exactly four `sin`/`cos` call sites in `wild.rs`. Replacing
+them with a reduction and polynomial built only from basic operations
+made every tree identical on all three platforms. The 206/206 result
+corroborates the argument; the argument is what makes it hold for
+inputs the sample never reached.
+
+The divergence was not cosmetic, which is why "close enough" is not
+enough. On the same machine, libm trig and basic-operation trig agree
+to about 1e-14, yet 72 of the 206 trees changed, and in one a Voronoi
+path moved by roughly 93 canvas units out of 240. A difference in the
+14th digit crossed a branch: a half-plane fold test, a relaxation step,
+a tiebreak. In this pipeline, tiny numeric differences do not stay tiny.
+
+DECISION: the wild port keeps f64 and does not rewrite into fixed
+point. Determinism comes from three rules, each enforced by a gate
+rather than by care:
+
+- No transcendental maths-library call anywhere on the generation path
+  (sin, cos, tan, their inverses and hyperbolics, exp, ln, log, powf,
+  powi, cbrt, hypot, mul_add). Forward trig comes from one shared
+  basic-operation implementation. Enforced with clippy's
+  `disallowed-methods`.
+- `sqrt` is allowed: IEEE requires it correctly rounded.
+- No nondeterministic iteration (randomly seeded hash maps) and no
+  clocks on the generation path.
+
+Classic keeps its fixed-point implementation unchanged. The ports
+still carry an independent classic generator, which is the case
+fixed-point was built for.
+
+What this removes from the inventory above: integer sqrt, the integer
+atan2 question, and the fixed-point rewrite itself. The port becomes a
+move of the playground pipeline into the shipped crates, with four
+trig sites swapped and a gate against reintroducing them.
+
 ## Non-negotiable either way
 
 The golden corpus remains the spec of record and the parity gate. The
