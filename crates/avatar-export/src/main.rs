@@ -22,7 +22,7 @@
 //!     so ALF can pass richer records); output files are <stable_id>.png.
 //!   Options: --size N (default 400), --mood M (default neutral).
 
-use avatar_genome::{decode, derive_genome, Genome, SeatIdentity};
+use avatar_genome::{decode, derive_genome, derive_genome_bytes, Genome, SeatIdentity};
 use avatar_svg::{render_svg, Mood, RenderParams, Q32};
 
 /// The avatar TYPE: which procedural representation renders the genome.
@@ -138,16 +138,47 @@ fn read_ids(arg: &str) -> Vec<String> {
 /// Every record carries `avatar_type`, because a genome is positional and
 /// uninterpretable without knowing which LAYOUT minted it. A row holding
 /// genome bytes with no type is corrupt rather than defaulting.
-fn mint_manifest(ids: &[String]) -> String {
+/// The avatar types this tool can mint a genome for, with the genome
+/// LENGTH each layout requires. Length belongs to the type, never to the
+/// version: a version fixes generation bugs and never moves a field.
+///
+/// Derivation itself is type-independent (one XOF stream read to the
+/// required length), so a seat's longer genome extends its classic one
+/// rather than re-rolling it. That is what lets a type be a different
+/// REPRESENTATION of the same creature rather than a different creature.
+const MINTABLE: &[(&str, usize, u32)] = &[
+    (AVATAR_TYPE, 1_024, AVATAR_VERSION),
+    ("creature.wild", 16_384, 1),
+];
+
+fn mintable(type_name: &str) -> Option<(&'static str, usize, u32)> {
+    MINTABLE.iter().copied().find(|(t, _, _)| *t == type_name)
+}
+
+/// One JSON object per agent, each carrying its own type and version.
+///
+/// Deliberately NOT a map of id to genome with the type stated once at the
+/// top: an entry that carries its own type cannot be separated from the
+/// genome it describes by a later edit, a merge, or a partial copy. A
+/// genome is uninterpretable without knowing which layout minted it, so
+/// the two must travel together.
+fn mint_manifest(ids: &[String], type_name: &str) -> String {
+    let (type_name, len, version) = mintable(type_name).expect("caller validated the type");
     let mut out = String::from("[\n");
     for (i, id) in ids.iter().enumerate() {
-        let genome = derive_genome(&SeatIdentity::Registered {
-            project_id: id.clone(),
-        });
+        let bytes = derive_genome_bytes(
+            &SeatIdentity::Registered {
+                project_id: id.clone(),
+            },
+            len,
+        );
+        let mut hex = String::with_capacity(len * 2);
+        for byte in &bytes {
+            hex.push_str(&format!("{byte:02x}"));
+        }
         let comma = if i + 1 == ids.len() { "" } else { "," };
         out.push_str(&format!(
-            "  {{\"agent_id\":\"{id}\",\"avatar_genome\":\"{}\",\"avatar_type\":\"{AVATAR_TYPE}\",\"avatar_version\":{AVATAR_VERSION}}}{comma}\n",
-            genome.to_hex(),
+            "  {{\"agent_id\":\"{id}\",\"avatar_genome\":\"{hex}\",\"avatar_type\":\"{type_name}\",\"avatar_version\":{version}}}{comma}\n",
         ));
     }
     out.push_str("]\n");
@@ -258,7 +289,16 @@ fn main() {
             eprintln!("--mint-genomes: no agent ids given");
             std::process::exit(2);
         }
-        let manifest = mint_manifest(&ids);
+        let type_name = get("--type").unwrap_or_else(|| AVATAR_TYPE.to_owned());
+        if mintable(&type_name).is_none() {
+            eprintln!("--type: unknown avatar type {type_name:?}");
+            eprintln!("  known: {}", {
+                let names: Vec<&str> = MINTABLE.iter().map(|(t, _, _)| *t).collect();
+                names.join(", ")
+            });
+            std::process::exit(2);
+        }
+        let manifest = mint_manifest(&ids, &type_name);
         match get("--out") {
             Some(path) => {
                 std::fs::write(&path, &manifest).expect("write manifest");
@@ -368,8 +408,33 @@ mod tests {
             .map(|s| (*s).to_owned())
             .collect();
 
-        let first = mint_manifest(&ids);
-        assert_eq!(first, mint_manifest(&ids), "mint must be reproducible");
+        let first = mint_manifest(&ids, AVATAR_TYPE);
+        assert_eq!(
+            first,
+            mint_manifest(&ids, AVATAR_TYPE),
+            "mint must be reproducible"
+        );
+
+        // A longer type mints the same seats at its own length, and the
+        // wild genome EXTENDS the classic one rather than re-rolling it:
+        // the hex prefix must match, or a seat's identity forks between
+        // the two types with nothing reporting it.
+        let wild = mint_manifest(&ids, "creature.wild");
+        assert!(wild.contains("\"avatar_type\":\"creature.wild\""));
+        assert!(wild.contains("\"avatar_version\":1"));
+        let classic_hex = first
+            .split("\"avatar_genome\":\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("classic genome hex");
+        let wild_hex = wild
+            .split("\"avatar_genome\":\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("wild genome hex");
+        assert_eq!(classic_hex.len(), 2_048);
+        assert_eq!(wild_hex.len(), 32_768);
+        assert!(wild_hex.starts_with(classic_hex));
 
         let genomes: Vec<&str> = first
             .split("\"avatar_genome\":\"")

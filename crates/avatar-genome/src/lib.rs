@@ -6,4 +6,4 @@ mod identity;
 
 pub use decode::decode;
 pub use genome::{Genome, GenomeError};
-pub use identity::{derive_genome, SeatIdentity};
+pub use identity::{derive_genome, derive_genome_bytes, SeatIdentity};

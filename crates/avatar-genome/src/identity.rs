@@ -41,9 +41,66 @@ pub fn derive_genome(identity: &SeatIdentity) -> Genome {
     Genome::from_bytes(bytes)
 }
 
+/// Derives `len` genome bytes for a seat, for avatar types whose layout is
+/// not the 1 KiB `creature.classic` one.
+///
+/// Derivation is TYPE-INDEPENDENT: the type decides how the bytes are read,
+/// never how they are made. So this reads the same XOF stream further, and
+/// a longer genome's first 1 KiB is byte-identical to the classic genome
+/// for the same seat — the identity core is shared rather than re-rolled.
+///
+/// Seeding only. Once a row holds a genome that row is authoritative: a
+/// re-roll changes it under a stable id, so anything that re-derives from
+/// the id afterwards reproduces the ORIGINAL creature forever, confidently.
+pub fn derive_genome_bytes(identity: &SeatIdentity, len: usize) -> Vec<u8> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(IDENTITY_DOMAIN);
+    hasher.update(&[0]);
+
+    match identity {
+        SeatIdentity::Registered { project_id } => {
+            hasher.update(project_id.as_bytes());
+        }
+        SeatIdentity::PathFallback { canonical_path } => {
+            hasher.update(b"path-fallback");
+            hasher.update(&[0]);
+            hasher.update(canonical_path.as_bytes());
+        }
+    }
+
+    let mut bytes = vec![0; len];
+    hasher.finalize_xof().fill(&mut bytes);
+    bytes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_longer_genome_extends_the_classic_one_rather_than_re_rolling_it() {
+        // The XOF stream is the same, so every avatar type for one seat
+        // shares an identity core. If this ever stops holding, a seat's
+        // creature identity forks silently between types.
+        let identity = SeatIdentity::Registered {
+            project_id: "agent_0000000000000001".to_owned(),
+        };
+        let classic = derive_genome(&identity);
+        let wild = derive_genome_bytes(&identity, 16_384);
+
+        assert_eq!(wild.len(), 16_384);
+        assert_eq!(&wild[..1_024], classic.as_bytes());
+
+        // And a different seat must not share it, or the assertion above
+        // would hold for the wrong reason.
+        let other = derive_genome_bytes(
+            &SeatIdentity::Registered {
+                project_id: "agent_somebody_else".to_owned(),
+            },
+            16_384,
+        );
+        assert_ne!(&other[..1_024], classic.as_bytes());
+    }
 
     #[test]
     fn identity_prefixes_are_compatibility_pins() {
