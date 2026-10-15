@@ -18,11 +18,16 @@
 # Usage: scripts/drift-check.sh [start] [count]
 
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 START="${1:-4000}"
 COUNT="${2:-24}"
 LAB="file://$(pwd)/playground/web/index.html"
+
+if [[ ! $COUNT =~ ^[1-9][0-9]*$ ]]; then
+  echo "drift-check: count must be a positive integer" >&2
+  exit 1
+fi
 
 # Resolve a browser rather than hardcoding one machine's path. The previous
 # version looked only in /Applications and exited 0 when it found nothing,
@@ -60,17 +65,21 @@ cargo build --quiet --manifest-path playground/Cargo.toml --bin grid || exit 1
 fails=0
 for ((i = 0; i < COUNT; i++)); do
   seed=$((START + i))
-  rust=$(cargo run --quiet --manifest-path playground/Cargo.toml --bin grid -- --probe "$seed" 2>/dev/null | tail -1)
+  if ! rust=$(cargo run --quiet --manifest-path playground/Cargo.toml --bin grid -- --probe "$seed" | tail -1); then
+    echo "drift-check: Rust probe failed for seed $seed" >&2
+    exit 1
+  fi
   js=$("$CHROME" --headless --disable-gpu --virtual-time-budget=20000 \
         --dump-dom "$LAB?probe=$seed" 2>/dev/null | grep -o 'seed=[^<]*' | head -1)
   # Numeric comparison, not string equality. Both renderers are float
   # implementations and their formatters round differently at the last
   # decimal (Rust {:.1} is half-to-even, JS toFixed is not), so string
-  # equality reports formatting noise as drift and trains you to ignore the
-  # output. Counts and flags must match EXACTLY; coordinates get a 0.15-unit
-  # tolerance, which is far below anything visible and far above rounding.
-  # Byte-exactness is the fixed-point implementation's bar, not this one's.
+  # equality reports formatting noise as drift. Counts and flags must match
+  # exactly; coordinates get a 0.15-unit tolerance on the 240-unit canvas,
+  # allowing for both outputs rounding to one decimal place. Golden-tree
+  # tests separately enforce byte-exact shipped output, without this tolerance.
   if ! python3 - "$rust" "$js" <<'PY'
+import math
 import sys
 
 def fields(line):
@@ -83,7 +92,10 @@ def fields(line):
     return out
 
 a, b = fields(sys.argv[1]), fields(sys.argv[2])
-if a.keys() != b.keys():
+# Require the stdout contract, not just equal key sets: two blank or truncated
+# probes must never masquerade as agreement.
+KEYS = {"seed", "spokes", "exts", "topo", "vor", "pts", "bbox", "face", "mouthy", "belly"}
+if a.keys() != KEYS or b.keys() != KEYS:
     sys.exit(1)
 EXACT = {"seed", "spokes", "exts", "topo", "vor", "pts", "belly"}
 for key in a:
@@ -96,7 +108,8 @@ for key in a:
         sys.exit(1)
     for x, y in zip(av, bv):
         try:
-            if abs(float(x) - float(y)) > 0.15:
+            ax, by = float(x), float(y)
+            if not math.isfinite(ax) or not math.isfinite(by) or abs(ax - by) > 0.15:
                 sys.exit(1)
         except ValueError:
             if x != y:

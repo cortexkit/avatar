@@ -1,52 +1,21 @@
 #!/usr/bin/env python3
-"""Compares the tuning constants of the two wild renderers.
+"""Compare shipped wild-module constants with playground/web/index.html.
 
-This is the sampling-free half of the drift check. The geometry half
-compares rendered output for a handful of seeds, and it reported the two
-renderers in agreement while the lab drew every mouth 0.8r above
-canonical: the divergent constant sat in a derivation downstream of
-everything the probe carried, so no placement field disagreed. A constant
-that no sampled seed reaches still differs.
+This sampling-free check complements drift-check.sh's per-seed geometry
+comparison. An unmatched constant fails even if no sampled seed reaches it.
+Only distinct fractional values are gated: swapping values already present
+elsewhere can leave the sets identical. The geometry comparison can catch
+such swaps when a sampled seed reaches the changed calculation.
 
-WHAT THIS CANNOT SEE, stated because a gate whose range is implied gets
-trusted past it. This compares SETS of distinct values, so it sees a
-change only when one introduces or removes a distinct value. Editing a
-constant to a value that already appears elsewhere in the same file
-leaves the set identical and this stays silent — verified, not reasoned:
-changing a spoke modulo from 12 to 11 produces no output, and changing
-it to 97 names 97 immediately.
+Occurrence counts are not comparable: the renderers factor helpers
+differently, and the browser lab omits the shipped lid-band geometry.
+Integers are reported but not gated because the lab also contains UI sizes
+and seeds. Inspect those differences when changing geometry; this check
+alone cannot catch a contour-resolution change from 110 to 130.
 
-Counting occurrences instead of collecting them would close that, and it
-is not viable here: only 51% of shared fractional constants occur the
-same number of times in the two renderers, because the canonical side
-carries sheet-rendering code the lab has no counterpart for and the two
-factor their helpers differently. A gate with 38 standing mismatches
-teaches people to ignore it.
-
-The geometry half of drift-check.sh covers the complementary case: a
-swap between already-present values changes rendered output, which the
-per-seed comparison catches whenever a sampled seed reaches it. Neither
-half is sufficient; the pair is what has range.
-
-Only FRACTIONAL literals are GATED. Integers are reported and not gated,
-which is a deliberate compromise rather than an oversight, and the report
-is the point: an instrument that silently skips a span will one day be
-trusted about the span it skipped.
-
-The integer difference is currently all harness — sheet seeds, cell
-coordinates, lab preview sizes. Gating it would mean a baseline that
-churns on every harness edit, which trains the habit of widening a
-baseline to make a gate pass. But the span is not empty of risk: the
-first divergence this pair ever had was marching-squares resolution 110
-against 130, an INTEGER, and a fractional-only comparison would not have
-seen it. So the numbers are printed every run, and a pipeline-shaped
-value appearing there is a prompt to look.
-
-Comments are stripped; strings deliberately are NOT. Both renderers build
-SVG by formatting, so a literal inside `stroke-width='2.5'` is as
-load-bearing as a named binding. An earlier version stripped strings and
-hid three real constants behind JS template literals, which produced
-false differences and nearly buried the real one.
+Comments are stripped; strings deliberately are not. The lab builds SVG
+strings, where a literal inside `stroke-width='2.5'` affects geometry just
+as much as a named binding does. Static HTML slider bounds are excluded.
 """
 
 import glob
@@ -54,8 +23,11 @@ import os
 import re
 import sys
 
-# A new renderer-only fractional constant signals unmatched tuning. Shrink
-# these exception sets when code leaves; never grow them merely to pass.
+# Fractional values found on only one side require matching tuning, not a
+# larger exception set. Remove exceptions when their literals disappear.
+# Only Rust literals used solely by atan2/tan may be added, each commented
+# as lab-unimplemented: the browser retains native SVG lid arcs instead.
+# Those implementations currently need no exceptions.
 BASELINE_RUST = set()
 BASELINE_JS = set()
 
@@ -111,11 +83,8 @@ def main():
         if int_lab:
             print(f"    lab:       {show(int_lab)}")
 
-    # A baseline entry that no longer occurs excuses nothing, and it widens
-    # the exemption set for a value that is not there. Two of these are dead
-    # blob-era code queued for deletion, so the day that lands the baseline
-    # must shrink with it — and the script's own instruction is to shrink it
-    # and never grow it, which needs something that notices.
+    # Removed literals must leave BASELINE_RUST/BASELINE_JS too, or those sets
+    # could silently excuse unrelated tuning introduced later.
     stale_rust = sorted(BASELINE_RUST - set(rust_only))
     stale_lab = sorted(BASELINE_JS - set(lab_only))
     if stale_rust or stale_lab:
@@ -135,7 +104,7 @@ def main():
         print("  canonical only: " + " ".join(str(v) for v in new_rust))
     if new_lab:
         print("  lab only:       " + " ".join(str(v) for v in new_lab))
-    print("  Fix the renderer, or justify the entry and add it above.")
+    print("  Mirror the renderer constant; only lab-unimplemented atan2/tan literals may be exempted.")
     return 1
 
 

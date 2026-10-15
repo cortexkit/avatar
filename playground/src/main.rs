@@ -7,8 +7,8 @@
 
 use ava_playground::fit;
 use avatar_svg::wild::{
-    belly_patch, belly_top_for, decode_full, decode_full_counted, decode_genome, draw_full, genome,
-    merge, mood, mouth_y_for, outline_for, place_face, render, shape as wild, Creature,
+    belly_patch, belly_top_for, decode_full_counted, decode_genome, draw_full, genome, merge, mood,
+    mouth_y_for, outline_for, place_face, probe_genome, render, shape as wild, Creature,
 };
 use avatar_svg::{Primitive, RenderTree};
 
@@ -81,10 +81,10 @@ fn write_domspread(start: u64, n: usize) {
         ));
         for k in 0..n {
             let seed = start + k as u64;
-            let mut c = decode_full(seed);
+            let mut c = decode_genome(&probe_genome(seed));
             if band == 1 {
                 // The byte note 009 named, read the way it specified.
-                c.dom = 0.12 + (genome::probe_genome(seed)[1] as f64 / 255.0) * 0.60;
+                c.dom = 0.12 + (probe_genome(seed)[1] as f64 / 255.0) * 0.60;
             }
             let x0 = pad + k as f64 * (cell + pad);
             let yc = y0 + label;
@@ -112,14 +112,16 @@ fn write_domspread(start: u64, n: usize) {
     println!("domspread: {n} seeds, pinned vs decoded -> {path}");
 }
 
-/// Eyes-inside sweep: SDF-verifies both eye discs for a seed range. Run
-/// with `--check N`. Prints violations; exits nonzero on any.
+/// Checks the shipped placement's unscaled eye circles and mouth probes
+/// against the body outline. Eye-kind drawing scales and mood transforms
+/// are outside this proof; all distances use the neutral pose.
+/// Run with `--check N`; prints violations and exits nonzero on any.
 fn run_checker(n: u64) {
     let mut violations = 0usize;
     let mut placed = 0usize;
     let mut worst: (f64, u64) = (f64::MAX, 0);
     for seed in 4000..(4000 + n) {
-        let c = decode_full(seed);
+        let c = decode_genome(&probe_genome(seed));
         let outline = outline_for(&c, 120.0, 120.0);
         let Some(p) = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d) else {
             println!("seed {seed}: NO PLACEMENT");
@@ -128,8 +130,8 @@ fn run_checker(n: u64) {
         };
         placed += 1;
         let poly = merge::Poly::new(&outline, 2);
-        // Verify the DRAWN eye disc: the placement radius is what the
-        // renderer uses, so clearance = interior depth minus radius.
+        // Signed distance is negative inside the body, so its negation is
+        // interior depth. Subtract the unscaled placement radius for clearance.
         let clearance = [
             poly.sdf(p.fx - p.ipd, p.eye_y),
             poly.sdf(p.fx + p.ipd, p.eye_y),
@@ -137,8 +139,8 @@ fn run_checker(n: u64) {
         .iter()
         .map(|d| -d - p.r)
         .fold(f64::MAX, f64::min);
-        // Mouth-fit (TOG rule): drawn mouth extremes inside the silhouette,
-        // at the creature's own mouth scale.
+        // Placement tests the mouth's left, right and bottom extremes using
+        // genome-derived width/depth, slightly below the drawn mouth line.
         let mouth_y = p.eye_y + p.r * 2.71;
         let half = p.r * 0.8 * c.face_style.mouth_w;
         let deep = p.r * 0.62 * c.face_style.mouth_d;
@@ -161,8 +163,8 @@ fn run_checker(n: u64) {
             );
             violations += 1;
         }
-        // Separation invariant: eye discs never touch each other (widest
-        // archetype half-width 1.25r + margin).
+        // Require center spacing to exceed the unscaled eye diameter plus
+        // the same extra spacing margin that placement reserves.
         let sep = 2.0 * p.ipd - 2.0 * p.r * 1.45;
         if sep < -1e-9 {
             println!("seed {seed}: eyes overlap by {:.2}", -sep);
@@ -190,7 +192,7 @@ fn run_bench(start_seed: u64, count: usize) {
     for offset in 0..count {
         let seed = start_seed + offset as u64;
         let start = std::time::Instant::now();
-        let creature = decode_full(seed);
+        let creature = decode_genome(&probe_genome(seed));
         let tree = RenderTree {
             canvas: 240,
             background: None,
@@ -223,7 +225,7 @@ fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
         .unwrap_or_else(|error| panic!("create fixture directory {}: {error}", out_dir.display()));
     for offset in 0..count {
         let seed = start_seed + offset as u64;
-        let creature = decode_full(seed);
+        let creature = decode_genome(&probe_genome(seed));
         let moods: &[mood::Mood] = if offset == 0 {
             &mood::ALL
         } else {
@@ -286,7 +288,7 @@ fn main() {
         );
         let (mut sum_pts, mut sum_a, mut sum_b) = (0usize, 0usize, 0usize);
         for seed in start..start + count {
-            let creature = decode_full(seed);
+            let creature = decode_genome(&probe_genome(seed));
             let outline = outline_for(&creature, 120.0, 120.0);
             // Second variant: one pass of 3-point averaging before the
             // fit. Marching-squares contours are grid-quantized, so they
@@ -399,7 +401,7 @@ fn main() {
         );
         for k in 0..n {
             let seed = start + k as u64;
-            let c = decode_full(seed);
+            let c = decode_genome(&probe_genome(seed));
             let col = k % cols;
             let row = k / cols;
             let x0 = pad + col as f64 * (cell + pad);
@@ -461,7 +463,7 @@ fn main() {
 
     if let Some(i) = args.iter().position(|a| a == "--probe") {
         let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
-        let c = decode_full(seed);
+        let c = decode_genome(&probe_genome(seed));
         let outline = outline_for(&c, 120.0, 120.0);
         let (bx0, by0, bx1, by1) = wild::bbox(&outline);
         let p = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d);
@@ -508,7 +510,7 @@ fn main() {
         let mut y = 6.0;
         for size in sizes {
             for j in 0..n {
-                let c = decode_full(start + j as u64);
+                let c = decode_genome(&probe_genome(start + j as u64));
                 let x0 = 6.0 + j as f64 * pitch;
                 svg.push_str(&format!(
                     "<rect x='{x0:.1}' y='{y:.1}' width='{size}' height='{size}' rx='{:.1}' fill='#efe9e4'/>",
@@ -559,7 +561,7 @@ fn main() {
             ));
         }
         for (si, &seed) in seeds.iter().enumerate() {
-            let c = decode_full(seed);
+            let c = decode_genome(&probe_genome(seed));
             for (mi, m) in moods.iter().enumerate() {
                 let x0 = pad + mi as f64 * (cell + pad);
                 let y0 = 22.0 + pad + si as f64 * (cell + pad);
@@ -592,7 +594,7 @@ fn main() {
     }
     if let Some(i) = args.iter().position(|a| a == "--inspect") {
         let seed: u64 = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(4000);
-        let c = decode_full(seed);
+        let c = decode_genome(&probe_genome(seed));
         let outline = outline_for(&c, 120.0, 120.0);
         let (bx0, by0, bx1, by1) = wild::bbox(&outline);
         println!(
@@ -626,7 +628,7 @@ fn main() {
         for c in 0..cols {
             let i = r * cols + c;
             let seed = 4000 + i as u64;
-            let creature = decode_full(seed);
+            let creature = decode_genome(&probe_genome(seed));
             let cx = PAD + c as f64 * (CELL + PAD) + CELL / 2.0;
             let cy = PAD + r as f64 * (CELL + PAD) + CELL / 2.0 + 28.0;
             let tag = match creature.topology {
@@ -653,7 +655,7 @@ fn main() {
         "<svg xmlns='http://www.w3.org/2000/svg' width='{width2:.0}' height='{height2:.0}' viewBox='0 0 {width2:.0} {height2:.0}'><rect width='100%' height='100%' fill='#1c1a20'/><text x='{PAD}' y='24' font-family='monospace' font-size='15' fill='#c8c2ce'>grid 10 — moods on the wild pipeline</text>"
     );
     for (r, &seed) in cast.iter().enumerate() {
-        let creature = decode_full(seed);
+        let creature = decode_genome(&probe_genome(seed));
         for (c, &m) in mood::ALL.iter().enumerate() {
             let cx = PAD + c as f64 * (CELL + PAD) + CELL / 2.0;
             let cy = PAD + r as f64 * (CELL + PAD) + CELL / 2.0 + 28.0;
@@ -674,7 +676,7 @@ fn main() {
         "<svg xmlns='http://www.w3.org/2000/svg' width='352' height='44' viewBox='0 0 352 44'><rect width='100%' height='100%' fill='#1c1a20'/>",
     );
     for (i, &seed) in strip_seeds.iter().enumerate() {
-        let creature = decode_full(seed);
+        let creature = decode_genome(&probe_genome(seed));
         let x0 = 4.0 + i as f64 * 44.0;
         svg3.push_str(&format!(
             "<rect x='{x0:.1}' y='4' width='36' height='36' rx='6' fill='#efe9e4'/>",

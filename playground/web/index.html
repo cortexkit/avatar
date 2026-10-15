@@ -163,6 +163,11 @@ window.addEventListener("error", e => {
   if (v) v.innerHTML = `<pre style='color:#c33;font-size:11px;padding:12px;white-space:pre-wrap'>${e.message}\n${e.filename}:${e.lineno}</pre>`;
 });
 // ============ bit source (splitmix64 via BigInt — matches Rust) ============
+function seedFromText(text) {
+  // Keep decimal seeds out of Number: values above 2^53 would lose genome bits.
+  const decimal = /^\s*[+-]?\d+/.exec(text);
+  return decimal ? BigInt(decimal[0].trim()) : 0n;
+}
 function bits(seed) {
   let s = BigInt(seed) & 0xFFFFFFFFFFFFFFFFn;
   const M = 0xFFFFFFFFFFFFFFFFn;
@@ -1106,7 +1111,7 @@ function stressSweep(n) {
     : `<b class='ok'>${n}/${n} clean</b> <span class='dim'>· tightest ${tightest.toFixed(2)} at seed ${tightestSeed} (type it in to inspect)</span>`;
 }
 function loadSeed() {
-  const seed = parseInt($("seed").value, 10) || 0;
+  const seed = seedFromText($("seed").value);
   state = decodeGenome(seed);
   $("spokes").value = state.spokes.length;
   $("dom").value = state.dom;
@@ -1124,7 +1129,7 @@ function loadSeed() {
 // spoke-count knob: re-slice or extend the decoded set deterministically
 $("spokes").addEventListener("input", () => {
   const want = +$("spokes").value;
-  const b = bits(parseInt($("seed").value, 10) * 7 + 13);
+  const b = bits(seedFromText($("seed").value) * 7n + 13n);
   while (state.spokes.length < want) {
     const base = (state.spokes.length / want) * Math.PI * 2;
     state.spokes.push({ theta: base + b.lin(-0.3, 0.3), r: b.lin(0.12, 1.35), tension: b.lin(0.4, 2.6) });
@@ -1214,7 +1219,7 @@ if (params.has("mood") && MOODS.includes(params.get("mood"))) mood = params.get(
 // prints, so scripts/drift-check.sh can diff the two renderers instead of
 // assuming they agree. Written into the DOM for --dump-dom to read.
 if (params.has("probe")) {
-  const seed = parseInt(params.get("probe"), 10) || 0;
+  const seed = seedFromText(params.get("probe"));
   // Render at the canonical 240-unit cell so the numbers are comparable
   // with Rust --probe, which works in that cell.
   creatureSVG(paramsFromSeed(seed), "neutral", 240);
