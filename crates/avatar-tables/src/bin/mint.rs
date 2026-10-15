@@ -22,6 +22,9 @@ fn main() {
     println!("wrote {}", output.display());
 }
 
+// Offline table minting pins the platform formula's results as committed data;
+// runtime geometry reads those integers rather than calling these methods.
+#[allow(clippy::disallowed_methods)]
 fn mint_source() -> String {
     let sine: [u32; SIN_SAMPLES] = std::array::from_fn(|index| {
         round_nonnegative(

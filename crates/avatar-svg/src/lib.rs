@@ -2,10 +2,11 @@
 //!
 //! The renderer is the third layer of the determinism contract (design note
 //! 001): it consumes the typed phenotype and render-time inputs, never DNA.
-//! All geometry is integer-only — i64 milliunits on a 1_000_000 canonical
+//! Classic geometry is integer-only — i64 milliunits on a 1_000_000 canonical
 //! canvas, Q32.32 factors, and `avatar_tables::div_round_half_away` as the
 //! single pinned narrowing primitive — so every port produces byte-identical
-//! output.
+//! output. Wild geometry uses floating-point arithmetic with shared polynomial
+//! maths instead of platform maths-library calls.
 //!
 //! The body and face passes assemble the flat render contract from design note
 //! 006. Native consumers draw that tree directly; SVG preserves the established
@@ -29,6 +30,7 @@ mod svg;
 mod tree;
 mod tree_json;
 mod tree_serialize;
+pub mod wild;
 
 /// The vendored Voronoi pattern table (spec data, hash-pinned in tests).
 mod voronoi {
@@ -447,7 +449,7 @@ mod tests {
         assert!(svg.contains("id=\"av-mouth\""));
     }
 
-    /// Float tripwire: source geometry must stay on the shared integer path.
+    /// Reject binary floats in classic sources; only src/wild may use them.
     #[test]
     fn source_has_no_binary_float_type() {
         let needle = ["f", "64"].concat();
@@ -500,6 +502,9 @@ mod tests {
     fn scan_rust_sources(directory: &std::path::Path, needle: &str) {
         for entry in std::fs::read_dir(directory).expect("read source directory") {
             let path = entry.expect("read source entry").path();
+            if path == std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/wild") {
+                continue;
+            }
             if path.is_dir() {
                 scan_rust_sources(&path, needle);
                 continue;
@@ -534,7 +539,9 @@ mod tests {
                 continue;
             }
             let line_comment = rest.find("//");
-            let block_comment = rest.find("/*");
+            // Assemble the marker so scanning this function's own source cannot
+            // mistake the recognizer's string literal for an open block comment.
+            let block_comment = rest.find(concat!("/", "*"));
             match (line_comment, block_comment) {
                 (Some(line_start), Some(block_start)) if block_start < line_start => {
                     code.push_str(&rest[..block_start]);

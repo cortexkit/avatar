@@ -123,6 +123,8 @@ mod tests {
     }
 
     #[test]
+    // The independent std formula checks the committed table, not runtime maths.
+    #[allow(clippy::disallowed_methods)]
     fn sine_samples_match_independent_formula() {
         for index in [1, 617, 2_048, 4_095] {
             let angle = (index as f64 / 4_096.0) * std::f64::consts::FRAC_PI_2;
@@ -131,6 +133,8 @@ mod tests {
     }
 
     #[test]
+    // These independent std formulas check the offline minter's committed data.
+    #[allow(clippy::disallowed_methods)]
     fn easing_samples_match_independent_formulas() {
         assert_easing_samples(&EASE_LINEAR, |t| t);
         assert_easing_samples(&EASE_EXPO, |t| {
