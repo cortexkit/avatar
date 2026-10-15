@@ -54,6 +54,8 @@ mod tree_fixture;
 
 #[cfg(test)]
 mod tests {
+    mod wild;
+
     use std::{
         collections::BTreeSet,
         ffi::OsStr,
@@ -69,14 +71,11 @@ mod tests {
     };
     use serde::Deserialize;
 
-    // How many times this corpus has been re-minted. It is NOT the version
-    // a registry row carries and must never be read as one: that lives in
-    // `avatar_svg::dispatch` as CLASSIC_VERSION, is currently 2, and
-    // changes only to fix a generation bug that would otherwise alter an
-    // agent's face. This counter moves whenever the corpus is re-minted for
-    // any reason at all — a new boundary, a new vector — none of which
-    // implies a creature changed. Two numbers with one name is how a
-    // routine re-mint gets mistaken for a face-changing event.
+    // Revision of the classic conformance fixtures, not generation behavior.
+    // CLASSIC_VERSION in avatar_svg::dispatch identifies the algorithm used to
+    // render stored genomes. Adding fixture cases must not change that version
+    // or the appearance rendered for existing identities. This counter changes
+    // only when the classic corpus is re-minted.
     const CORPUS_REVISION: u16 = 4;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
@@ -94,42 +93,104 @@ mod tests {
 
     // Including file names and lengths makes this pin sensitive to boundary
     // changes, not only to the concatenated SVG payloads.
-    const TREE_SVG_BOUNDARY_SIZE: usize = 772_266;
+    const TREE_SVG_BOUNDARY_SIZE: usize = 1_015_182;
     const TREE_SVG_BOUNDARY_HASH: &str =
-        "bebdbf715411b5e2ce38ec138be6e7a16a249e80f97e366592142d600836cc78";
+        "5627eb9ff2d8d9f84bbc0debd7adfb141ae150447e3778ecc910c5101ff9d718";
 
-    /// Tree fixtures for the second creature type, which Swift cannot build
-    /// natively. They exist to exercise the primitive variants the shipped
-    /// type never reaches — gradient paint, gradient-content masks, path
-    /// fill rules — so the decoder is gated on them rather than inheriting
-    /// whatever coverage the classic corpus happens to provide.
-    ///
-    /// Deliberately NOT one per mood. A wild tree runs 480 KB to 630 KB of
-    /// JSON because its silhouette is flattened to line segments, so a full
-    /// mood set costs about four megabytes of repository for coverage two
-    /// files already give: neutral, and one mood that adds overlay
-    /// primitives. The size is a property of the geometry, not the
-    /// encoding, and is recorded in note 011.
+    /// Pins for the identity-derived wild corpus: neutral for each genome,
+    /// plus all seven moods for one genome. Their gradient paint, masked
+    /// gradients and path fill rules must survive decoding in Swift and
+    /// TypeScript, even though classic trees do not exercise those primitives.
     const WILD_TREE_FIXTURES: &[(&str, usize, &str)] = &[
         (
-            "wild_5002__neutral.json",
-            482_018,
-            "0beb1a326795731bd997a77c011002d2ed852b3c7470e68b53c1c045d16686df",
+            "wild-port-0005__neutral.json",
+            220_615,
+            "b9c19b521bc3032cca3399d47c9b8bbb16b2aa00083b5af44a998c30a18db16a",
         ),
         (
-            "wild_5002__working.json",
-            626_954,
-            "1853df04e5f5804286d9727b96a28109930f542c57c0953f851f689333524df4",
+            "wild-port-0005__working.json",
+            220_711,
+            "0ebaf2e2b4f277155cb9f081bf54ce87ab5912a6652dfa242d85936edbfcb532",
         ),
         (
-            "wild_5003__neutral.json",
-            192_922,
-            "a1ed8febd1edeb854c851b1b8ef526b455090f8217790aede47e08c9bd308739",
+            "wild-port-0005__happy.json",
+            201_913,
+            "b6ebf11f9062b53be544f291f099ed1320a55fa62b99ea5402364fd6e7e5da1d",
         ),
         (
-            "wild_5004__neutral.json",
-            76_944,
-            "0fc69a40ac7e3a37ebb1082ea98d51ce5c221c01296e0567fddea95f59872a7f",
+            "wild-port-0005__waiting.json",
+            220_199,
+            "fa880e5546fe01a7da16cdba2548a36a362a06ca505c743cd9ea33a9046e9d63",
+        ),
+        (
+            "wild-port-0005__blocked.json",
+            220_257,
+            "d446cd730b6a9bd5d7c1d96b04271e1a4991c9a4049cdc6431fb00ffd7f0d881",
+        ),
+        (
+            "wild-port-0005__sad.json",
+            220_310,
+            "a5a28edee8dcb7b0ddbd93bb71921c989afec578d2b0cf702528f44e60aae895",
+        ),
+        (
+            "wild-port-0005__sleepy.json",
+            258_218,
+            "f695de4bf264d832b9dd40e63aebbc2c49f3cd994c091b433a9d7b40863656d9",
+        ),
+        (
+            "wild-port-0031__neutral.json",
+            86_735,
+            "5e55cdcbab5e10460ce4fc21132eb12c0af87170b71f0df4ab3301fe652d11ed",
+        ),
+        (
+            "wild-port-0009__neutral.json",
+            304_940,
+            "86e722f634e875b6c0af848b102ed12ae4c97b70537541784438e5f9e3cf23e4",
+        ),
+        (
+            "wild-port-0022__neutral.json",
+            126_692,
+            "466576d69b33680ff426e743e8eef8ea622548cc09d644a00dbc9a0eb7ad557a",
+        ),
+        (
+            "wild-port-0077__neutral.json",
+            199_614,
+            "7016df56ba0ead93a70e41b094b671d701b8987ef426c2f2777d4300f5b7b134",
+        ),
+        (
+            "wild-port-0043__neutral.json",
+            126_537,
+            "889eddb0f325e8514c26d4ab38765b48e5a6b846691f08ab05457509135a75d6",
+        ),
+        (
+            "wild-port-0016__neutral.json",
+            164_730,
+            "a764dcdecfb14b7a9b85358d71c67346685688504ac4e59a23b206a2a212ebc4",
+        ),
+        (
+            "wild-port-0021__neutral.json",
+            263_489,
+            "92da6850a8f007343c876e4f3d3bca23d09981cb06e1fd62f4e41c56d16ddc50",
+        ),
+        (
+            "wild-port-0000__neutral.json",
+            205_011,
+            "b46f76f9a28e2d48286af7c6afc6592f4a8f4f98402fae379279e6afbdb1ef60",
+        ),
+        (
+            "wild-port-0001__neutral.json",
+            94_858,
+            "ca456ad72cd1f1a2938205c232541201900c7fc7f467a848610c58731acc8739",
+        ),
+        (
+            "wild-port-0002__neutral.json",
+            344_201,
+            "a9fb51a2ae08579bc44173b567bb856e83a10707b3ce8584df88579c6011dd03",
+        ),
+        (
+            "wild-port-0007__neutral.json",
+            71_244,
+            "52ba249117a2123f4a4a3ce713fbd304b8af570432425e23feff4c0157dca113",
         ),
     ];
 
@@ -153,12 +214,20 @@ mod tests {
         moods: Vec<String>,
     }
 
-    /// Rewrites the committed corpus only when explicitly requested. Ports vendor
-    /// these bytes, and producer_sha records the canonical Rust revision that
-    /// minted them, so regeneration is a generator-version event rather than a
-    /// routine test side effect.
+    /// Rewrites committed fixtures only when explicitly requested. Swift and
+    /// TypeScript conformance tests consume these bytes; producer_sha records
+    /// the Rust source revision that generated them. Routine tests must compare,
+    /// not refresh, these byte-level compatibility expectations.
+    /// To preserve the classic corpus, refresh only wild fixtures with
+    /// `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture`.
     #[test]
     fn mint() {
+        // A wild-only refresh must leave the classic fixtures and their
+        // manifest's recorded source revision unchanged.
+        if std::env::var_os("UPDATE_WILD_GOLDEN").is_some() {
+            wild::mint_corpus();
+            return;
+        }
         if !update_golden_enabled() {
             return;
         }
@@ -236,13 +305,14 @@ mod tests {
             "svg".to_owned(),
             "tree".to_owned(),
             "tree-svg".to_owned(),
+            "wild".to_owned(),
         ]);
         assert_directory_entry_names("vectors", &expected_root);
         assert!(
             manifest_path().is_file(),
             "vectors/manifest.json is not a file"
         );
-        for directory in ["dna", "phenotype", "svg", "tree", "tree-svg"] {
+        for directory in ["dna", "phenotype", "svg", "tree", "tree-svg", "wild"] {
             assert!(
                 corpus_root().join(directory).is_dir(),
                 "vectors/{directory} is not a directory"
@@ -273,6 +343,7 @@ mod tests {
         assert_file_names("svg", &expected_svg);
         assert_file_names("tree", &expected_tree);
         assert_file_names("tree-svg", &expected_tree_svg);
+        wild::assert_directory();
     }
 
     #[test]
@@ -367,6 +438,7 @@ mod tests {
     }
 
     fn mint_corpus() {
+        wild::mint_corpus();
         let root = corpus_root();
         for directory in ["dna", "phenotype", "svg", "tree", "tree-svg"] {
             fs::create_dir_all(root.join(directory))

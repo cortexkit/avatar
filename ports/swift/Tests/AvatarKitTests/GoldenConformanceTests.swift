@@ -43,10 +43,24 @@ struct ManifestVector {
 /// inventory assertion fails on a mismatch rather than silently skipping
 /// a fixture.
 let wildTreeFixtureNames: Set<String> = [
-    "wild_5002__neutral.json",
-    "wild_5002__working.json",
-    "wild_5003__neutral.json",
-    "wild_5004__neutral.json",
+    "wild-port-0005__neutral.json",
+    "wild-port-0005__working.json",
+    "wild-port-0005__happy.json",
+    "wild-port-0005__waiting.json",
+    "wild-port-0005__blocked.json",
+    "wild-port-0005__sad.json",
+    "wild-port-0005__sleepy.json",
+    "wild-port-0031__neutral.json",
+    "wild-port-0009__neutral.json",
+    "wild-port-0022__neutral.json",
+    "wild-port-0077__neutral.json",
+    "wild-port-0043__neutral.json",
+    "wild-port-0016__neutral.json",
+    "wild-port-0021__neutral.json",
+    "wild-port-0000__neutral.json",
+    "wild-port-0001__neutral.json",
+    "wild-port-0002__neutral.json",
+    "wild-port-0007__neutral.json",
 ]
 
 func loadManifest() throws -> (root: URL, vectors: [ManifestVector]) {
