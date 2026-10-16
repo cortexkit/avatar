@@ -15,7 +15,7 @@ public struct Milli: Equatable {
 }
 
 /// A raw signed Q32.32 fixed-point coefficient.
-public struct Q32: Equatable {
+public struct Q32: Equatable, Sendable {
     public var value: Int64
 
     public init(_ value: Int64) {
@@ -27,7 +27,7 @@ public struct Q32: Equatable {
 }
 
 /// An angle expressed as a binary angle measurement with 65,536 units per turn.
-public struct Bam16: Equatable {
+public struct Bam16: Equatable, Sendable {
     public var value: UInt16
 
     public init(_ value: UInt16) {
@@ -36,7 +36,7 @@ public struct Bam16: Equatable {
 }
 
 /// An 8-bit RGB color.
-public struct Rgb: Equatable {
+public struct Rgb: Equatable, Sendable {
     public var r: UInt8
     public var g: UInt8
     public var b: UInt8

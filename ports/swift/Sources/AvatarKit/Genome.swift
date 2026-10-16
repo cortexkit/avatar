@@ -23,7 +23,7 @@ public enum GenomeError: Error, Equatable, CustomStringConvertible {
 }
 
 /// A version-one avatar genome: exactly 8,192 bits of DNA.
-public struct Genome: Equatable {
+public struct Genome: Equatable, Sendable {
     static let byteCount = 1_024
     static let bitCount = byteCount * 8
 

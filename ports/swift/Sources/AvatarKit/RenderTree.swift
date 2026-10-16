@@ -4,7 +4,7 @@ import Foundation
 // consumers to render an avatar without rebuilding the SVG scene graph.
 
 /// A complete avatar drawing in painter's order.
-public struct RenderTree: Equatable, Decodable {
+public struct RenderTree: Equatable, Decodable, Sendable {
     /// The square canvas edge in SVG USER UNITS — the serializer's viewBox.
     ///
     /// **Not the unit primitive coordinates are expressed in.** Those are
@@ -35,7 +35,7 @@ public struct RenderTree: Equatable, Decodable {
 
 /// One independently drawable item. Transforms are resolved from the SVG group
 /// stack so consumers can draw the array without traversing a scene graph.
-public struct Primitive: Equatable, Decodable {
+public struct Primitive: Equatable, Decodable, Sendable {
     public var shape: Shape
     public var transform: Transform?
     public var paint: Paint
@@ -66,25 +66,25 @@ public struct Primitive: Equatable, Decodable {
     }
 }
 
-public enum FillRule: String, Equatable, Decodable {
+public enum FillRule: String, Equatable, Decodable, Sendable {
     case nonZero = "non_zero"
     case evenOdd = "even_odd"
 }
 
-public enum Segment: Equatable, Decodable {
+public enum Segment: Equatable, Decodable, Sendable {
     case moveTo(x: Int64, y: Int64)
     case cubicTo(cp1x: Int64, cp1y: Int64, cp2x: Int64, cp2y: Int64, x: Int64, y: Int64)
     case lineTo(x: Int64, y: Int64)
 }
 
-public enum Shape: Equatable, Decodable {
+public enum Shape: Equatable, Decodable, Sendable {
     case path(segments: [Segment], closed: Bool, fill_rule: FillRule)
     case circle(cx: Int64, cy: Int64, r: Int64)
     case ellipse(cx: Int64, cy: Int64, rx: Int64, ry: Int64)
     case rect(x: Int64, y: Int64, w: Int64, h: Int64)
 }
 
-public struct GradientStop: Equatable, Decodable {
+public struct GradientStop: Equatable, Decodable, Sendable {
     public var offset_q32: Q32
     public var color: Rgb
 
@@ -94,25 +94,25 @@ public struct GradientStop: Equatable, Decodable {
     }
 }
 
-public enum Paint: Equatable, Decodable {
+public enum Paint: Equatable, Decodable, Sendable {
     case solid(color: Rgb)
     case radialGradient(stops: [GradientStop])
     case none
 }
 
-public enum StrokeCap: String, Equatable, Decodable {
+public enum StrokeCap: String, Equatable, Decodable, Sendable {
     case butt
     case round
     case square
 }
 
-public enum StrokeJoin: String, Equatable, Decodable {
+public enum StrokeJoin: String, Equatable, Decodable, Sendable {
     case miter
     case round
     case bevel
 }
 
-public struct Stroke: Equatable, Decodable {
+public struct Stroke: Equatable, Decodable, Sendable {
     public var color: Rgb
     public var width: Int64
     public var cap: StrokeCap
@@ -126,7 +126,7 @@ public struct Stroke: Equatable, Decodable {
     }
 }
 
-public indirect enum Effect: Equatable, Decodable {
+public indirect enum Effect: Equatable, Decodable, Sendable {
     /// Membership in the body's lighting-filter group. Carries the resolved
     /// point-light y so the serializer never re-derives it from the shape:
     /// the generator computes it from body geometry that passed through
@@ -137,14 +137,14 @@ public indirect enum Effect: Equatable, Decodable {
     case turbulence(seed: UInt8, freq_h: Q32, freq_v: Q32, octaves: UInt8, scale: Q32)
 }
 
-public enum TransformOp: Equatable, Decodable {
+public enum TransformOp: Equatable, Decodable, Sendable {
     case translate(tx: Int64, ty: Int64)
     case rotate(angle: Bam16, cx: Int64, cy: Int64)
     case scale(sx: Q32, sy: Q32)
 }
 
 /// Q32.32 affine coefficients with milliunit translation.
-public struct Affine: Equatable, Decodable {
+public struct Affine: Equatable, Decodable, Sendable {
     public var a: Q32
     public var b: Q32
     public var c: Q32
@@ -162,7 +162,7 @@ public struct Affine: Equatable, Decodable {
     }
 }
 
-public struct Transform: Equatable, Decodable {
+public struct Transform: Equatable, Decodable, Sendable {
     public var ops: [TransformOp]
 
     public init(ops: [TransformOp]) {

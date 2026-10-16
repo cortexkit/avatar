@@ -1,6 +1,6 @@
 // Mood rows transcribed literally from crates/avatar-svg/src/mood.rs.
 
-public enum Mood: String, CaseIterable, Equatable {
+public enum Mood: String, CaseIterable, Equatable, Sendable {
     case neutral
     case working
     case happy
