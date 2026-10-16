@@ -345,6 +345,18 @@ classic avatars is about 6,000. It is also memory in any tree cache.
 Not urgent and deliberately not fixed here — the preview path tolerates
 it. But it is a real constraint on the wild pipeline.
 
+Measured on the shipped path (2026-10-16, iOS, release build on an
+Apple-silicon Mac standing in for the phone): decoding the tree JSON in
+Swift costs about 0.06 ms per KB, so 4–5 ms for a 71 KB tree and 12–15 ms
+for a 220 KB one. The whole embedded call, generation plus hand-off, is
+about 16 ms per creature, and a cold call costs the same as a warm one.
+Thirty creatures are about 0.5 s of CPU at cold launch, run in parallel
+off the main thread, plus about 1 ms of rasterizing each on the main
+thread. iOS judged that acceptable, so tree weight stays deferred.
+Revisit it if the on-device numbers come out much worse. A faster wire
+encoding is not the lever: it would cut the parse but not the segment
+count that also drives rasterizing and memory.
+
 ### The obvious fix does not work, measured
 
 This note previously asserted the remedy: fit curves to the extracted
