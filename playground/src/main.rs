@@ -468,7 +468,7 @@ fn main() {
         let (bx0, by0, bx1, by1) = wild::bbox(&outline);
         let p = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d);
         let belly = p
-            .map(|pl| belly_patch(&outline, belly_top_for(pl.eye_y, pl.r), 0.72).len())
+            .map(|pl| belly_patch(&outline, 120.0, belly_top_for(pl.eye_y, pl.r), 0.72).len())
             .unwrap_or(0);
         // Probed because it is DERIVED at draw time rather than produced by
         // the search: the lab agreed on every placement field and still drew

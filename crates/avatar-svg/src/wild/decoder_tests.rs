@@ -108,3 +108,35 @@ fn comparison_preserves_finite_order_and_equal_signed_zeros() {
     assert_eq!(math::compare(-0.0, 0.0), Ordering::Equal);
     assert_eq!(math::compare(f64::NAN, 0.0), f64::NAN.total_cmp(&0.0));
 }
+
+/// Every wild body is mirror-symmetric, so its belly must be centred on the
+/// mirror axis. The walk once followed "the span nearest the previous one"
+/// below a leg split, an exact tie between mirror-image legs that floating
+/// point settled at random, so about four bellies in ten ran down one leg.
+/// The sample covers many split-leg bodies: in the first 28 probe seeds, 12
+/// split inside the belly band.
+#[test]
+fn bellies_are_centred_on_the_mirror_axis() {
+    let mut checked = 0;
+    for seed in 0..300u64 {
+        let c = decode_genome(&probe_genome(seed));
+        let outline = outline_for(&c, 120.0, 120.0);
+        let Some(p) = place_face(&outline, c.face_style.mouth_w, c.face_style.mouth_d) else {
+            continue;
+        };
+        let belly = belly_patch(&outline, 120.0, belly_top_for(p.eye_y, p.r), 0.72);
+        if belly.len() < 3 {
+            continue;
+        }
+        let (x0, _, x1, _) = shape::bbox(&belly);
+        let offset = ((x0 + x1) / 2.0 - 120.0).abs();
+        assert!(
+            offset < 1e-9,
+            "seed {seed}: belly centre is {offset} off the axis"
+        );
+        checked += 1;
+    }
+    // A collapse of the sample, such as every belly being suppressed, must
+    // fail rather than pass on nothing.
+    assert!(checked >= 200, "only {checked} bellies drawn in 300 seeds");
+}

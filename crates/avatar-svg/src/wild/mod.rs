@@ -148,11 +148,11 @@ pub fn decode_genome(bytes: &[u8; genome::GENOME_LEN]) -> Creature {
     }
 }
 
-/// Belly patch: the body outline scaled toward a low anchor, then clipped
-/// to the region below `top_y`. Following the silhouette keeps the patch
+/// Belly patch: the body's width profile walked down from `top_y`, centred
+/// on the mirror axis `axis_x`. Following the silhouette keeps the patch
 /// organic on any body shape, and the inward scale guarantees it never
 /// touches the outline.
-pub fn belly_patch(outline: &[(f64, f64)], top_y: f64, scale: f64) -> Vec<(f64, f64)> {
+pub fn belly_patch(outline: &[(f64, f64)], axis_x: f64, top_y: f64, scale: f64) -> Vec<(f64, f64)> {
     let (_, _, _, max_y) = wild::bbox(outline);
     let bottom = max_y - (max_y - top_y) * 0.06;
     if bottom <= top_y {
@@ -165,44 +165,54 @@ pub fn belly_patch(outline: &[(f64, f64)], top_y: f64, scale: f64) -> Vec<(f64, 
     // horizontal clip (flat top edge), and a wide ellipse clip (still flat).
     // A profile walk borrows every horizontal from the creature, and the
     // sqrt ramp closes the top to a point so there is no top edge at all.
-    // extent_at returns the widest span at each height, so on a split body
-    // the patch follows one mass instead of bridging the gap.
+    //
+    // The walk stays on the span that contains the mirror axis and stops
+    // where none does, which is where the body splits into legs. Every body
+    // is mirror-symmetric, so its belly must be too. An earlier walk followed
+    // "the span nearest the previous one" below the split; the two legs are
+    // mirror images, so that was an exact tie settled by floating-point
+    // noise, and the belly ran down one leg of a symmetric creature. Bridging
+    // the gap instead paints belly over background, which is the smear the
+    // profile walk replaced.
+    let on_axis = |y: f64| {
+        wild::extents_at(outline, y)
+            .into_iter()
+            .find(|&(l, r)| l <= axis_x && axis_x <= r)
+    };
+    // End the band where the legs split, then fit the whole ramp into what
+    // remains. Stopping the walk mid-ramp instead would leave a wide flat
+    // cut across the crotch, and on short torsos a sliver.
+    let probes = 80;
+    let mut end = top_y;
+    for i in 0..=probes {
+        let y = top_y + (bottom - top_y) * (i as f64 / probes as f64);
+        if on_axis(y).is_none() {
+            break;
+        }
+        end = y;
+    }
+    let bottom = end;
+    if bottom <= top_y {
+        return Vec::new();
+    }
     let steps = 40;
     let mut left = Vec::with_capacity(steps + 1);
     let mut right = Vec::with_capacity(steps + 1);
-    // Follow ONE mass down the band: start on the widest span, then at each
-    // step take the span whose centre is nearest the previous one. Taking
-    // the widest at every height lets the walk hop between legs, and the
-    // resulting zig-zag polygon renders as horizontal striping.
-    let mut anchor: Option<f64> = None;
     for i in 0..=steps {
         let t = i as f64 / steps as f64;
         let y = top_y + (bottom - top_y) * t;
-        let spans = wild::extents_at(outline, y);
-        if spans.is_empty() {
-            continue;
-        }
-        let (l, r) = match anchor {
-            None => *spans
-                .iter()
-                .max_by(|a, b| math::compare(a.1 - a.0, b.1 - b.0))
-                .unwrap(),
-            Some(prev) => *spans
-                .iter()
-                .min_by(|a, b| {
-                    let da = ((a.0 + a.1) / 2.0 - prev).abs();
-                    let db = ((b.0 + b.1) / 2.0 - prev).abs();
-                    math::compare(da, db)
-                })
-                .unwrap(),
+        let Some((l, r)) = on_axis(y) else {
+            break;
         };
-        let cx = (l + r) / 2.0;
-        anchor = Some(cx);
+        // The narrower side bounds the half-width, so the patch stays inside
+        // the body on both sides even when rounding leaves the span a hair
+        // off-centre.
+        let half = (axis_x - l).min(r - axis_x);
         // sqrt ramp: rounded crown. Cubic pull-in at the base keeps the
         // patch clear of the silhouette where the body narrows to feet.
-        let hw = (r - l) / 2.0 * scale * t.sqrt() * (1.0 - 0.3 * t * t * t);
-        left.push((cx - hw, y));
-        right.push((cx + hw, y));
+        let hw = half * scale * t.sqrt() * (1.0 - 0.3 * t * t * t);
+        left.push((axis_x - hw, y));
+        right.push((axis_x + hw, y));
     }
     if left.len() < 3 {
         return Vec::new();
@@ -532,7 +542,7 @@ pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitiv
         // legs (seed 5022). Shrinking the silhouette itself cannot produce
         // either: the patch is always the creature's own shape.
         let belly_top = belly_top_for(p.eye_y, p.r);
-        let belly = belly_patch(&outline, belly_top, 0.72);
+        let belly = belly_patch(&outline, cx, belly_top, 0.72);
         if belly.len() >= 3 {
             let mut primitive = render::filled(
                 render::polygon(&belly),

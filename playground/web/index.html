@@ -558,28 +558,30 @@ function extentsAt(outline, y) {
   for (let i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i+1]]);
   return out;
 }
-function bellyPatch(outline, topY, scale) {
+// Mirrors Rust belly_patch: walk the span containing the mirror axis and end
+// the band where the legs split, so the belly is as symmetric as the body.
+function bellyPatch(outline, axisX, topY, scale) {
   const [fx0, fy0, fx1, fy1] = bboxOf(outline);
-  const bottom = fy1 - (fy1 - topY) * 0.06;
+  const fullBottom = fy1 - (fy1 - topY) * 0.06;
+  if (fullBottom <= topY) return [];
+  const onAxis = y => extentsAt(outline, y).find(([l, r]) => l <= axisX && axisX <= r);
+  const probes = 80;
+  let bottom = topY;
+  for (let i = 0; i <= probes; i++) {
+    const y = topY + (fullBottom - topY) * (i / probes);
+    if (!onAxis(y)) break;
+    bottom = y;
+  }
   if (bottom <= topY) return [];
   const steps = 40, left = [], right = [];
-  let anchor = null;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const y = topY + (bottom - topY) * t;
-    const spans = extentsAt(outline, y);
-    if (!spans.length) continue;
-    let span;
-    if (anchor === null) {
-      span = spans.reduce((a,b) => (b[1]-b[0] > a[1]-a[0] ? b : a));
-    } else {
-      span = spans.reduce((a,b) =>
-        Math.abs((b[0]+b[1])/2 - anchor) < Math.abs((a[0]+a[1])/2 - anchor) ? b : a);
-    }
-    const cx = (span[0] + span[1]) / 2;
-    anchor = cx;
-    const hw = (span[1]-span[0]) / 2 * scale * Math.sqrt(t) * (1 - 0.3*t*t*t);
-    left.push([cx - hw, y]); right.push([cx + hw, y]);
+    const span = onAxis(y);
+    if (!span) break;
+    const half = Math.min(axisX - span[0], span[1] - axisX);
+    const hw = half * scale * Math.sqrt(t) * (1 - 0.3*t*t*t);
+    left.push([axisX - hw, y]); right.push([axisX + hw, y]);
   }
   if (left.length < 3) return [];
   const poly = left.concat(right.reverse());
@@ -951,11 +953,9 @@ function creatureSVG(k, moodName, size) {
     if (masked) s += `</g>`;
   }
   if (p) {
-    // Belly follows the body's own width profile down the band, staying on
-    // one mass, with a sqrt ramp closing the crown to a point. Mirrors Rust
-    // belly_patch — an ellipse read as a ball on lumpy bodies and a smear
-    // across split legs.
-    const bellyPts = bellyPatch(outline, bellyTopFor(p.eyeY, p.r), 0.72);
+    // Belly follows the body's own width profile down the band, centred on
+    // the mirror axis, with a sqrt ramp closing the crown to a point.
+    const bellyPts = bellyPatch(outline, cx, bellyTopFor(p.eyeY, p.r), 0.72);
     if (lastMetrics && lastMetrics.probe) lastMetrics.probe.belly = bellyPts.length;
     if (bellyPts.length >= 3) {
       s += `<path d='${bellyPts.map((q,i) => (i?'L':'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ')} Z' fill='${bellyFill(k.recipe, k.hue, k.bellyVariant ?? 0)}'/>`;

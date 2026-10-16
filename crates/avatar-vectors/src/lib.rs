@@ -93,9 +93,9 @@ mod tests {
 
     // Including file names and lengths makes this pin sensitive to boundary
     // changes, not only to the concatenated SVG payloads.
-    const TREE_SVG_BOUNDARY_SIZE: usize = 1_015_182;
+    const TREE_SVG_BOUNDARY_SIZE: usize = 1_013_982;
     const TREE_SVG_BOUNDARY_HASH: &str =
-        "5627eb9ff2d8d9f84bbc0debd7adfb141ae150447e3778ecc910c5101ff9d718";
+        "cbb7478257bc8b6f1ba8bff883849847f39abe4ca05bc319667322bbe356ca1a";
 
     /// Pins for the identity-derived wild corpus: neutral for each genome,
     /// plus all seven moods for one genome. Their gradient paint, masked
@@ -104,93 +104,93 @@ mod tests {
     const WILD_TREE_FIXTURES: &[(&str, usize, &str)] = &[
         (
             "wild-port-0005__neutral.json",
-            220_615,
-            "b9c19b521bc3032cca3399d47c9b8bbb16b2aa00083b5af44a998c30a18db16a",
+            220614,
+            "ac1ccae7038613642430a847d5be24670bf29855571437f99b619152f19e77f9",
         ),
         (
             "wild-port-0005__working.json",
-            220_711,
-            "0ebaf2e2b4f277155cb9f081bf54ce87ab5912a6652dfa242d85936edbfcb532",
+            220710,
+            "269cfee67e5fd1b76bef6a182ea3a95ee452d92bdb8a575fa959b2b7cd166c4b",
         ),
         (
             "wild-port-0005__happy.json",
-            201_913,
-            "b6ebf11f9062b53be544f291f099ed1320a55fa62b99ea5402364fd6e7e5da1d",
+            201912,
+            "98f32089ce05408a40f67006e7bbd5dc952d7aa1e8359bd7c6acfa75fb11c71a",
         ),
         (
             "wild-port-0005__waiting.json",
-            220_199,
-            "fa880e5546fe01a7da16cdba2548a36a362a06ca505c743cd9ea33a9046e9d63",
+            220198,
+            "add61c73e1d4d2522fb8dfcccd599171804694431b9f2cbca6f785c63b3370d0",
         ),
         (
             "wild-port-0005__blocked.json",
-            220_257,
-            "d446cd730b6a9bd5d7c1d96b04271e1a4991c9a4049cdc6431fb00ffd7f0d881",
+            220256,
+            "eeee3a3aff255356a01629aa75950695fa07190cc5f434056100a5d2adae89db",
         ),
         (
             "wild-port-0005__sad.json",
-            220_310,
-            "a5a28edee8dcb7b0ddbd93bb71921c989afec578d2b0cf702528f44e60aae895",
+            220309,
+            "366099bf3769c86d3292dc7958b70f96d75256e5f9e77934e9cfc77fff1f645b",
         ),
         (
             "wild-port-0005__sleepy.json",
-            258_218,
-            "f695de4bf264d832b9dd40e63aebbc2c49f3cd994c091b433a9d7b40863656d9",
+            258217,
+            "8c2a92ac4f55647e0fff71a6ad9895c1a8c7d4d186392640bee54cdd7d26d7b8",
         ),
         (
             "wild-port-0031__neutral.json",
-            86_735,
-            "5e55cdcbab5e10460ce4fc21132eb12c0af87170b71f0df4ab3301fe652d11ed",
+            86735,
+            "538f9a80d6a38e297c19b06edac11e9177be948ae5df4a6f751c7a6445caeff8",
         ),
         (
             "wild-port-0009__neutral.json",
-            304_940,
-            "86e722f634e875b6c0af848b102ed12ae4c97b70537541784438e5f9e3cf23e4",
+            304956,
+            "a0b3c8c1ed16a300e3afd0d7e51980d3f5dfddc7fd3e63a5dcb778ba253d231a",
         ),
         (
             "wild-port-0022__neutral.json",
-            126_692,
+            126692,
             "466576d69b33680ff426e743e8eef8ea622548cc09d644a00dbc9a0eb7ad557a",
         ),
         (
             "wild-port-0077__neutral.json",
-            199_614,
-            "7016df56ba0ead93a70e41b094b671d701b8987ef426c2f2777d4300f5b7b134",
+            199625,
+            "f903c0f987ee57f296bdca0253a2558cf85c674b049d4d92118e5385ffc2947b",
         ),
         (
             "wild-port-0043__neutral.json",
-            126_537,
-            "889eddb0f325e8514c26d4ab38765b48e5a6b846691f08ab05457509135a75d6",
+            126537,
+            "ea5f37593bcd35fbba5ae05f212725e2de95815497f910287bdad68b3bea988a",
         ),
         (
             "wild-port-0016__neutral.json",
-            164_730,
+            164730,
             "a764dcdecfb14b7a9b85358d71c67346685688504ac4e59a23b206a2a212ebc4",
         ),
         (
             "wild-port-0021__neutral.json",
-            263_489,
-            "92da6850a8f007343c876e4f3d3bca23d09981cb06e1fd62f4e41c56d16ddc50",
+            263497,
+            "c865fe4ea94c14b969a134367f7a5a55a5ae35f252cae913d71130e931d1ce2b",
         ),
         (
             "wild-port-0000__neutral.json",
-            205_011,
-            "b46f76f9a28e2d48286af7c6afc6592f4a8f4f98402fae379279e6afbdb1ef60",
+            184764,
+            "976def08542275e5d32479e8940f7a99296b6d7c18ce498db06cbbf6835d337a",
         ),
         (
             "wild-port-0001__neutral.json",
-            94_858,
+            94858,
             "ca456ad72cd1f1a2938205c232541201900c7fc7f467a848610c58731acc8739",
         ),
         (
             "wild-port-0002__neutral.json",
-            344_201,
-            "a9fb51a2ae08579bc44173b567bb856e83a10707b3ce8584df88579c6011dd03",
+            344198,
+            "0e95ce515f17addda554ca30645e3943d2fc51e7081e857f4d5e17af6fbb8331",
         ),
         (
             "wild-port-0007__neutral.json",
-            71_244,
-            "52ba249117a2123f4a4a3ce713fbd304b8af570432425e23feff4c0157dca113",
+            71244,
+            "4b2f699f9d8d60c234b1e41590866e71a41708aac55d313594cf63f2a850f4fb",
         ),
     ];
 
