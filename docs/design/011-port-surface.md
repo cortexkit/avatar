@@ -353,7 +353,10 @@ about 16 ms per creature, and a cold call costs the same as a warm one.
 Thirty creatures are about 0.5 s of CPU at cold launch, run in parallel
 off the main thread, plus about 1 ms of rasterizing each on the main
 thread. iOS judged that acceptable, so tree weight stays deferred.
-Revisit it if the on-device numbers come out much worse. A faster wire
+Confirmed on real hardware (TestFlight 231 on the operator's iPhone): the
+embedded core draws the wild reference creature byte-identical to the
+corpus in 24.2 ms, putting thirty creatures near 0.7 s of background CPU at
+cold launch. Revisit if that grows much worse. A faster wire
 encoding is not the lever: it would cut the parse but not the segment
 count that also drives rasterizing and memory.
 
