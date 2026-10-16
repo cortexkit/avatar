@@ -1,0 +1,6 @@
+# Repo-relative paths Engram backs up nightly because git does not hold them.
+# Internal design records and the wild port's verification record live only here.
+.cortexkit/internal-docs/
+.cortexkit/scripts/
+.cortexkit/alfonso/drafts/
+.cortexkit/alfonso/specs/
