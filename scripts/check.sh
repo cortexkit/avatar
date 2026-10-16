@@ -86,6 +86,11 @@ run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin gr
 # and reaching it only through the half that does made it skippable on any
 # machine without one.
 run "renderer consts"   python3 scripts/const-drift.py
+# .cortexkit/ holds internal notes and worker briefs that must never reach
+# git. The ignore rule only stops new files; a file committed before the
+# rule existed stays tracked silently, so check what git actually tracks.
+run "no ignored internal files tracked" bash -c \
+  'tracked=$(git ls-files -ci --exclude-standard -- .cortexkit); [ -z "$tracked" ] || { echo "$tracked"; exit 1; }'
 # The cross-platform script needs containers, so it runs by hand, but its
 # comparison must still be proven able to fail on every push: a comparison
 # that passed on empty or short inventories would report three platforms
