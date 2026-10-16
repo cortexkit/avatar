@@ -1,29 +1,26 @@
-//! PNG export surface for fleet consumers — first user: ALF's GitHub App
-//! minting ceremony (one App per head agent, the agent's face as the App
-//! avatar).
+//! Deterministic PNG export for agent avatars, including GitHub App images.
 //!
-//! Contract (mirrors the wire identity contract):
-//!   - Input is the STABLE ID alone (`--stable-id pj-…`), never a name —
-//!     the same host-authored identity rule as the render wire: names are
-//!     presentation, identity is the registry's opaque value.
-//!   - Output is deterministic: stableId → genome → phenotype → SVG is the
-//!     pinned corpus pipeline, and rasterization is resvg (pure Rust, no
-//!     system fontconfig — the SVG contains no text), so the same input
-//!     yields the same PNG bytes on every run and host.
-//!   - Regeneration on demand IS the model: consumers re-run the export
-//!     when what a row renders to changes — a new avatar_version chosen
-//!     for that row, a new avatar_type, or a re-rolled genome. Nothing is
-//!     cached here.
+//! Inputs are either a registry's opaque stable ID (never a display name)
+//! or a stored genome with its type and generation version. Stable IDs
+//! reproduce the original classic creature; stored genomes depict the
+//! current creature even after its genome has been re-rolled.
+//!
+//! Classic renders through its legacy SVG renderer; wild renders through
+//! the render tree serializer. Both rasterize with resvg (pure Rust, with
+//! no system fonts needed because the SVG contains no text). Consumers
+//! re-run exports when an agent's stored genome, type or version changes;
+//! this tool keeps no cache.
 //!
 //! Usage:
 //!   avatar-export --stable-id pj-0000000000000001 --out ava.png
+//!   avatar-export --genome <hex> --type creature.wild --version 1 --out ava.png
 //!   avatar-export --manifest agents.json --out-dir avatars/
 //!     manifest: JSON array of {"stable_id": "pj-…"} (unknown keys ignored,
-//!     so ALF can pass richer records); output files are <stable_id>.png.
+//!     so callers can pass richer records); output files are <stable_id>.png.
 //!   Options: --size N (default 400), --mood M (default neutral).
 
 use avatar_genome::{decode, derive_genome, derive_genome_bytes, Genome, SeatIdentity};
-use avatar_svg::{render_svg, Mood, RenderParams, Q32};
+use avatar_svg::{render_svg, render_tree_for_bytes, serialize_tree, Mood, RenderParams, Q32};
 
 /// The avatar TYPE: which procedural representation renders the genome.
 /// Types are different representations OF THE SAME GENOME behind one
@@ -67,28 +64,74 @@ fn mood_from(name: &str) -> Result<Mood, String> {
 /// avatar minted by derivation and a phone rendering the stored row would
 /// then disagree permanently, each looking correct.
 fn export_png_from_genome(genome: &Genome, mood: Mood, size: u32) -> Result<Vec<u8>, String> {
+    rasterize(&classic_svg(genome, mood)?, size)
+}
+
+fn classic_svg(genome: &Genome, mood: Mood) -> Result<Vec<u8>, String> {
     let phenotype = decode(genome);
     let params = RenderParams {
         mood,
         growth: Q32::ONE,
         canvas: 10_000,
     };
-    let svg = render_svg(&phenotype, &params).map_err(|e| e.to_string())?;
-    rasterize(&svg, size)
+    render_svg(&phenotype, &params).map_err(|e| e.to_string())
 }
 
 fn export_png(stable_id: &str, mood: Mood, size: u32) -> Result<Vec<u8>, String> {
     let genome = derive_genome(&SeatIdentity::Registered {
         project_id: stable_id.to_owned(),
     });
-    let phenotype = decode(&genome);
-    let params = RenderParams {
-        mood,
-        growth: Q32::ONE,
-        canvas: 10_000,
+    export_png_from_genome(&genome, mood, size)
+}
+
+fn export_png_from_hex(
+    hex: &str,
+    type_name: &str,
+    version: u32,
+    mood: Mood,
+    size: u32,
+    rasterizer: impl FnOnce(&[u8], u32) -> Result<Vec<u8>, String>,
+) -> Result<Vec<u8>, String> {
+    let (_, len, supported_version) =
+        mintable(type_name).ok_or_else(|| format!("unknown avatar type {type_name:?}"))?;
+    if version != supported_version {
+        return Err(format!(
+            "unsupported version {version} for {type_name:?}; supported: {supported_version}"
+        ));
+    }
+    let hex = hex.trim();
+    let svg = if type_name == AVATAR_TYPE {
+        // Keep classic SVG bytes unchanged; tree serialization has a different byte format.
+        let genome = Genome::from_hex(hex).map_err(|e| e.to_string())?;
+        classic_svg(&genome, mood)?
+    } else {
+        if hex.len() != len * 2 {
+            return Err(format!(
+                "expected {} hex characters, got {}",
+                len * 2,
+                hex.len()
+            ));
+        }
+        let bytes: Result<Vec<u8>, String> = hex
+            .as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .enumerate()
+            .map(|(i, pair)| {
+                let hi = char::from(pair[0]).to_digit(16);
+                let lo = char::from(pair[1]).to_digit(16);
+                match (hi, lo) {
+                    (Some(hi), Some(lo)) => Ok(((hi << 4) | lo) as u8),
+                    _ => Err(format!("invalid hex at byte {i}")),
+                }
+            })
+            .collect();
+        let tree =
+            render_tree_for_bytes(&bytes?, type_name, version, mood).map_err(|e| e.to_string())?;
+        serialize_tree(&tree)
     };
-    let svg = render_svg(&phenotype, &params).map_err(|e| e.to_string())?;
-    rasterize(&svg, size)
+    rasterizer(&svg, size)
 }
 
 fn rasterize(svg: &[u8], size: u32) -> Result<Vec<u8>, String> {
@@ -262,15 +305,18 @@ fn main() {
     // depicting a live agent must use, since after a re-roll the stored
     // genome and a derived one are different creatures.
     if let Some(hex) = get("--genome") {
-        let genome = match Genome::from_hex(hex.trim()) {
-            Ok(g) => g,
-            Err(e) => {
-                eprintln!("--genome: {e}");
+        let type_name = get("--type").unwrap_or_else(|| AVATAR_TYPE.to_owned());
+        let default_version =
+            mintable(&type_name).map_or(AVATAR_VERSION, |(_, _, version)| version);
+        let version = match get("--version") {
+            Some(value) => value.parse::<u32>().unwrap_or_else(|_| {
+                eprintln!("--version: expected an unsigned integer, got {value:?}");
                 std::process::exit(2);
-            }
+            }),
+            None => default_version,
         };
         let out = get("--out").unwrap_or_else(|| "avatar.png".to_owned());
-        match export_png_from_genome(&genome, mood, size) {
+        match export_png_from_hex(&hex, &type_name, version, mood, size, rasterize) {
             Ok(png) => {
                 std::fs::write(&out, png).expect("write png");
                 println!("{out}");
@@ -354,7 +400,7 @@ fn main() {
     }
 
     eprintln!(
-        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       options: --size N (default 400), --mood neutral|working|happy|waiting|blocked|sad|sleepy"
+        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       avatar-export --genome <hex> [--type creature.classic|creature.wild] [--version N] [--out f.png]\n       options: --size N (default 400), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild"
     );
     std::process::exit(2);
 }
@@ -381,6 +427,96 @@ mod tests {
     }
 
     use super::*;
+
+    const WILD_HEX: &str = include_str!("../../../vectors/wild/wild-port-0005.hex");
+
+    #[test]
+    fn wild_corpus_svg_is_passed_to_rasterizer() {
+        let bytes: Vec<u8> = WILD_HEX
+            .trim()
+            .as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect();
+        assert_eq!(bytes.len(), 16_384);
+        for mood in [
+            Mood::Neutral,
+            Mood::Working,
+            Mood::Happy,
+            Mood::Waiting,
+            Mood::Blocked,
+            Mood::Sad,
+            Mood::Sleepy,
+        ] {
+            let expected =
+                serialize_tree(&render_tree_for_bytes(&bytes, "creature.wild", 1, mood).unwrap());
+            let mut calls = 0;
+            let png = export_png_from_hex(WILD_HEX, "creature.wild", 1, mood, 64, |svg, size| {
+                calls += 1;
+                assert_eq!(svg, expected, "SVG at the rasterizer boundary for {mood:?}");
+                assert_eq!(size, 64);
+                rasterize(svg, size)
+            })
+            .unwrap();
+            assert_eq!(calls, 1);
+            assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        }
+    }
+
+    #[test]
+    fn classic_genome_svg_stays_on_legacy_renderer() {
+        let genome = derive_genome(&SeatIdentity::Registered {
+            project_id: "pj-0000000000000001".to_owned(),
+        });
+        let expected = render_svg(
+            &decode(&genome),
+            &RenderParams {
+                mood: Mood::Happy,
+                growth: Q32::ONE,
+                canvas: 10_000,
+            },
+        )
+        .unwrap();
+        let png = export_png_from_hex(
+            &genome.to_hex(),
+            AVATAR_TYPE,
+            AVATAR_VERSION,
+            Mood::Happy,
+            64,
+            |svg, size| {
+                assert_eq!(svg, expected);
+                rasterize(svg, size)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            png,
+            export_png_from_genome(&genome, Mood::Happy, 64).unwrap()
+        );
+    }
+
+    #[test]
+    fn invalid_stored_genomes_never_reach_rasterization() {
+        let invalid_hex = "gg".repeat(16_384);
+        let unicode_hex = "é".repeat(16_384);
+        for (hex, type_name, version, error) in [
+            (WILD_HEX, "creature.unknown", 1, "unknown avatar type"),
+            (WILD_HEX, "creature.wild", 2, "unsupported version"),
+            ("", "creature.wild", 2, "unsupported version"),
+            (WILD_HEX, AVATAR_TYPE, 1, "unsupported version"),
+            (WILD_HEX, AVATAR_TYPE, 2, "hex"),
+            ("00", "creature.wild", 1, "expected 32768 hex characters"),
+            (invalid_hex.as_str(), "creature.wild", 1, "invalid hex"),
+            (unicode_hex.as_str(), "creature.wild", 1, "invalid hex"),
+        ] {
+            let result = export_png_from_hex(hex, type_name, version, Mood::Neutral, 64, |_, _| {
+                panic!("invalid input reached the rasterizer")
+            });
+            assert!(result.unwrap_err().contains(error));
+        }
+    }
 
     #[test]
     fn export_is_deterministic_and_png_shaped() {
