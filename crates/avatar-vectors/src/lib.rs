@@ -76,7 +76,7 @@ mod tests {
     // render stored genomes. Adding fixture cases must not change that version
     // or the appearance rendered for existing identities. This counter changes
     // only when the classic corpus is re-minted.
-    const CORPUS_REVISION: u16 = 4;
+    const CORPUS_REVISION: u16 = 5;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
 
@@ -104,93 +104,93 @@ mod tests {
     const WILD_TREE_FIXTURES: &[(&str, usize, &str)] = &[
         (
             "wild-port-0005__neutral.json",
-            220614,
-            "ac1ccae7038613642430a847d5be24670bf29855571437f99b619152f19e77f9",
+            220985,
+            "1a09fff92495826f337d7b2e45739bccfc666c23ca3b5c969c9144d6463bee89",
         ),
         (
             "wild-port-0005__working.json",
-            220710,
-            "269cfee67e5fd1b76bef6a182ea3a95ee452d92bdb8a575fa959b2b7cd166c4b",
+            221093,
+            "652cfc849dfbf3541a295190817e030c16a92d5b89eae5befc1ca9a7e223b1c9",
         ),
         (
             "wild-port-0005__happy.json",
-            201912,
-            "98f32089ce05408a40f67006e7bbd5dc952d7aa1e8359bd7c6acfa75fb11c71a",
+            202259,
+            "6560a27f7fbc0e19cffa395c736ff6d887a7afaa9fa01afbf237a52cd19452e0",
         ),
         (
             "wild-port-0005__waiting.json",
-            220198,
-            "add61c73e1d4d2522fb8dfcccd599171804694431b9f2cbca6f785c63b3370d0",
+            220569,
+            "e6ff827fdd1716cc769ecef84910e8e3463410354cc09ef82b563d9186991d2a",
         ),
         (
             "wild-port-0005__blocked.json",
-            220256,
-            "eeee3a3aff255356a01629aa75950695fa07190cc5f434056100a5d2adae89db",
+            220627,
+            "115d563302d6151b398108b572aa858f0feabf1e52415f0de415f90167be4b0d",
         ),
         (
             "wild-port-0005__sad.json",
-            220309,
-            "366099bf3769c86d3292dc7958b70f96d75256e5f9e77934e9cfc77fff1f645b",
+            220680,
+            "b69ce14c9d13051d5e69846b3c7a130072d389f41ed11e0179855aa31745d46b",
         ),
         (
             "wild-port-0005__sleepy.json",
-            258217,
-            "8c2a92ac4f55647e0fff71a6ad9895c1a8c7d4d186392640bee54cdd7d26d7b8",
+            258660,
+            "9420c817e3cb0b9530adb459621ee79699bc8bc7860b2ebb02f92b78ff32d3d8",
         ),
         (
             "wild-port-0031__neutral.json",
-            86735,
-            "538f9a80d6a38e297c19b06edac11e9177be948ae5df4a6f751c7a6445caeff8",
+            87082,
+            "cad1ea55cfdd5444002060140ba6927e09da9a43177150c1908233086764f230",
         ),
         (
             "wild-port-0009__neutral.json",
-            304956,
-            "a0b3c8c1ed16a300e3afd0d7e51980d3f5dfddc7fd3e63a5dcb778ba253d231a",
+            305327,
+            "72d661c63380e9f15ada7ba2a9b9f19699d124e7dda1d84b44dccee93592960a",
         ),
         (
             "wild-port-0022__neutral.json",
-            126692,
-            "466576d69b33680ff426e743e8eef8ea622548cc09d644a00dbc9a0eb7ad557a",
+            126991,
+            "9b086c1b6bacd798503fb5c9f9731852226b303dd42020df0e5a7a4a2e581b16",
         ),
         (
             "wild-port-0077__neutral.json",
-            199625,
-            "f903c0f987ee57f296bdca0253a2558cf85c674b049d4d92118e5385ffc2947b",
+            200572,
+            "adf06235a738729d5507f59df60e132da19b4ad96102fa6198bba7995751f7d7",
         ),
         (
             "wild-port-0043__neutral.json",
-            126537,
-            "ea5f37593bcd35fbba5ae05f212725e2de95815497f910287bdad68b3bea988a",
+            127148,
+            "76dd0d8b69744ae6bc0b5f14506782bec08f8a40b462842062cc98652bb34827",
         ),
         (
             "wild-port-0016__neutral.json",
-            164730,
-            "a764dcdecfb14b7a9b85358d71c67346685688504ac4e59a23b206a2a212ebc4",
+            165029,
+            "b246d54be64358970112fed6922357f0e59c693915fdbb8d99493e5ebe3b0809",
         ),
         (
             "wild-port-0021__neutral.json",
-            263497,
-            "c865fe4ea94c14b969a134367f7a5a55a5ae35f252cae913d71130e931d1ce2b",
+            263844,
+            "997e9c5660d24f5608e9a68f6e6c1d2a018330ddca262bb16f2fab134e28c02a",
         ),
         (
             "wild-port-0000__neutral.json",
-            184764,
-            "976def08542275e5d32479e8940f7a99296b6d7c18ce498db06cbbf6835d337a",
+            185111,
+            "093db383c12dd22515e92e420a5aea55a6660533bbd6e6d748089b3af4de65aa",
         ),
         (
             "wild-port-0001__neutral.json",
-            94858,
-            "ca456ad72cd1f1a2938205c232541201900c7fc7f467a848610c58731acc8739",
+            95133,
+            "01231d31bc69e4dfe2866137813c944d3f381f82244cbf270a833f67d20a8ebb",
         ),
         (
             "wild-port-0002__neutral.json",
-            344198,
-            "0e95ce515f17addda554ca30645e3943d2fc51e7081e857f4d5e17af6fbb8331",
+            345337,
+            "dd4ca42261634625d82919db1aa76b5f475d932c540028f5d621397f4afc0534",
         ),
         (
             "wild-port-0007__neutral.json",
-            71244,
-            "4b2f699f9d8d60c234b1e41590866e71a41708aac55d313594cf63f2a850f4fb",
+            71495,
+            "01644b9bc037b251abda6155a3d8c64898f91894522dbbab44a74ee98bfbf8f5",
         ),
     ];
 

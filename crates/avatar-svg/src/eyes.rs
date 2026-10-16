@@ -217,6 +217,7 @@ pub(crate) fn eye_primitives(
             clip: None,
             effects: Vec::new(),
             label: "av-eyeball".to_owned(),
+            role: None,
         },
         Primitive {
             shape: Shape::Circle {
@@ -231,6 +232,7 @@ pub(crate) fn eye_primitives(
             clip: Some(clip.clone()),
             effects: Vec::new(),
             label: "av-iris".to_owned(),
+            role: None,
         },
         Primitive {
             shape: Shape::Ellipse {
@@ -254,6 +256,7 @@ pub(crate) fn eye_primitives(
                 scale: displacement,
             }],
             label: "av-iris-shade".to_owned(),
+            role: None,
         },
         Primitive {
             shape: Shape::Circle {
@@ -270,6 +273,7 @@ pub(crate) fn eye_primitives(
             clip: Some(clip.clone()),
             effects: Vec::new(),
             label: "av-pupil".to_owned(),
+            role: None,
         },
     ];
     result.push(highlight_primitive(
@@ -321,6 +325,7 @@ pub(crate) fn eye_primitives(
         clip: None,
         effects: Vec::new(),
         label: "av-upper-lid".to_owned(),
+        role: None,
     });
     result.push(Primitive {
         shape: lower_lid_shape(
@@ -335,6 +340,7 @@ pub(crate) fn eye_primitives(
         clip: None,
         effects: Vec::new(),
         label: "av-lower-lid".to_owned(),
+        role: None,
     });
     result.extend(lashes::lash_primitives(
         &genes.lashes,
@@ -511,6 +517,7 @@ fn highlight_primitive(
         clip: Some(clip.clone()),
         effects: Vec::new(),
         label: "av-highlight".to_owned(),
+        role: None,
     }
 }
 

@@ -46,6 +46,7 @@ pub(crate) fn brow_primitives(
             clip: None,
             effects: Vec::new(),
             label: label.to_owned(),
+            role: None,
         }
     };
     vec![

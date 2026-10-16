@@ -9,7 +9,7 @@ use std::fmt::{self, Write as _};
 use avatar_phenotype::{Rgb, Q32};
 
 use crate::tree::{
-    Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Segment, Shape, Stroke,
+    Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Role, Segment, Shape, Stroke,
     StrokeCap, StrokeJoin, Transform, TransformOp,
 };
 
@@ -125,6 +125,7 @@ fn write_primitive(writer: &mut Writer, primitive: &Primitive) {
         clip,
         effects,
         label,
+        role,
     } = primitive;
     writer.object(|object| {
         object.field("clip", |writer| write_optional(writer, clip, write_shape));
@@ -134,6 +135,7 @@ fn write_primitive(writer: &mut Writer, primitive: &Primitive) {
             write_optional(writer, opacity, write_q32)
         });
         object.field("paint", |writer| write_paint(writer, paint));
+        object.field("role", |writer| write_optional(writer, role, write_role));
         object.field("shape", |writer| write_shape(writer, shape));
         object.field("stroke", |writer| {
             write_optional(writer, stroke, write_stroke)
@@ -141,6 +143,12 @@ fn write_primitive(writer: &mut Writer, primitive: &Primitive) {
         object.field("transform", |writer| {
             write_optional(writer, transform, write_transform)
         });
+    });
+}
+
+fn write_role(writer: &mut Writer, role: &Role) {
+    writer.string(match role {
+        Role::GroundShadow => "ground_shadow",
     });
 }
 
@@ -368,6 +376,7 @@ mod tests {
             clip: None,
             effects: Vec::new(),
             label: label.to_owned(),
+            role: None,
         }
     }
 
@@ -513,7 +522,7 @@ mod tests {
         });
         assert_eq!(
             json,
-            "{\"background\":null,\"canvas\":10000,\"primitives\":[{\"clip\":null,\"effects\":[],\"label\":\"ordered\",\"opacity\":null,\"paint\":{\"kind\":\"none\"},\"shape\":{\"h\":4,\"kind\":\"rect\",\"w\":3,\"x\":1,\"y\":2},\"stroke\":null,\"transform\":null}]}"
+            "{\"background\":null,\"canvas\":10000,\"primitives\":[{\"clip\":null,\"effects\":[],\"label\":\"ordered\",\"opacity\":null,\"paint\":{\"kind\":\"none\"},\"role\":null,\"shape\":{\"h\":4,\"kind\":\"rect\",\"w\":3,\"x\":1,\"y\":2},\"stroke\":null,\"transform\":null}]}"
         );
     }
 

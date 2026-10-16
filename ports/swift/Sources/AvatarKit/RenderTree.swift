@@ -35,6 +35,8 @@ public struct RenderTree: Equatable, Decodable, Sendable {
 
 /// One independently drawable item. Transforms are resolved from the SVG group
 /// stack so consumers can draw the array without traversing a scene graph.
+/// Labels are diagnostic names without a stability promise; roles are the
+/// semantic contract consumers can use to change drawing behavior.
 public struct Primitive: Equatable, Decodable, Sendable {
     public var shape: Shape
     public var transform: Transform?
@@ -44,6 +46,7 @@ public struct Primitive: Equatable, Decodable, Sendable {
     public var clip: Shape?
     public var effects: [Effect]
     public var label: String
+    public var role: Role?
 
     public init(
         shape: Shape,
@@ -53,7 +56,8 @@ public struct Primitive: Equatable, Decodable, Sendable {
         opacity: Q32? = nil,
         clip: Shape? = nil,
         effects: [Effect] = [],
-        label: String
+        label: String,
+        role: Role? = nil
     ) {
         self.shape = shape
         self.transform = transform
@@ -63,7 +67,12 @@ public struct Primitive: Equatable, Decodable, Sendable {
         self.clip = clip
         self.effects = effects
         self.label = label
+        self.role = role
     }
+}
+
+public enum Role: String, Equatable, Decodable, Sendable {
+    case groundShadow = "ground_shadow"
 }
 
 public enum FillRule: String, Equatable, Decodable, Sendable {
@@ -330,13 +339,13 @@ extension RenderTree {
 
 extension Primitive {
     private enum CodingKeys: String, CodingKey {
-        case clip, effects, label, opacity, paint, shape, stroke, transform
+        case clip, effects, label, opacity, paint, role, shape, stroke, transform
     }
 
     public init(from decoder: Decoder) throws {
         try rejectUnknownKeys(
             decoder,
-            allowed: ["clip", "effects", "label", "opacity", "paint", "shape", "stroke", "transform"])
+            allowed: ["clip", "effects", "label", "opacity", "paint", "role", "shape", "stroke", "transform"])
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             shape: try container.decode(Shape.self, forKey: .shape),
@@ -346,7 +355,8 @@ extension Primitive {
             opacity: try container.decodeRequiredOptional(Q32.self, forKey: .opacity),
             clip: try container.decodeRequiredOptional(Shape.self, forKey: .clip),
             effects: try container.decode([Effect].self, forKey: .effects),
-            label: try container.decode(String.self, forKey: .label))
+            label: try container.decode(String.self, forKey: .label),
+            role: try container.decodeRequiredOptional(Role.self, forKey: .role))
     }
 }
 

@@ -102,6 +102,7 @@ pub(crate) fn lash_primitives(
             clip: None,
             effects: Vec::new(),
             label: "av-lash".to_owned(),
+            role: None,
         });
     }
     primitives

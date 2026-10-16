@@ -45,6 +45,7 @@ class TreeJsonWriter {
       field("label", () => this.string(primitive.label));
       field("opacity", () => this.optional(primitive.opacity, (opacity) => this.integer(opacity)));
       field("paint", () => this.writePaint(primitive.paint));
+      field("role", () => this.optional(primitive.role, (role) => this.string(role)));
       field("shape", () => this.writeShape(primitive.shape));
       field("stroke", () => this.optional(primitive.stroke, (stroke) => this.writeStroke(stroke)));
       field("transform", () => this.optional(primitive.transform, (transform) => this.writeTransform(transform)));

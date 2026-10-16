@@ -1,5 +1,5 @@
 use avatar_svg::{
-    Bam16, Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Rgb, Segment, Shape,
+    Bam16, Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Rgb, Role, Segment, Shape,
     Stroke, StrokeCap, StrokeJoin, Transform, TransformOp, Q32,
 };
 use serde::Deserialize;
@@ -37,6 +37,7 @@ struct FixturePrimitive {
     clip: Option<FixtureShape>,
     effects: Vec<FixtureEffect>,
     label: String,
+    role: Option<FixtureRole>,
 }
 
 impl From<FixturePrimitive> for Primitive {
@@ -50,6 +51,21 @@ impl From<FixturePrimitive> for Primitive {
             clip: primitive.clip.map(Into::into),
             effects: primitive.effects.into_iter().map(Into::into).collect(),
             label: primitive.label,
+            role: primitive.role.map(Into::into),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FixtureRole {
+    GroundShadow,
+}
+
+impl From<FixtureRole> for Role {
+    fn from(role: FixtureRole) -> Self {
+        match role {
+            FixtureRole::GroundShadow => Self::GroundShadow,
         }
     }
 }

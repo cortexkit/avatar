@@ -127,6 +127,7 @@ pub(crate) fn pattern_mask_primitives(
         clip: None,
         effects: Vec::new(),
         label,
+        role: None,
     }])
 }
 

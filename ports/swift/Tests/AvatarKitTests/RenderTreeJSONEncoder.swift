@@ -97,6 +97,8 @@ private struct TreeJSONWriter {
         optional(primitive.opacity) { $0.integer($1.value) }
         field("paint", first: &first)
         write(primitive.paint)
+        field("role", first: &first)
+        optional(primitive.role) { $0.string($1.rawValue) }
         field("shape", first: &first)
         write(primitive.shape)
         field("stroke", first: &first)

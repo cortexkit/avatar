@@ -45,10 +45,11 @@ Primitive {
                                      //   (an unclipped iris bleeds outside
                                      //   the eye) — maps to .clipShape
   effects: [Effect],                 // ignorable annotations
-  label: str,                        // semantic class ("av-pupil", ...);
-                                     //   serializer emits it, consumers
-                                     //   may use it for accessibility/test
+  label: str,                        // diagnostic SVG class ("av-pupil", ...)
+  role: Role | None,                 // semantic contract for consumer behavior
 }
+
+Role = GroundShadow
 
 Transform {                          // typed as the serializer emits it —
   ops: [TransformOp],                //   order preserved for byte parity
@@ -117,6 +118,21 @@ Effect =
    expresses everything (any inexpressible attribute fails parity).
 6. Fixed-point out the door: i64 milliunits, Q32.32, BAM16. The
    consumer's scale-to-points is one division in its own space.
+
+## Primitive labels and roles
+
+`label` is a diagnostic name (also used for SVG classes and ids), with no
+stability promise. Consumers must use `role`, not label spelling, when changing
+behavior based on a primitive's meaning. The first semantic role is
+`ground_shadow`: a floating-creature view can omit it without depending on the
+generator's diagnostic names. Classic has no ground shadow; wild has exactly
+one. Roles do not affect SVG serialization or geometry.
+
+Roles form a closed enum: an unknown string fails decoding rather than silently
+losing meaning. Like the other optional primitive fields, `role` is always
+present in canonical JSON, with `null` for primitives without a role. Strict
+consumers accept that null but reject a missing key. Object keys remain
+byte-sorted, so `role` appears between `paint` and `shape`.
 
 ## Implementation status
 

@@ -47,6 +47,7 @@ pub(crate) fn mouth_primitive(
         clip: None,
         effects: Vec::new(),
         label: format!("av-mouth-{}", mouth.family % 8),
+        role: None,
     }
 }
 

@@ -44,6 +44,9 @@ impl RenderTree {
 pub const COORDS_PER_CANVAS_UNIT: i64 = 100;
 
 /// One independently drawable item with its fully resolved transform chain.
+///
+/// `label` is a diagnostic name with no stability promise. Consumers that
+/// change behavior based on a primitive's meaning must use `role` instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Primitive {
     pub shape: Shape,
@@ -57,8 +60,16 @@ pub struct Primitive {
     pub clip: Option<Shape>,
     /// Optional rendering annotations that small native consumers may ignore.
     pub effects: Vec<Effect>,
-    /// Stable semantic SVG class or id name.
+    /// Diagnostic SVG class or id name; not a semantic contract.
     pub label: String,
+    /// Semantic contract for consumer behavior; most primitives have no role.
+    pub role: Option<Role>,
+}
+
+/// A primitive's semantic purpose, independent of its diagnostic label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    GroundShadow,
 }
 
 /// Winding rule used to fill a path.

@@ -21,7 +21,11 @@ export interface RenderTree {
   primitives: Primitive[];
 }
 
-/** One independently drawable item with fully resolved transforms. */
+/**
+ * One independently drawable item with fully resolved transforms.
+ * Labels are diagnostic names without a stability promise; roles are the
+ * semantic contract consumers can use to change drawing behavior.
+ */
 export interface Primitive {
   shape: Shape;
   transform: Transform | null;
@@ -31,7 +35,10 @@ export interface Primitive {
   clip: Shape | null;
   effects: Effect[];
   label: string;
+  role: Role | null;
 }
+
+export type Role = "ground_shadow";
 
 export type FillRule = "non_zero" | "even_odd";
 
@@ -147,17 +154,24 @@ function decodeRenderTree(value: JsonValue, path: string): RenderTree {
 }
 
 function decodePrimitive(value: JsonValue, path: string): Primitive {
-  const fields = object(value, path, ["clip", "effects", "label", "opacity", "paint", "shape", "stroke", "transform"]);
+  const fields = object(value, path, ["clip", "effects", "label", "opacity", "paint", "role", "shape", "stroke", "transform"]);
   return {
     clip: nullable(fields, "clip", path, decodeShape),
     effects: array(required(fields, "effects", path), `${path}.effects`, decodeEffect),
     label: string(required(fields, "label", path), `${path}.label`),
     opacity: nullable(fields, "opacity", path, integer64),
     paint: decodePaint(required(fields, "paint", path), `${path}.paint`),
+    role: nullable(fields, "role", path, decodeRole),
     shape: decodeShape(required(fields, "shape", path), `${path}.shape`),
     stroke: nullable(fields, "stroke", path, decodeStroke),
     transform: nullable(fields, "transform", path, decodeTransform),
   };
+}
+
+function decodeRole(value: JsonValue, path: string): Role {
+  const role = string(value, path);
+  if (role !== "ground_shadow") throw new Error(`${path}: unknown role ${role}`);
+  return role;
 }
 
 function decodeShape(value: JsonValue, path: string): Shape {

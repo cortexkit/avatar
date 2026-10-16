@@ -231,6 +231,7 @@ fn layer_primitives(
                 clip: None,
                 effects: Vec::new(),
                 label: format!("av-experimental-layer-{}", index + 1),
+                role: None,
             }
         })
         .collect()

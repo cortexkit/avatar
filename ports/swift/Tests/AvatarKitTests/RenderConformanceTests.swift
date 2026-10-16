@@ -104,6 +104,26 @@ final class RenderConformanceTests: XCTestCase {
             of: ",\"transform\":null", with: "").utf8)))
     }
 
+    private var roleDocument: String {
+        """
+        {"background":null,"canvas":1,"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}
+        """
+    }
+
+    func testRoleDecoderRejectsUnknownValues() throws {
+        let unknown = roleDocument.replacingOccurrences(of: "ground_shadow", with: "unknown_role")
+        XCTAssertThrowsError(try decodeRenderTreeJson(Array(unknown.utf8)))
+    }
+
+    func testRoleDecoderPreservesKnownAndNullValuesAndRequiresPresence() throws {
+        let known = try decodeRenderTreeJson(Array(roleDocument.utf8))
+        XCTAssertEqual(known.primitives.first?.role, .groundShadow)
+        let null = roleDocument.replacingOccurrences(of: "\"ground_shadow\"", with: "null")
+        let absent = roleDocument.replacingOccurrences(of: ",\"role\":\"ground_shadow\"", with: "")
+        XCTAssertNil(try decodeRenderTreeJson(Array(null.utf8)).primitives.first?.role)
+        XCTAssertThrowsError(try decodeRenderTreeJson(Array(absent.utf8)))
+    }
+
     func testCorpusTreesAreFlatAndEveryAffineMatchesNaiveComposition() throws {
         let (root, vectors) = try loadManifest()
         var transformCount = 0

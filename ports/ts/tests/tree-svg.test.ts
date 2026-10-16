@@ -49,6 +49,7 @@ test("derives definition ids from primitive positions", () => {
     clip: null,
     effects: [],
     label: "same-content",
+    role: null,
   };
   const tree: RenderTree = {
     canvas: 10,

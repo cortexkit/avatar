@@ -263,6 +263,7 @@ pub fn filled(
         clip: None,
         effects: Vec::new(),
         label: label.to_owned(),
+        role: None,
     }
 }
 
@@ -276,6 +277,7 @@ pub fn stroked(shape: Shape, stroke: Stroke, label: &str) -> Primitive {
         clip: None,
         effects: Vec::new(),
         label: label.to_owned(),
+        role: None,
     }
 }
 

@@ -71,6 +71,44 @@ fn wild_genomes_match_registered_derivation() {
 }
 
 #[test]
+fn every_wild_tree_has_exactly_one_ground_shadow_role() {
+    fn assert_shadow(tree: &avatar_svg::RenderTree, name: &str) {
+        let mut pending: Vec<_> = tree.primitives.iter().collect();
+        let mut roles = Vec::new();
+        while let Some(primitive) = pending.pop() {
+            if let Some(role) = primitive.role {
+                roles.push((role, primitive.label.as_str()));
+            }
+            for effect in &primitive.effects {
+                if let avatar_svg::Effect::Masked { mask } = effect {
+                    pending.extend(mask);
+                }
+            }
+        }
+        assert_eq!(
+            roles,
+            [(avatar_svg::Role::GroundShadow, "wild-shadow")],
+            "{name}: only the ground shadow may carry the ground_shadow role"
+        );
+    }
+
+    let mut count = 0;
+    for vector in read_manifest().vectors {
+        let genome = read_genome(&vector.project_id);
+        for &mood in ALL_MOODS {
+            let tree = render_tree_for_bytes(&genome, "creature.wild", 1, mood).unwrap();
+            assert_shadow(&tree, &vector.project_id);
+            count += 1;
+        }
+    }
+    for &(name, _, _) in WILD_TREE_FIXTURES {
+        assert_shadow(&read_tree_fixture(name), name);
+    }
+    assert_eq!(count, 84);
+    println!("verified ground_shadow on {count} generated trees and 18 saved trees");
+}
+
+#[test]
 fn wild_trees_match_shipped_renderer() {
     if update_golden_enabled() {
         return;

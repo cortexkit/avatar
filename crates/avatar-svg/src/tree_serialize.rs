@@ -416,6 +416,7 @@ mod tests {
             clip: None,
             effects: Vec::new(),
             label: label.to_owned(),
+            role: None,
         }
     }
 

@@ -32,7 +32,7 @@ for (const file of treeFiles) {
 
 test("rejects malformed render-tree JSON instead of defaulting fields", () => {
   const primitive =
-    '{"clip":null,"effects":[],"label":"x","opacity":null,"paint":{"kind":"none"},"shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}';
+    '{"clip":null,"effects":[],"label":"x","opacity":null,"paint":{"kind":"none"},"role":null,"shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}';
   const invalidDocuments = [
     '{"canvas":1,"primitives":[]}',
     '{"background":null,"canvas":1,"extra":0,"primitives":[]}',
@@ -45,4 +45,17 @@ test("rejects malformed render-tree JSON instead of defaulting fields", () => {
   for (const document of invalidDocuments) {
     expect(() => decodeRenderTreeJson(document)).toThrow();
   }
+});
+
+const roleDocument =
+  '{"background":null,"canvas":1,"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}';
+
+test("role decoder rejects unknown values", () => {
+  expect(() => decodeRenderTreeJson(roleDocument.replace('"ground_shadow"', '"unknown_role"'))).toThrow();
+});
+
+test("role decoder preserves known and null values and requires presence", () => {
+  expect(decodeRenderTreeJson(roleDocument).primitives[0]!.role).toBe("ground_shadow");
+  expect(decodeRenderTreeJson(roleDocument.replace('"ground_shadow"', "null")).primitives[0]!.role).toBeNull();
+  expect(() => decodeRenderTreeJson(roleDocument.replace(',"role":"ground_shadow"', ""))).toThrow();
 });

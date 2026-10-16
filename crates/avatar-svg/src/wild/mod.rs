@@ -397,13 +397,15 @@ pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitiv
     let (min_x, min_y, max_x, max_y) = wild::bbox(&outline);
     let h = max_y - min_y;
 
-    let mut primitives = vec![render::filled(
+    let mut shadow = render::filled(
         render::ellipse(cx, max_y + 4.0, (max_x - min_x) * 0.42, 6.0),
         "rgba(40,30,50,0.14)",
         1.0,
         None,
         "wild-shadow",
-    )];
+    );
+    shadow.role = Some(crate::Role::GroundShadow);
+    let mut primitives = vec![shadow];
 
     if !merged_mode {
         for (ei, pts) in &ext_outlines {

@@ -68,6 +68,7 @@ fn build_tree(
             clip: None,
             effects: Vec::new(),
             label: "av-body-base".to_owned(),
+            role: None,
         },
         Primitive {
             shape: body_shape.clone(),
@@ -80,6 +81,7 @@ fn build_tree(
             clip: None,
             effects: vec![Effect::Lit { light_y }],
             label: "av-body-lit-primary".to_owned(),
+            role: None,
         },
         Primitive {
             shape: body_shape.clone(),
@@ -101,6 +103,7 @@ fn build_tree(
             clip: None,
             effects: vec![Effect::Lit { light_y }],
             label: "av-body-gradient".to_owned(),
+            role: None,
         },
     ];
 
@@ -122,6 +125,7 @@ fn build_tree(
             clip: None,
             effects: vec![Effect::Lit { light_y }, Effect::Masked { mask }],
             label: "av-body-pattern".to_owned(),
+            role: None,
         });
     }
 
