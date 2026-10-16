@@ -18,7 +18,9 @@ rustc --version --verbose
 docker version
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER
 export CARGO_INCREMENTAL=0
-CARGO_TARGET_DIR="$root/target/wild-cross-platform/${run##*/}"
+# One build directory shared by every run: cargo rebuilds what changed. A
+# directory per run left a full debug build behind on every run.
+CARGO_TARGET_DIR="$root/target/wild-cross-platform"
 export CARGO_TARGET_DIR
 cargo build --locked -j 4 -p avatar-svg --lib
 rustc --edition=2021 scripts/wild-port/mint.rs \
