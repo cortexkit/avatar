@@ -11,17 +11,17 @@ mechanism inside EVM limits; this project removes the limits.
 ## Pipeline
 
 ```
-registry row  →  DNA  →  Phenotype (typed integers)  →  SVG / render tree
- genome+type      1 KiB      canonical JSON            7 moods, render-time
- +version
+registry row        →  dispatch by type and version  →  render tree  →  SVG / native drawing
+genome bytes, type,     creature.classic: 1 KiB          7 moods, chosen
+version                 creature.wild:   16 KiB          at render time
 ```
 
-The genome is **stored**, not derived at render time. Prefrontal seeds one
-onto an agent's registry row at creation, and the operator or the agent can
-re-roll it later — so the row is the only truth, and nothing may be cached
-by agent id alone. Deriving a genome from an id (`avatar-export
---stable-id`) is the seeding path and the GitHub-App path, not the
-consumption path.
+The genome is **stored**, not derived at render time. It lives on the
+agent's registry row, and the operator or the agent can re-roll it, so the
+row is the only truth and nothing may be cached by agent id alone. Every
+byte pattern of the right length is a valid creature. The first fleet's
+genomes were derived from seat ids (`avatar-export --stable-id`); that was
+a one-time backfill, not how a creature is drawn.
 
 ## One generator, several consumers
 
@@ -41,13 +41,14 @@ the argument.
 | --- | --- | --- | --- |
 | Rust | `crates/` | generates, mints the corpus | `cargo test -p avatar-vectors` |
 | TypeScript | `ports/ts/` | decodes a tree, renders SVG | `bun test` |
-| Swift (`AvatarKit`, SPM by git URL) | `Package.swift` → `ports/swift/` | decodes a tree, draws it | `swift test` |
+| Swift (`AvatarKit`, SPM by git URL) | `Package.swift` → `ports/swift/` | runs the Rust generator embedded as `AvatarCore.xcframework`, decodes the tree, draws it | `swift test` |
 
-The ports still carry a full generator for `creature.classic`, which
-predates this decision and is byte-gated. New creature types are
-implemented once, in Rust.
+The ports still carry a full generator for `creature.classic`, the
+original creature type, which predates this decision and is byte-gated.
+Newer types, starting with `creature.wild`, are implemented once, in Rust.
 
-Four corpus boundaries in `vectors/`, CI-gated in every language:
+Four corpus boundaries in `vectors/`, checked in every language by
+`scripts/check.sh` on every push (there is no automatic CI):
 
 | Boundary | Directory | Pins |
 | --- | --- | --- |
@@ -61,10 +62,15 @@ Four corpus boundaries in `vectors/`, CI-gated in every language:
 ```swift
 .package(url: "https://github.com/cortexkit/avatar.git", from: "...")
 
-let tree = try renderTree(genome: genome, type: row.type,
-                          version: row.version, mood: mood)
+// Any type, through the embedded Rust generator:
+let tree = try renderTreeViaCore(genomeBytes: row.genome, type: row.type,
+                                 version: row.version, mood: mood)
 for primitive in tree.primitives { /* walk into SwiftUI Path */ }
 ```
+
+`renderTree(genome:type:version:mood:)` builds `creature.classic` natively
+in Swift; every other type goes through `renderTreeViaCore`. Rendering is
+pure and safe from any thread, and the tree types are `Sendable`.
 
 Two things that have bitten a consumer, both worth reading before you
 write the walk:
@@ -79,6 +85,9 @@ write the walk:
   Primitive coordinates are 100× finer than the SVG canvas units, so
   dividing by `canvas` draws an avatar 100× too large — which looks like
   a plausible zoom rather than a bug.
+- **Key behaviour on `primitive.role`, never on `label`.** Labels are
+  diagnostic names that may change. A view with no ground plane hides the
+  primitive whose role is `.groundShadow`.
 
 Rendering honours the version stored on the row rather than the
 library's newest, and an unknown type or version throws rather than
@@ -91,8 +100,10 @@ required behaviour.
 - `docs/design/001…006` — shipped `creature.classic`: determinism contract,
   phenotype schema, genome bit map, renderer geometry, face+mood, render tree
 - `docs/design/007…009`, `011` — the `creature.wild` redesign: expressiveness
-  spikes, look-first workflow, genome v2 layout, port-surface fork. 010 is
-  reserved for its phenotype schema, which waits on the look being frozen
+  spikes, look-first workflow, genome v2 layout, and the single-source and
+  determinism decisions. 010 was never written: wild version 1's byte map
+  lives in its decoder, `crates/avatar-svg/src/wild/`, inside note 009's
+  region boundaries
 - `docs/design/012` — how a face is allowed to change: type vs version, and
   the procedure for each
 
@@ -116,9 +127,14 @@ type, and why a rendering path is added to rather than edited.
 
 ## Determinism rules (the short version)
 
-Integer/fixed-point math only, one pinned rounding rule, trig and easing
-from committed lookup tables, no platform libm, hand-rolled canonical
-serialization.
+The same genome, type, version and mood produce the same bytes on every
+platform. No generation path calls the platform maths library; a lint
+refuses it. `creature.classic` uses integer and fixed-point maths with
+trig and easing from committed lookup tables, which also keeps its Swift
+and TypeScript builders identical to Rust. `creature.wild` uses `f64`
+limited to the operations IEEE 754 makes exact everywhere, with its own
+trig built from those, and is checked byte-identical across macOS and
+Linux on ARM and Intel. Serialization is hand-rolled and canonical.
 
 An observable output change is **never** a silent edit to a shipped
 version, because an agent's face must not change because we shipped:
@@ -129,12 +145,14 @@ version, because an agent's face must not change because we shipped:
 - Changing the **depiction** is a new type, not a version — types are
   different representations of the same genome behind one interface.
 
-Either way: re-mint only the new arm's vectors (`UPDATE_GOLDEN=1 cargo test
--p avatar-vectors`), review `vectors/contact-sheet.html` by eye, and every
-port's conformance leg must re-pass before it ships. `docs/design/012` has
-the full procedure.
+Either way: re-mint only the affected vectors (`UPDATE_GOLDEN=1` or
+`UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact
+--nocapture`), review `vectors/contact-sheet.html` by eye, rebuild the
+embedded core, and every port's conformance leg must re-pass before it
+ships. `docs/design/012` has the full procedure.
 
 The manifest's `corpus_revision` is **not** that version. It counts
 re-mints, moves when a vector or a boundary is added, and implies nothing
-about what any creature looks like. The version a row carries is
-`CLASSIC_VERSION` in `crates/avatar-svg/src/dispatch.rs`.
+about what any creature looks like. The versions a row can carry are the
+dispatch arms in `crates/avatar-svg/src/dispatch.rs`: `creature.classic`
+version 2 and `creature.wild` version 1.
