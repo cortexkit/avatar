@@ -16,18 +16,60 @@ RUST_ONLY=0
 [[ "${1:-}" == "--rust-only" ]] && RUST_ONLY=1
 
 FAILED=()
+STAGES=(
+  "mint tables" "mint is reproducible" "core binary current"
+  "fmt" "clippy" "clippy release" "test" "doc tests" "golden corpus"
+  "corpus coverage" "playground fmt" "playground clippy" "playground tests"
+  "wild invariants" "renderer consts" "no ignored internal files tracked"
+  "cross-platform comparison" "lab matches canonical"
+)
+if [[ $RUST_ONLY -eq 0 ]]; then
+  STAGES+=("ts typecheck" "ts conformance")
+  if command -v swift >/dev/null 2>&1; then
+    STAGES+=("swift conformance")
+  fi
+fi
+
+log_dir=$(mktemp -d "${TMPDIR:-/tmp}/avatar-check.XXXXXX") || exit 1
+trap 'rm -rf "$log_dir"' EXIT
+mkfifo "$log_dir/completed" || exit 1
+exec 3<> "$log_dir/completed"
+PARALLEL=0
+
+publish() {
+  local index="$1" result="$2"
+  cat "$log_dir/$index.log"
+  [[ $result -eq 0 ]] || FAILED+=("${STAGES[$index]}")
+}
+
 run() {
   local name="$1"
   shift
-  printf '\n\033[1m▸ %s\033[0m\n' "$name"
-  local start=$SECONDS
+  local index result start
+  for index in "${!STAGES[@]}"; do
+    [[ ${STAGES[$index]} == "$name" ]] && break
+  done
   # Every gate runs even after an earlier one fails: a lint failure must
   # not hide the test signal.
-  if "$@"; then
-    printf '\033[32m  ok\033[0m (%ss)\n' "$((SECONDS - start))"
+  {
+    printf '\n\033[1m▸ %s\033[0m\n' "$name"
+    start=$SECONDS
+    # A pipe keeps /dev/stderr a stream. The drift check tees there; pointing
+    # it directly at a regular log file would reopen and truncate that file.
+    if "$@" 2>&1 | cat; then
+      result=0
+      printf '\033[32m  ok\033[0m (%ss)\n' "$((SECONDS - start))"
+    else
+      result=1
+      printf '\033[31m  FAILED\033[0m (%ss)\n' "$((SECONDS - start))"
+    fi
+  } > "$log_dir/$index.log" 2>&1
+  if [[ $PARALLEL -eq 1 ]]; then
+    # One short completion record is atomic even when two lanes finish at
+    # once. The reader buffers out-of-order results without blocking a lane.
+    printf '%s %s\n' "$index" "$result" >&3
   else
-    printf '\033[31m  FAILED\033[0m (%ss)\n' "$((SECONDS - start))"
-    FAILED+=("$name")
+    publish "$index" "$result"
   fi
 }
 
@@ -35,11 +77,6 @@ run() {
 # than against an empty tree, so a dirty working copy does not make it fire.
 tree_before=$(git status --porcelain | sort)
 
-run "fmt"             cargo fmt --all -- --check
-run "clippy"          cargo clippy --workspace --all-targets --locked -- -D warnings
-run "clippy release"  cargo clippy --workspace --release --locked -- -D warnings
-run "test"            cargo test --workspace --all-targets --locked
-run "doc tests"       cargo test --workspace --doc --locked
 # CI can use `git diff --exit-code` here because it mints on a clean
 # checkout. Locally the tree is usually dirty, so that check would report
 # every uncommitted edit as mint drift. Hash the tree around the mint
@@ -50,53 +87,8 @@ mint_before=$(mint_fingerprint)
 run "mint tables"     cargo run --locked -p avatar-tables --bin mint
 run "mint is reproducible" bash -c \
   "[[ \"\$( { git status --porcelain; git diff; } | shasum -a 256 )\" == \"$mint_before\" ]]"
-run "golden corpus"   cargo test --locked -p avatar-vectors
-# Does the corpus still cover what real genomes reach? The hand-picked
-# vectors once missed nine decode selectors that live agents hit, including
-# a mouth dispatch arm no port had ever been byte-compared on. Uniform draws
-# have the same distribution as blake3-derived fleet genomes, so a synthetic
-# population re-asks the question here without needing registry data — and
-# fails when a decode change opens a branch no vector exercises.
-run "corpus coverage" cargo run --locked -q -p avatar-genome \
-  --example fleet_coverage -- --population 1000
-
-# The playground is its own workspace, so the gates above never reached it.
-# That mattered once it stopped being a sketch: it is the source the second
-# creature type will be ported from, and its placement invariants (eyes
-# inside the body, eyes clear of each other, mouth inside the body) were
-# only ever proved by hand. A proof nobody runs is a proof nobody has.
-run "playground fmt"    bash -c 'cd playground && cargo fmt --all -- --check'
-run "playground clippy" bash -c 'cd playground && cargo clippy --all-targets --locked -- -D warnings'
-run "playground tests"  bash -c 'cd playground && cargo test --locked'
-run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin grid -- --check 300'
-# NOT gated here, deliberately, and the reason is worth more than the
-# step would be. `--bin grid -- --coverage` is a REPORT: it prints how
-# often each divergence-prone branch is reached and solves a minimal
-# covering set. It has no failure condition, so wiring it in would add
-# runtime and produce a green tick that means nothing.
-#
-# It cannot honestly become pass/fail either. It currently shows the
-# placement eyes-only fallback at 0 of 4000 seeds, and that branch SHOULD
-# be unreachable: it is the guarantee that a creature always has a face,
-# for bodies the population does not contain but the genome space allows.
-# A gate on "no unreached branches" would demand deleting a safety net or
-# faking its coverage. Run it by hand when choosing corpus vectors or
-# after changing the decoder.
-# Runs here as well as inside drift-check.sh: this half needs no browser,
-# and reaching it only through the half that does made it skippable on any
-# machine without one.
-run "renderer consts"   python3 scripts/const-drift.py
-# .cortexkit/ holds internal notes and worker briefs that must never reach
-# git. The ignore rule only stops new files; a file committed before the
-# rule existed stays tracked silently, so check what git actually tracks.
-run "no ignored internal files tracked" bash -c \
-  'tracked=$(git ls-files -ci --exclude-standard -- .cortexkit); [ -z "$tracked" ] || { echo "$tracked"; exit 1; }'
-# The cross-platform script needs containers, so it runs by hand, but its
-# comparison must still be proven able to fail on every push: a comparison
-# that passed on empty or short inventories would report three platforms
-# identical without comparing anything.
-run "cross-platform comparison" bash -c \
-  'cd scripts/wild-port && python3 -m unittest -q test_compare'
+# Mint is the only stage that writes source. Finish it before any compiler
+# or source-hash reader starts, so all three lanes see the same inputs.
 # The committed AvatarCore binary is what phones run. Every other test
 # builds from source, so a forgotten rebuild passes them all; this compares
 # the source the binary was built from against the source here.
@@ -104,35 +96,130 @@ run "core binary current" bash -c \
   '[ "$(cat ports/swift/AvatarCore.source-hash 2>/dev/null)" = "$(./scripts/xcframework-source-hash.sh)" ] \
    || { echo "  AvatarCore.xcframework is stale: rebuild with scripts/build-xcframework.sh"; exit 1; }'
 
-# playground/web/index.html is a JavaScript twin of the Rust generator,
-# and it is what a human opens to review creature designs. If the two
-# implementations drift, the review is of something nobody ships, so
-# drift-check.sh renders the same seeds through both and compares the
-# derived geometry.
-#
-# This gate greps for the script's agreement line instead of trusting its
-# exit code, because a comparison that never ran must not be reportable as
-# a successful comparison.
-run "lab matches canonical" bash -c \
-  './scripts/drift-check.sh | tee /dev/stderr | grep -q "seeds: renderers agree"'
+rust_lane() {
+  # Keep commands sharing the workspace target directory serial. Cargo's
+  # build lock would serialize them anyway, with less predictable latency.
+  run "fmt"             cargo fmt --all -- --check
+  run "clippy"          cargo clippy --workspace --all-targets --locked -- -D warnings
+  run "clippy release"  cargo clippy --workspace --release --locked -- -D warnings
+  run "test"            cargo test --workspace --all-targets --locked
+  run "doc tests"       cargo test --workspace --doc --locked
+  run "golden corpus"   cargo test --locked -p avatar-vectors
+  # Does the corpus still cover what real genomes reach? The hand-picked
+  # vectors once missed nine decode selectors that live agents hit, including
+  # a mouth dispatch arm no port had ever been byte-compared on. Uniform draws
+  # have the same distribution as blake3-derived fleet genomes, so a synthetic
+  # population re-asks the question here without needing registry data — and
+  # fails when a decode change opens a branch no vector exercises.
+  run "corpus coverage" cargo run --locked -q -p avatar-genome \
+    --example fleet_coverage -- --population 1000
 
-if [[ $RUST_ONLY -eq 0 ]]; then
-  run "ts typecheck"  bash -c 'cd ports/ts && bunx tsc --noEmit'
-  run "ts conformance" bash -c 'cd ports/ts && bun test'
-  # Xcode's toolchain is required on macOS; CI uses a Linux Swift image.
-  if command -v swift >/dev/null 2>&1; then
-    # Resolve the toolchain rather than inheriting one. Apple's /usr/bin/git
-    # shim exports SDKROOT (CommandLineTools) into hook environments, so as
-    # a pre-push hook this gate got Xcode's compiler with CommandLineTools'
-    # SDK — a half-inherited toolchain that cannot build the stdlib, and it
-    # reported a Swift conformance FAILURE for a suite that passes. A gate
-    # whose verdict depends on who invoked it is not a gate.
-    swift_dev_dir=/Applications/Xcode.app/Contents/Developer
-    [[ -d $swift_dev_dir ]] || swift_dev_dir=$(xcode-select -p 2>/dev/null)
-    run "swift conformance" \
-      env -u SDKROOT DEVELOPER_DIR="$swift_dev_dir" swift test
+}
+
+web_lane() {
+  # The playground is its own workspace, so the gates above never reached it.
+  # That mattered once it stopped being a sketch: it is the source the second
+  # creature type will be ported from, and its placement invariants (eyes
+  # inside the body, eyes clear of each other, mouth inside the body) were
+  # only ever proved by hand. A proof nobody runs is a proof nobody has.
+  run "playground fmt"    bash -c 'cd playground && cargo fmt --all -- --check'
+  run "playground clippy" bash -c 'cd playground && cargo clippy --all-targets --locked -- -D warnings'
+  run "playground tests"  bash -c 'cd playground && cargo test --locked'
+  run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin grid -- --check 300'
+  # NOT gated here, deliberately, and the reason is worth more than the
+  # step would be. `--bin grid -- --coverage` is a REPORT: it prints how
+  # often each divergence-prone branch is reached and solves a minimal
+  # covering set. It has no failure condition, so wiring it in would add
+  # runtime and produce a green tick that means nothing.
+  #
+  # It cannot honestly become pass/fail either. It currently shows the
+  # placement eyes-only fallback at 0 of 4000 seeds, and that branch SHOULD
+  # be unreachable: it is the guarantee that a creature always has a face,
+  # for bodies the population does not contain but the genome space allows.
+  # A gate on "no unreached branches" would demand deleting a safety net or
+  # faking its coverage. Run it by hand when choosing corpus vectors or
+  # after changing the decoder.
+  # Runs here as well as inside drift-check.sh: this half needs no browser,
+  # and reaching it only through the half that does made it skippable on any
+  # machine without one.
+  run "renderer consts"   python3 scripts/const-drift.py
+  # .cortexkit/ holds internal notes and worker briefs that must never reach
+  # git. The ignore rule only stops new files; a file committed before the
+  # rule existed stays tracked silently, so check what git actually tracks.
+  run "no ignored internal files tracked" bash -c \
+    'tracked=$(git ls-files -ci --exclude-standard -- .cortexkit); [ -z "$tracked" ] || { echo "$tracked"; exit 1; }'
+  # The cross-platform script needs containers, so it runs by hand, but its
+  # comparison must still be proven able to fail on every push: a comparison
+  # that passed on empty or short inventories would report three platforms
+  # identical without comparing anything.
+  run "cross-platform comparison" bash -c \
+    'cd scripts/wild-port && python3 -m unittest -q test_compare'
+  # playground/web/index.html is a JavaScript twin of the Rust generator,
+  # and it is what a human opens to review creature designs. If the two
+  # implementations drift, the review is of something nobody ships, so
+  # drift-check.sh renders the same seeds through both and compares the
+  # derived geometry.
+  #
+  # This gate greps for the script's agreement line instead of trusting its
+  # exit code, because a comparison that never ran must not be reportable as
+  # a successful comparison.
+  run "lab matches canonical" bash -c \
+    './scripts/drift-check.sh | tee /dev/stderr | grep -q "seeds: renderers agree"'
+
+  if [[ $RUST_ONLY -eq 0 ]]; then
+    run "ts typecheck"  bash -c 'cd ports/ts && bunx tsc --noEmit'
+    run "ts conformance" bash -c 'cd ports/ts && bun test'
   fi
+
+}
+
+swift_lane() {
+  # Xcode's toolchain is required on macOS; CI uses a Linux Swift image.
+  # Resolve the toolchain rather than inheriting one. Apple's /usr/bin/git
+  # shim exports SDKROOT (CommandLineTools) into hook environments, so as
+  # a pre-push hook this gate got Xcode's compiler with CommandLineTools'
+  # SDK — a half-inherited toolchain that cannot build the stdlib, and it
+  # reported a Swift conformance FAILURE for a suite that passes. A gate
+  # whose verdict depends on who invoked it is not a gate.
+  swift_dev_dir=/Applications/Xcode.app/Contents/Developer
+  [[ -d $swift_dev_dir ]] || swift_dev_dir=$(xcode-select -p 2>/dev/null)
+  run "swift conformance" \
+    env -u SDKROOT DEVELOPER_DIR="$swift_dev_dir" swift test
+}
+
+# The browser probe builds and runs playground's grid binary, so it belongs
+# with that workspace rather than racing its Cargo lock from another lane.
+# SwiftPM uses .build; neither it nor the web lane shares the root target/.
+PARALLEL=1
+rust_lane &
+rust_pid=$!
+web_lane &
+web_pid=$!
+swift_pid=
+if [[ " ${STAGES[*]} " == *" swift conformance "* ]]; then
+  swift_lane &
+  swift_pid=$!
 fi
+
+# Logs are published in a fixed order, not in scheduler-dependent completion
+# order. Consume completions immediately so a later stage never holds up its
+# lane just because an earlier, slower stage has not been printed yet.
+results=()
+next=3
+remaining=$((${#STAGES[@]} - next))
+while [[ $remaining -gt 0 ]]; do
+  read -r index result <&3
+  results[index]=$result
+  remaining=$((remaining - 1))
+  while [[ $next -lt ${#STAGES[@]} && -n ${results[$next]:-} ]]; do
+    publish "$next" "${results[$next]}"
+    next=$((next + 1))
+  done
+done
+wait "$rust_pid"
+wait "$web_pid"
+[[ -z $swift_pid ]] || wait "$swift_pid"
+exec 3>&-
 
 # Did the build rewrite a tracked file?
 if [[ "$(git status --porcelain | sort)" != "$tree_before" ]]; then
