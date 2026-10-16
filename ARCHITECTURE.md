@@ -2,14 +2,14 @@
 
 ## Pattern Overview
 
-**Overall:** Fixed-Point Multi-Language Deterministic Graphics Pipeline
+**Overall:** Single-Source Deterministic Graphics Pipeline: each creature type has one generator, written in Rust, and every client draws the render tree it produces. The same genome, type, version and mood always produce the same bytes, on every platform.
 
 **Key Characteristics:**
 - **Deterministic Pure Pipeline:** Maps fixed-size bitstrings (DNA) through typed phenotype parameters to intermediate geometry render trees and SVG text output.
-- **Arithmetic Invariance across Languages:** Pinned integer arithmetic (`i64` milliunits and `Q32.32` fixed point), custom lookup tables, and a single half-away-from-zero rounding helper eliminate floating-point non-determinism across Rust, TypeScript, and Swift.
-- **Single Generator, Decoding Consumers:** Generation lives in Rust (`crates/`). Consumers receive a resolved `RenderTree` and draw it rather than reimplementing the generator, because comparing independent implementations against a corpus proves agreement on a finite sample of a 2^8192 input space and cannot prove equivalence. TypeScript (`ports/ts/`) and Swift (`ports/swift/`) each carry the tree type, a fail-closed JSON decoder, and byte gates. Both also still carry a full generator for the one creature type that predates this decision; new types are implemented once, in Rust. See `docs/design/011`.
+- **Platform-Invariant Arithmetic:** A creature must be byte-identical on every platform. `creature.classic` gets this from pinned integer arithmetic (`i64` milliunits, `Q32.32` fixed point, lookup tables, one half-away-from-zero rounding helper), which also keeps its Swift and TypeScript builders identical to Rust. `creature.wild` exists only in Rust, so it uses `f64` restricted to operations IEEE 754 makes exact everywhere (`+ - * /`, `sqrt`, comparisons, rounding), with trigonometry rebuilt from those in `src/wild/math.rs`. A lint (`crates/clippy.toml`) refuses maths-library calls, the one non-portable layer. Measured: wild trees are byte-identical on macOS arm64, Linux arm64 and Linux x86_64 (`scripts/wild-cross-platform.sh`).
+- **Single Generator, Decoding Consumers:** Generation lives in Rust (`crates/`). Consumers receive a resolved `RenderTree` and draw it rather than reimplementing the generator, because comparing independent implementations against a corpus proves agreement on a finite sample of a 2^8192 input space and cannot prove equivalence. TypeScript (`ports/ts/`) and Swift (`ports/swift/`) each carry the tree type, a fail-closed JSON decoder, and byte gates. Both also still carry a full generator for `creature.classic`, the original creature type, written in all three languages before the single-source decision and kept byte-gated against Rust; every newer type, starting with `creature.wild`, is implemented once, in Rust. The iOS app runs that Rust itself through an embedded static library. See `docs/design/011`.
 - **Render-Time Mood Decoupling:** DNA and phenotype encode identity, body geometry, face composition, and color palette. Agent mood is provided at render time to modify facial feature transforms without altering identity.
-- **Golden Vector Conformance:** CI-gated golden vector tests in `vectors/` at four boundaries: DNA to phenotype JSON (`phenotype/`), phenotype to SVG (`svg/`), tree to canonical JSON (`tree/`), and tree to SVG through the generic serializer (`tree-svg/`). The last two pin the transport a consumer decodes and the rendering every consumer must reproduce.
+- **Golden Vector Conformance:** Golden vector tests in `vectors/`, run by `scripts/check.sh` on every push, at four boundaries: DNA to phenotype JSON (`phenotype/`), phenotype to SVG (`svg/`), tree to canonical JSON (`tree/`), and tree to SVG through the generic serializer (`tree-svg/`). The last two pin the transport a consumer decodes and the rendering every consumer must reproduce.
 
 ## Layers
 
@@ -37,7 +37,8 @@
 **Geometry Assembly & Render Tree Layer:**
 - Purpose: Constructs a resolution-independent, structured tree of geometric primitives and paint definitions.
 - Location: `crates/avatar-svg/src/`
-- Contains: Geometry generators for body, face, eyes, brows, mouth, lashes, patterns, and mood modulation (`geometry.rs`, `face.rs`, `eyes.rs`, `brows.rs`, `mouth.rs`, `lashes.rs`, `pattern.rs`, `mood.rs`), tree data structure (`tree.rs`), dispatch engine (`dispatch.rs`).
+- Contains: The `creature.classic` generator (`geometry.rs`, `face.rs`, `eyes.rs`, `brows.rs`, `mouth.rs`, `lashes.rs`, `pattern.rs`, `mood.rs`), the `creature.wild` generator (`src/wild/`: radial-spline bodies, extremities, signed-distance-field merging, Voronoi patterns, face placement, moods), tree data structure (`tree.rs`), canonical tree JSON (`tree_json.rs`), dispatch engine (`dispatch.rs`).
+- Tree contract: a primitive's `label` is a diagnostic name with no stability promise; its `role` is what consumers may key behaviour on. So far the only role is `ground_shadow`, which a client with no ground plane hides.
 - Depends on: `crates/avatar-phenotype`, `crates/avatar-tables`
 - Used by: `crates/avatar-export`, `crates/avatar-vectors`, `ports/ts/src/svg/`, `ports/swift/Sources/AvatarKit/`
 
@@ -48,8 +49,15 @@
 - Depends on: `crates/avatar-svg/src/tree.rs`
 - Used by: `crates/avatar-export`, `crates/avatar-vectors`, `ports/ts/src/svg/svg.ts`, `ports/swift/Sources/AvatarKit/SvgSerializer.swift`
 
+**Embedded Core Layer:**
+- Purpose: Lets a client run the Rust generator itself, so a type that exists only in Rust draws on the device.
+- Location: `crates/avatar-ffi/`, built by `scripts/build-xcframework.sh` into the committed `ports/swift/AvatarCore.xcframework` (static libraries for iOS device, iOS simulator and macOS).
+- Contains: One C call returning canonical tree JSON, with a distinct status per failure and panics contained at the boundary.
+- Guarded by: `ports/swift/AvatarCore.source-hash`; `scripts/check.sh` refuses a committed binary built from different source, because every test builds from source and would pass on a stale binary.
+- Used by: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift` (`renderTreeViaCore`).
+
 **CLI & Fleet Export Layer:**
-- Purpose: Converts stable seat IDs into raster PNG identity assets for agent avatars.
+- Purpose: Converts stored genomes (or, for backfill, stable seat IDs) into raster PNG identity assets for agent avatars.
 - Location: `crates/avatar-export/src/main.rs`
 - Contains: Command-line flag parsing, manifest loading, SVG rendering, `resvg` PNG rasterization.
 - Depends on: `crates/avatar-genome`, `crates/avatar-svg`, `resvg`
@@ -74,9 +82,9 @@
 3. `TreeBuilder` evaluates geometry passes to construct native `RenderTree` primitives — `ports/swift/Sources/AvatarKit/TreeBuilder.swift`
 4. Client walks `RenderTree` primitives directly to construct native SwiftUI paths without SVG parsing
 
-*Decoded, for a type that exists only in Rust:*
+*Decoded, for every other type (`creature.wild` today):*
 
-1. Rust emits a canonical JSON encoding of the tree — `crates/avatar-svg/src/tree_json.rs`
+1. Rust emits a canonical JSON encoding of the tree — `crates/avatar-svg/src/tree_json.rs`. On iOS this Rust runs inside the app: `renderTreeViaCore(genomeBytes:type:version:mood:)` calls the embedded core — `ports/swift/Sources/AvatarKit/EmbeddedCore.swift`, `crates/avatar-ffi/src/lib.rs`
 2. Consumer decodes it fail-closed: an unknown tag, a missing field or a non-integer throws, because a silently defaulted primitive draws a wrong creature that looks right — `ports/swift/Sources/AvatarKit/RenderTree.swift`, `ports/ts/src/tree.ts`
 3. Consumer draws the primitives, or serializes them to SVG — `ports/ts/src/tree-serialize.ts`
 
@@ -84,8 +92,8 @@ This second path is what lets a new creature type ship without being implemented
 
 **Fleet PNG Export Pipeline:**
 
-1. CLI receives `--stable-id` or `--manifest` JSON file — `crates/avatar-export/src/main.rs`
-2. `avatar-export` derives genome, decodes phenotype, and renders canonical SVG — `crates/avatar-export/src/main.rs`
+1. For a live agent, the CLI takes the agent's stored genome as `--genome <hex>` with `--type` and `--version`. The registry row is authoritative, and a re-roll may have replaced the genome derived from the seat id. `--stable-id` and `--manifest` remain for the one-time backfill — `crates/avatar-export/src/main.rs`
+2. `avatar-export` renders through the same dispatch as every client — `crates/avatar-export/src/main.rs`
 3. SVG stream passes to `resvg` pure-Rust engine to rasterize fixed-dimension PNG files — `crates/avatar-export/src/main.rs`
 
 **Golden Vector Conformance Gate:**
@@ -93,7 +101,8 @@ This second path is what lets a new creature type ship without being implemented
 1. Conformance test reads golden hex DNA vectors from disk — `crates/avatar-vectors/src/lib.rs`
 2. Test executes local implementation pipeline to produce phenotype JSON and SVG output
 3. Output is byte-compared against expected golden assets in `vectors/phenotype/`, `vectors/svg/`, `vectors/tree/` and `vectors/tree-svg/`
-4. Cross-language test runners execute equivalent checks in TS (`ports/ts/tests/golden-conformance.test.ts`) and Swift (`ports/swift/Tests/AvatarKitTests/GoldenConformanceTests.swift`)
+4. Cross-language test runners execute equivalent checks in TS (`ports/ts/tests/golden-conformance.test.ts`) and Swift (`ports/swift/Tests/AvatarKitTests/GoldenConformanceTests.swift`); Swift also proves the embedded core reproduces every golden tree (`ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`)
+5. Run by hand because it needs containers: `scripts/wild-cross-platform.sh` generates the wild corpus on macOS and in Linux arm64 and x86_64 containers and byte-compares them
 
 ## Key Abstractions
 
@@ -159,7 +168,9 @@ Unknown avatar types, unsupported generator versions, or invalid genome bit leng
 ## Cross-Cutting Concerns
 
 **Determinism & Numeric Discipline:**
-- All trigonometric operations use `avatar_tables::sin_q30` and `cos_q30` backed by committed quarter-wave lookup tables.
+- No generation path calls the platform maths library; `crates/clippy.toml` refuses it under `-D warnings`.
+- `creature.wild`: `f64` with IEEE-exact operations only, trigonometry from `src/wild/math.rs`, and Rust's half-away-from-zero `round`. In the wild generator a difference in the fourteenth digit can flip a branch decision, so approximately equal results are not enough.
+- `creature.classic`: all trigonometric operations use `avatar_tables::sin_q30` and `cos_q30` backed by committed quarter-wave lookup tables.
 - Easing calculations look up pre-computed Q32.32 values from committed tables (`EASE_LINEAR`, `EASE_EXPO`, `EASE_IN_CIRC`, `EASE_IN_QUINT`, `EASE_IN_OUT_CIRC`).
 - Signed fixed-point division must use `div_round_half_away` to ensure consistent half-away-from-zero rounding across all platforms.
 
@@ -170,4 +181,5 @@ Unknown avatar types, unsupported generator versions, or invalid genome bit leng
 **Storage & Assets:**
 - Lookup tables are committed in `crates/avatar-tables/src/generated/tables.rs` and mirrored in TS/Swift sources.
 - Voronoi pattern mesh data is committed in `crates/avatar-svg/src/generated/voronoi.rs` and mirrored in TS/Swift sources.
-- Conformance test vectors are stored in `vectors/` (`dna/`, `phenotype/`, `svg/`, `manifest.json`).
+- Conformance test vectors are stored in `vectors/` (`dna/`, `phenotype/`, `svg/`, `tree/`, `tree-svg/`, `wild/`, `manifest.json`), generated by the `UPDATE_GOLDEN` and `UPDATE_WILD_GOLDEN` test commands in `crates/avatar-vectors` (see STRUCTURE.md) and never edited by hand.
+- The embedded core binary is committed as `ports/swift/AvatarCore.xcframework` (about 1 MB zipped), so the iOS app needs no Rust toolchain.
