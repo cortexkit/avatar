@@ -86,6 +86,12 @@ run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin gr
 # and reaching it only through the half that does made it skippable on any
 # machine without one.
 run "renderer consts"   python3 scripts/const-drift.py
+# The cross-platform script needs containers, so it runs by hand, but its
+# comparison must still be proven able to fail on every push: a comparison
+# that passed on empty or short inventories would report three platforms
+# identical without comparing anything.
+run "cross-platform comparison" bash -c \
+  'cd scripts/wild-port && python3 -m unittest -q test_compare'
 # The committed AvatarCore binary is what phones run. Every other test
 # builds from source, so a forgotten rebuild passes them all; this compares
 # the source the binary was built from against the source here.

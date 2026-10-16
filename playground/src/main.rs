@@ -7,12 +7,10 @@
 
 use ava_playground::fit;
 use avatar_svg::wild::{
-    belly_patch, belly_top_for, decode_full_counted, decode_genome, draw_full, genome, merge, mood,
-    mouth_y_for, outline_for, place_face, probe_genome, render, shape as wild, Creature,
+    belly_patch, belly_top_for, decode_full_counted, decode_genome, draw_full, merge, mood,
+    mouth_y_for, outline_for, place_face, probe_genome, render, shape as wild,
 };
 use avatar_svg::{Primitive, RenderTree};
-
-mod baseline;
 
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
@@ -255,9 +253,6 @@ fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if baseline::command(&args) {
-        return;
-    }
     if let Some(i) = args.iter().position(|argument| argument == "--fixtures") {
         let usage = "--fixtures <start-seed> <count> <out-dir>";
         let start_seed = args

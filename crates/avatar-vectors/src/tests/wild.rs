@@ -7,7 +7,7 @@ const GENOME_LEN: usize = 16_384;
 // These identity/mood pairs have saved trees and population sheets made by the
 // original playground renderer using standard-library maths. Reuse that list
 // so every new golden has an original tree available for visual comparison.
-const FROZEN_CORPUS: &str = include_str!("../../../../docs/reports/wild-port/corpus.tsv");
+const FROZEN_CORPUS: &str = include_str!("../../../../vectors/wild/corpus.tsv");
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -175,6 +175,8 @@ pub(super) fn assert_directory() {
         .map(|vector| format!("{}.hex", vector.project_id))
         .collect::<BTreeSet<_>>();
     names.insert("manifest.json".to_owned());
+    // The frozen genome list this corpus is minted from lives beside it.
+    names.insert("corpus.tsv".to_owned());
     assert_file_names("wild", &names);
 }
 

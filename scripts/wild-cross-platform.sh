@@ -21,7 +21,7 @@ export CARGO_INCREMENTAL=0
 CARGO_TARGET_DIR="$root/target/wild-cross-platform/${run##*/}"
 export CARGO_TARGET_DIR
 cargo build --locked -j 4 -p avatar-svg --lib
-rustc --edition=2021 docs/reports/wild-port/mint.rs \
+rustc --edition=2021 scripts/wild-port/mint.rs \
     --extern "avatar_svg=$CARGO_TARGET_DIR/debug/libavatar_svg.rlib" \
     -L "dependency=$CARGO_TARGET_DIR/debug/deps" -o "$CARGO_TARGET_DIR/wild-mint"
 "$CARGO_TARGET_DIR/wild-mint" "$root" "$run/macos"
@@ -38,12 +38,12 @@ for arch in arm64 amd64; do
             case "$1:$(uname -m)" in arm64:aarch64|amd64:x86_64) ;; *) exit 1 ;; esac
             rustc --version --verbose
             cargo build --manifest-path /src/Cargo.toml --locked -j 4 -p avatar-svg --lib
-            rustc --edition=2021 /src/docs/reports/wild-port/mint.rs \
+            rustc --edition=2021 /src/scripts/wild-port/mint.rs \
                 --extern avatar_svg=/tmp/wild-target/debug/libavatar_svg.rlib \
                 -L dependency=/tmp/wild-target/debug/deps -o /tmp/wild-mint
             /tmp/wild-mint /src /out/trees
         ' bash "$arch"
 done
-python3 docs/reports/wild-port/compare.py platforms "$root" \
+python3 scripts/wild-port/compare.py platforms "$root" \
     "$run/macos" "$run/linux-arm64/trees" "$run/linux-amd64/trees"
 echo "Cross-platform comparison passed; full log: $run/output.log"
