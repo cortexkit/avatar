@@ -4,3 +4,8 @@
 .cortexkit/scripts/
 .cortexkit/alfonso/drafts/
 .cortexkit/alfonso/specs/
+# The same folders after the alfonso -> prefrontal rename. Both forms stay
+# listed so the backup covers the folder whichever name it has; drop the
+# alfonso lines once the rename has run.
+.cortexkit/prefrontal/drafts/
+.cortexkit/prefrontal/specs/
