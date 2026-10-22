@@ -41,8 +41,20 @@ if [[ -n $CHROME && ! -x $CHROME ]]; then
   echo "drift-check: CHROME_BIN=$CHROME is not executable" >&2
   CHROME=""
 fi
+# chrome-headless-shell comes first. The Chrome app, even with --headless,
+# registers with macOS as a foreground app, so every probe flashed an icon
+# in the Dock and a burst of them left stale icons behind. The shell is a
+# plain binary with no app bundle. Puppeteer and Playwright install it in
+# their caches; the matching paths are version-sorted and the last is used.
+newest_shell() {
+  ls -d "$HOME"/.cache/puppeteer/chrome-headless-shell/*/chrome-headless-shell-*/chrome-headless-shell \
+    "$HOME"/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell \
+    2>/dev/null | sort -V | tail -1
+}
 if [[ -z $CHROME ]]; then
   for candidate in \
+    "$(command -v chrome-headless-shell 2>/dev/null || true)" \
+    "$(newest_shell)" \
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
     "$(command -v google-chrome 2>/dev/null || true)" \
     "$(command -v google-chrome-stable 2>/dev/null || true)" \
@@ -59,6 +71,11 @@ if [[ -z $CHROME ]]; then
   echo "drift-check: no chrome or chromium found; set CHROME_BIN" >&2
   exit 1
 fi
+case $CHROME in
+  *.app/Contents/MacOS/*)
+    echo "drift-check: using an app-bundled browser, which may show a Dock icon per probe;" \
+      "install chrome-headless-shell (npx @puppeteer/browsers install chrome-headless-shell@stable) to avoid it" >&2 ;;
+esac
 
 # Ask cargo where it put the binary rather than assuming a target directory:
 # CARGO_TARGET_DIR or a symlinked target/ would put it elsewhere.
