@@ -41,8 +41,12 @@ for target in "${targets[@]}"; do
     mkdir -p "$scratch/$target"
     archive="$scratch/$target/libavatar_ffi.a"
     # Preserve external symbols needed by the static linker, removing debug
-    # and local symbols from the shipped archives.
-    xcrun strip -S -x -o "$archive" \
+    # and local symbols from the shipped archives. strip rewrites the
+    # archive's symbol table with the current time as its date, so two
+    # builds of the same source differed in exactly those bytes, and every
+    # rebuild committed a changed binary. ZERO_AR_DATE makes it write zero,
+    # as rustc already does for every other member.
+    ZERO_AR_DATE=1 xcrun strip -S -x -o "$archive" \
         "$root/target/avatar-core/$target/release/libavatar_ffi.a"
     args+=(-library "$archive" -headers "$root/crates/avatar-ffi/include")
 done

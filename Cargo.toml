@@ -12,3 +12,14 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+
+# Debug builds, and so tests, compile with optimisation. The wild generator's
+# tests walk signed-distance grids and marching squares over many seeds, and
+# unoptimised floating-point code ran the test suite in 53 s against 4 s at
+# opt-level 1. Optimisation cannot change a creature's bytes: Rust never
+# reorders or fuses floating-point operations unless asked to, and the golden
+# corpus, which compares every output byte for byte, passes at every level.
+# Phones already run the release build of the same code. Debug assertions and
+# overflow checks stay on.
+[profile.dev]
+opt-level = 1

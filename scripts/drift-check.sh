@@ -60,17 +60,51 @@ if [[ -z $CHROME ]]; then
   exit 1
 fi
 
-cargo build --quiet --manifest-path playground/Cargo.toml --bin grid || exit 1
+# Ask cargo where it put the binary rather than assuming a target directory:
+# CARGO_TARGET_DIR or a symlinked target/ would put it elsewhere.
+GRID=$(cargo build --quiet --manifest-path playground/Cargo.toml --bin grid \
+  --message-format=json | python3 -c '
+import json, sys
+paths = [m["executable"] for m in map(json.loads, sys.stdin)
+         if m.get("reason") == "compiler-artifact" and m.get("executable")]
+print(paths[-1] if paths else "")')
+if [[ -z $GRID || ! -x $GRID ]]; then
+  echo "drift-check: could not build the playground grid binary" >&2
+  exit 1
+fi
+
+# Collect every probe first, several seeds at a time, then compare in seed
+# order. Each seed starts a fresh headless Chrome, so probing one seed after
+# another spends most of its time waiting for browsers to start. Each Chrome
+# gets its own profile directory, because concurrent instances sharing one
+# profile contend for its lock.
+probes=$(mktemp -d "${TMPDIR:-/tmp}/drift-check.XXXXXX") || exit 1
+trap 'rm -rf "$probes"' EXIT
+JOBS="${DRIFT_JOBS:-6}"
+probe_seed() {
+  local seed=$1
+  "$GRID" --probe "$seed" > "$probes/$seed.rust" 2> "$probes/$seed.rust-err"
+  echo $? > "$probes/$seed.rust-rc"
+  "$CHROME" --headless --disable-gpu --user-data-dir="$probes/chrome-$seed" \
+    --virtual-time-budget=20000 --dump-dom "$LAB?probe=$seed" \
+    > "$probes/$seed.dom" 2>/dev/null
+}
+for ((i = 0; i < COUNT; i++)); do
+  probe_seed $((START + i)) &
+  if (((i + 1) % JOBS == 0)); then wait; fi
+done
+wait
 
 fails=0
 for ((i = 0; i < COUNT; i++)); do
   seed=$((START + i))
-  if ! rust=$(cargo run --quiet --manifest-path playground/Cargo.toml --bin grid -- --probe "$seed" | tail -1); then
+  if [[ "$(cat "$probes/$seed.rust-rc" 2>/dev/null)" != 0 ]]; then
     echo "drift-check: Rust probe failed for seed $seed" >&2
+    cat "$probes/$seed.rust-err" >&2 2>/dev/null
     exit 1
   fi
-  js=$("$CHROME" --headless --disable-gpu --virtual-time-budget=20000 \
-        --dump-dom "$LAB?probe=$seed" 2>/dev/null | grep -o 'seed=[^<]*' | head -1)
+  rust=$(tail -1 "$probes/$seed.rust")
+  js=$(grep -o 'seed=[^<]*' "$probes/$seed.dom" 2>/dev/null | head -1)
   # Numeric comparison, not string equality. Both renderers are float
   # implementations and their formatters round differently at the last
   # decimal (Rust {:.1} is half-to-even, JS toFixed is not), so string

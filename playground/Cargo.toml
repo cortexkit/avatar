@@ -1,7 +1,7 @@
-# Look-first exploration sandbox (design note 008): float math allowed,
-# no determinism, never shipped, excluded from the workspace so the CI
-# gates never see it. The chosen look gets frozen into the real crates;
-# this crate gets deleted.
+# Review harness around the shipped wild generator: grids and review sheets,
+# the placement-invariant checker, and the probe the browser lab is compared
+# against. It is its own workspace so its dependencies and lints stay out of
+# the shipped crates; scripts/check.sh gates it.
 [package]
 name = "ava-playground"
 version = "0.0.0"
@@ -16,3 +16,10 @@ path = "src/main.rs"
 avatar-svg = { path = "../crates/avatar-svg" }
 
 [workspace]
+
+# The invariant checker runs the generator over 300 seeds and the browser-lab
+# comparison over 24; unoptimised floating-point code made them among the
+# slowest stages of the gate. Optimisation does not change output (see the same
+# setting in the root Cargo.toml).
+[profile.dev]
+opt-level = 1

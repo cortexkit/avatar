@@ -183,8 +183,10 @@ swift_lane() {
   # whose verdict depends on who invoked it is not a gate.
   swift_dev_dir=/Applications/Xcode.app/Contents/Developer
   [[ -d $swift_dev_dir ]] || swift_dev_dir=$(xcode-select -p 2>/dev/null)
+  # --parallel runs the test cases in several worker processes. Serially the
+  # suite spends about 30 s in a handful of corpus-wide tests, one after another.
   run "swift conformance" \
-    env -u SDKROOT DEVELOPER_DIR="$swift_dev_dir" swift test
+    env -u SDKROOT DEVELOPER_DIR="$swift_dev_dir" swift test --parallel
 }
 
 # The browser probe builds and runs playground's grid binary, so it belongs
