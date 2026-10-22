@@ -2,3 +2,4 @@
 /.cortexkit/
 /.build/
 target/
+__pycache__/

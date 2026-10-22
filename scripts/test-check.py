@@ -24,7 +24,7 @@ STAGES = [
     "fmt", "clippy", "clippy release", "test", "doc tests", "golden corpus",
     "corpus coverage", "playground fmt", "playground clippy", "playground tests",
     "wild invariants", "renderer consts", "no ignored internal files tracked",
-    "cross-platform comparison", "lab matches canonical", "ts typecheck",
+    "cross-platform comparison", "gate scheduler", "lab matches canonical", "ts typecheck",
     "ts conformance", "swift conformance",
 ]
 # Record the expected command for each stage so losing a flag or a check
@@ -45,10 +45,11 @@ COMMANDS = [
     ("wild invariants", "playground", "cargo", "run --locked -q --bin grid -- --check 300"),
     ("renderer consts", ".", "python3", "scripts/const-drift.py"),
     ("cross-platform comparison", "scripts/wild-port", "python3", "-m unittest -q test_compare"),
+    ("gate scheduler", ".", "python3", "scripts/test-check.py"),
     ("lab matches canonical", ".", "drift", ""),
     ("ts typecheck", "ports/ts", "bunx", "tsc --noEmit"),
     ("ts conformance", "ports/ts", "bun", "test"),
-    ("swift conformance", ".", "swift", "test"),
+    ("swift conformance", ".", "swift", "test --parallel"),
 ]
 
 STUB = r'''
@@ -145,7 +146,10 @@ class GateTests(unittest.TestCase):
         return subprocess.check_output(["git", *args], cwd=self.root, env=self.env, text=True)
 
     def gate(self, failures=(), write="", rust_only=False, parallel_probe=False, omit_agreement=False):
-        env = dict(self.env, GATE_TEST_ROOT=str(self.root),
+        # AVATAR_GATE_LOCAL pins the run-everything-here layout these tests
+        # describe; without it, on a Mac the gate sends its build-server
+        # stages to the Linux build server as one job.
+        env = dict(self.env, GATE_TEST_ROOT=str(self.root), AVATAR_GATE_LOCAL="1",
                    PATH=str(self.root / "tools") + os.pathsep + os.environ["PATH"],
                    FAIL_STAGES=",".join(failures), WRITE_STAGE=write,
                    PARALLEL_PROBE="1" if parallel_probe else "",

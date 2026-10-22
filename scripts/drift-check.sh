@@ -15,17 +15,63 @@
 # Compares derived geometry rather than SVG text: number formatting differs
 # between the languages and would drown real divergence in noise.
 #
-# Usage: scripts/drift-check.sh [start] [count]
+# Usage: scripts/drift-check.sh [--probes-only] [start] [count]
+#
+# The two halves can run on different machines. --probes-only builds the
+# Rust probe and prints one "rust-probe seed=..." line per seed, needing no
+# browser; check.sh runs it on the Linux build server so no Rust is compiled
+# on the Mac. With DRIFT_RUST_PROBES naming a file of those lines, the Rust
+# half is read from it instead of built, and only the browser half runs here.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
+PROBES_ONLY=0
+if [[ ${1:-} == --probes-only ]]; then
+  PROBES_ONLY=1
+  shift
+fi
+RUST_PROBES="${DRIFT_RUST_PROBES:-}"
 START="${1:-4000}"
 COUNT="${2:-24}"
 LAB="file://$(pwd)/playground/web/index.html"
 
 if [[ ! $COUNT =~ ^[1-9][0-9]*$ ]]; then
   echo "drift-check: count must be a positive integer" >&2
+  exit 1
+fi
+
+GRID=""
+build_grid() {
+  # Ask cargo where it put the binary rather than assuming a target
+  # directory: CARGO_TARGET_DIR or a symlinked target/ would put it elsewhere.
+  GRID=$(cargo build --quiet --manifest-path playground/Cargo.toml --bin grid \
+    --message-format=json | python3 -c '
+import json, sys
+paths = [m["executable"] for m in map(json.loads, sys.stdin)
+         if m.get("reason") == "compiler-artifact" and m.get("executable")]
+print(paths[-1] if paths else "")')
+  if [[ -z $GRID || ! -x $GRID ]]; then
+    echo "drift-check: could not build the playground grid binary" >&2
+    exit 1
+  fi
+}
+
+if [[ $PROBES_ONLY -eq 1 ]]; then
+  build_grid
+  for ((i = 0; i < COUNT; i++)); do
+    seed=$((START + i))
+    if ! line=$("$GRID" --probe "$seed" | tail -1); then
+      echo "drift-check: Rust probe failed for seed $seed" >&2
+      exit 1
+    fi
+    echo "rust-probe $line"
+  done
+  exit 0
+fi
+
+if [[ -n $RUST_PROBES && ! -r $RUST_PROBES ]]; then
+  echo "drift-check: DRIFT_RUST_PROBES=$RUST_PROBES is not readable" >&2
   exit 1
 fi
 
@@ -77,18 +123,7 @@ case $CHROME in
       "install chrome-headless-shell (npx @puppeteer/browsers install chrome-headless-shell@stable) to avoid it" >&2 ;;
 esac
 
-# Ask cargo where it put the binary rather than assuming a target directory:
-# CARGO_TARGET_DIR or a symlinked target/ would put it elsewhere.
-GRID=$(cargo build --quiet --manifest-path playground/Cargo.toml --bin grid \
-  --message-format=json | python3 -c '
-import json, sys
-paths = [m["executable"] for m in map(json.loads, sys.stdin)
-         if m.get("reason") == "compiler-artifact" and m.get("executable")]
-print(paths[-1] if paths else "")')
-if [[ -z $GRID || ! -x $GRID ]]; then
-  echo "drift-check: could not build the playground grid binary" >&2
-  exit 1
-fi
+[[ -n $RUST_PROBES ]] || build_grid
 
 # Collect every probe first, several seeds at a time, then compare in seed
 # order. Each seed starts a fresh headless Chrome, so probing one seed after
@@ -100,8 +135,16 @@ trap 'rm -rf "$probes"' EXIT
 JOBS="${DRIFT_JOBS:-6}"
 probe_seed() {
   local seed=$1
-  "$GRID" --probe "$seed" > "$probes/$seed.rust" 2> "$probes/$seed.rust-err"
-  echo $? > "$probes/$seed.rust-rc"
+  if [[ -n $RUST_PROBES ]]; then
+    # A seed missing from the file fails like a failed probe, so a short or
+    # truncated file can never pass as agreement.
+    grep -m1 "^rust-probe seed=$seed " "$RUST_PROBES" | sed 's/^rust-probe //' \
+      > "$probes/$seed.rust" 2> "$probes/$seed.rust-err"
+    echo "${PIPESTATUS[0]}" > "$probes/$seed.rust-rc"
+  else
+    "$GRID" --probe "$seed" > "$probes/$seed.rust" 2> "$probes/$seed.rust-err"
+    echo $? > "$probes/$seed.rust-rc"
+  fi
   "$CHROME" --headless --disable-gpu --user-data-dir="$probes/chrome-$seed" \
     --virtual-time-budget=20000 --dump-dom "$LAB?probe=$seed" \
     > "$probes/$seed.dom" 2>/dev/null
