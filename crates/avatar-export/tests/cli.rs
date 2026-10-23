@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const WILD_HEX: &str = include_str!("../../../vectors/wild/wild-port-0005.hex");
@@ -25,6 +26,44 @@ impl ExportDir {
             .output()
             .unwrap()
     }
+
+    fn run_with_stdin(&self, args: &[&str], stdin: &str) -> Output {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_avatar-export"))
+            .current_dir(&self.0)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    }
+}
+
+/// A hex genome written to a file in its own directory, so tests that assert
+/// the export directory stays empty are not confused by their input. Wild
+/// genomes go through a file because 32,768 hex characters do not fit on a
+/// Windows command line.
+struct GenomeFile {
+    dir: ExportDir,
+    path: String,
+}
+
+impl GenomeFile {
+    fn new(hex: &str) -> Self {
+        let dir = ExportDir::new();
+        let path = dir.0.join("genome.hex");
+        // A trailing newline, as an editor or `echo` would leave, must be fine.
+        std::fs::write(&path, format!("{hex}\n")).unwrap();
+        let path = path.to_str().unwrap().to_owned();
+        Self { dir, path }
+    }
 }
 
 impl Drop for ExportDir {
@@ -33,23 +72,20 @@ impl Drop for ExportDir {
     }
 }
 
-#[test]
-fn wild_cli_renders_a_corpus_genome() {
-    let dir = ExportDir::new();
-    let output = dir.run(&[
-        "--genome",
-        WILD_HEX.trim(),
-        "--type",
-        "creature.wild",
-        "--version",
-        "1",
-        "--mood",
-        "happy",
-        "--size",
-        "64",
-        "--out",
-        "wild.png",
-    ]);
+const WILD_ARGS: [&str; 10] = [
+    "--type",
+    "creature.wild",
+    "--version",
+    "1",
+    "--mood",
+    "happy",
+    "--size",
+    "64",
+    "--out",
+    "wild.png",
+];
+
+fn assert_wild_png(dir: &ExportDir, output: &Output) {
     assert!(output.status.success(), "{output:?}");
     let png = std::fs::read(dir.0.join("wild.png")).unwrap();
     assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
@@ -57,10 +93,55 @@ fn wild_cli_renders_a_corpus_genome() {
 }
 
 #[test]
+fn wild_cli_renders_a_corpus_genome_from_a_file() {
+    let genome = GenomeFile::new(WILD_HEX.trim());
+    let dir = ExportDir::new();
+    let mut args = vec!["--genome-file", genome.path.as_str()];
+    args.extend(WILD_ARGS);
+    let output = dir.run(&args);
+    assert_wild_png(&dir, &output);
+}
+
+#[test]
+fn wild_cli_reads_the_genome_from_standard_input() {
+    let dir = ExportDir::new();
+    let mut args = vec!["--genome-file", "-"];
+    args.extend(WILD_ARGS);
+    let output = dir.run_with_stdin(&args, WILD_HEX);
+    assert_wild_png(&dir, &output);
+}
+
+#[test]
+fn genome_and_genome_file_together_or_a_missing_file_write_no_file() {
+    let genome = GenomeFile::new(WILD_HEX.trim());
+    let missing = genome.dir.0.join("missing.hex");
+    let missing = missing.to_str().unwrap();
+    for (args, error) in [
+        (
+            vec!["--genome", "00", "--genome-file", genome.path.as_str()],
+            "alternatives",
+        ),
+        (vec!["--genome-file", missing], "--genome-file"),
+    ] {
+        let dir = ExportDir::new();
+        let output = dir.run(&args);
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains(error));
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+    }
+}
+
+#[test]
 fn wild_length_without_wild_type_is_refused_without_writing_a_file() {
+    let genome = GenomeFile::new(WILD_HEX.trim());
     for type_args in [vec![], vec!["--type", "creature.classic"]] {
         let dir = ExportDir::new();
-        let mut args = vec!["--genome", WILD_HEX.trim(), "--out", "refused.png"];
+        let mut args = vec![
+            "--genome-file",
+            genome.path.as_str(),
+            "--out",
+            "refused.png",
+        ];
         args.extend(type_args);
         let output = dir.run(&args);
         assert!(!output.status.success(), "{output:?}");
@@ -84,8 +165,16 @@ fn invalid_wild_metadata_or_hex_writes_no_file() {
         ("00", "creature.wild", "1", "hex characters"),
         (bad_hex.as_str(), "creature.wild", "1", "invalid hex"),
     ] {
+        let genome = GenomeFile::new(hex);
         let dir = ExportDir::new();
-        let output = dir.run(&["--genome", hex, "--type", type_name, "--version", version]);
+        let output = dir.run(&[
+            "--genome-file",
+            &genome.path,
+            "--type",
+            type_name,
+            "--version",
+            version,
+        ]);
         assert!(!output.status.success(), "{output:?}");
         assert!(String::from_utf8_lossy(&output.stderr).contains(error));
         assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);

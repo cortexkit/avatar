@@ -92,7 +92,7 @@ This second path is what lets a new creature type ship without being implemented
 
 **Fleet PNG Export Pipeline:**
 
-1. For a live agent, the CLI takes the agent's stored genome as `--genome <hex>` with `--type` and `--version`. The registry row is authoritative, and a re-roll may have replaced the genome derived from the seat id. `--stable-id` and `--manifest` remain for the one-time backfill — `crates/avatar-export/src/main.rs`
+1. For a live agent, the CLI takes the agent's stored genome as `--genome-file <path>` (or `-` for standard input) or `--genome <hex>`, with `--type` and `--version`. A wild genome is 32,768 hex characters, longer than a Windows command line allows, so portable callers use the file form. The registry row is authoritative, and a re-roll may have replaced the genome derived from the seat id. `--stable-id` and `--manifest` remain for the one-time backfill — `crates/avatar-export/src/main.rs`
 2. `avatar-export` renders through the same dispatch as every client — `crates/avatar-export/src/main.rs`
 3. SVG stream passes to `resvg` pure-Rust engine to rasterize fixed-dimension PNG files — `crates/avatar-export/src/main.rs`
 

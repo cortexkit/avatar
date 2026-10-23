@@ -14,6 +14,12 @@
 //! Usage:
 //!   avatar-export --stable-id pj-0000000000000001 --out ava.png
 //!   avatar-export --genome <hex> --type creature.wild --version 1 --out ava.png
+//!   avatar-export --genome-file ava.hex --type creature.wild --version 1 --out ava.png
+//!     --genome-file reads the same hex from a file ("-" reads standard
+//!     input). A wild genome is 32,768 hex characters, which does not fit on
+//!     a Windows command line (CreateProcess allows 32,767 characters including
+//!     its terminating NUL, and the program name counts too), so callers that
+//!     must work on every operating system pass genomes this way.
 //!   avatar-export --manifest agents.json --out-dir avatars/
 //!     manifest: JSON array of {"stable_id": "pj-…"} (unknown keys ignored,
 //!     so callers can pass richer records); output files are <stable_id>.png.
@@ -278,6 +284,17 @@ fn parse_size(raw: Option<&str>) -> Result<u32, String> {
     }
 }
 
+/// Reads a hex genome from a file, or from standard input when `path` is "-".
+/// The hex is trimmed before parsing, so a trailing newline or other
+/// surrounding whitespace is accepted.
+fn read_genome_file(path: &str) -> std::io::Result<String> {
+    if path == "-" {
+        std::io::read_to_string(std::io::stdin())
+    } else {
+        std::fs::read_to_string(path)
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let get = |flag: &str| -> Option<String> {
@@ -304,7 +321,22 @@ fn main() {
     // Renders a genome the caller already holds — the path anything
     // depicting a live agent must use, since after a re-roll the stored
     // genome and a derived one are different creatures.
-    if let Some(hex) = get("--genome") {
+    let genome_hex = match (get("--genome"), get("--genome-file")) {
+        (Some(_), Some(_)) => {
+            eprintln!("--genome and --genome-file are alternatives; pass one");
+            std::process::exit(2);
+        }
+        (Some(hex), None) => Some(hex),
+        (None, Some(path)) => match read_genome_file(&path) {
+            Ok(hex) => Some(hex),
+            Err(e) => {
+                eprintln!("--genome-file {path}: {e}");
+                std::process::exit(2);
+            }
+        },
+        (None, None) => None,
+    };
+    if let Some(hex) = genome_hex {
         let type_name = get("--type").unwrap_or_else(|| AVATAR_TYPE.to_owned());
         let default_version =
             mintable(&type_name).map_or(AVATAR_VERSION, |(_, _, version)| version);
@@ -400,7 +432,7 @@ fn main() {
     }
 
     eprintln!(
-        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       avatar-export --genome <hex> [--type creature.classic|creature.wild] [--version N] [--out f.png]\n       options: --size N (default 400), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild"
+        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       avatar-export --genome <hex> | --genome-file <path|-> [--type creature.classic|creature.wild] [--version N] [--out f.png]\n       options: --size N (default 400), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild"
     );
     std::process::exit(2);
 }
