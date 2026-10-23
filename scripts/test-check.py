@@ -147,8 +147,9 @@ class GateTests(unittest.TestCase):
 
     def gate(self, failures=(), write="", rust_only=False, parallel_probe=False, omit_agreement=False):
         # AVATAR_GATE_LOCAL pins the run-everything-here layout these tests
-        # describe; without it, on a Mac the gate sends its build-server
-        # stages to the Linux build server as one job.
+        # describe; without it, and with the build-server client on PATH, the
+        # gate sends its build-server stages to the Linux build server as one
+        # job, on any operating system.
         env = dict(self.env, GATE_TEST_ROOT=str(self.root), AVATAR_GATE_LOCAL="1",
                    PATH=str(self.root / "tools") + os.pathsep + os.environ["PATH"],
                    FAIL_STAGES=",".join(failures), WRITE_STAGE=write,

@@ -4,7 +4,9 @@
 scripts/wild-cross-platform.sh mints the corpus natively on macOS and inside
 Linux arm64 and x86_64 containers, then calls this. Every platform must
 produce exactly the expected files, and every file must be byte-identical:
-the phone, a Mac and a Linux export host must draw the same creature.
+a creature must come out the same on every operating system that draws it.
+This compares the native macOS mint with Linux on both architectures. It
+does not run the phone's embedded core, and Windows is not covered here.
 """
 
 import json

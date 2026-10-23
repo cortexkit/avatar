@@ -19,8 +19,9 @@
 #
 # The two halves can run on different machines. --probes-only builds the
 # Rust probe and prints one "rust-probe seed=..." line per seed, needing no
-# browser; check.sh runs it on the Linux build server so no Rust is compiled
-# on the Mac. With DRIFT_RUST_PROBES naming a file of those lines, the Rust
+# browser; in its default mode check.sh runs it on the Linux build server so
+# no Rust is compiled on the workstation. With DRIFT_RUST_PROBES naming a
+# file of those lines, the Rust
 # half is read from it instead of built, and only the browser half runs here.
 
 set -uo pipefail
@@ -87,15 +88,21 @@ if [[ -n $CHROME && ! -x $CHROME ]]; then
   echo "drift-check: CHROME_BIN=$CHROME is not executable" >&2
   CHROME=""
 fi
-# chrome-headless-shell comes first. The Chrome app, even with --headless,
-# registers with macOS as a foreground app, so every probe flashed an icon
-# in the Dock and a burst of them left stale icons behind. The shell is a
-# plain binary with no app bundle. Puppeteer and Playwright install it in
-# their caches; the matching paths are version-sorted and the last is used.
+# chrome-headless-shell comes first: a plain binary with no app or window
+# integration on any operating system. A full Chrome install, even with
+# --headless, can register as a desktop app; on macOS every probe flashed an
+# icon in the Dock and a burst of them left stale icons behind. Puppeteer and
+# Playwright install the shell in per-user caches, whose location differs by
+# operating system; the matching paths are version-sorted and the last is used.
 newest_shell() {
-  ls -d "$HOME"/.cache/puppeteer/chrome-headless-shell/*/chrome-headless-shell-*/chrome-headless-shell \
-    "$HOME"/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell \
-    2>/dev/null | sort -V | tail -1
+  local exe
+  for exe in chrome-headless-shell chrome-headless-shell.exe; do
+    ls -d "$HOME"/.cache/puppeteer/chrome-headless-shell/*/chrome-headless-shell-*/"$exe" \
+      "$HOME"/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/"$exe" \
+      "$HOME"/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/"$exe" \
+      "${LOCALAPPDATA:-$HOME/AppData/Local}"/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/"$exe" \
+      2>/dev/null
+  done | sort -V | tail -1
 }
 if [[ -z $CHROME ]]; then
   for candidate in \
@@ -105,7 +112,8 @@ if [[ -z $CHROME ]]; then
     "$(command -v google-chrome 2>/dev/null || true)" \
     "$(command -v google-chrome-stable 2>/dev/null || true)" \
     "$(command -v chromium 2>/dev/null || true)" \
-    "$(command -v chromium-browser 2>/dev/null || true)"; do
+    "$(command -v chromium-browser 2>/dev/null || true)" \
+    "$(command -v chrome 2>/dev/null || true)"; do
     if [[ -n $candidate && -x $candidate ]]; then
       CHROME=$candidate
       break
@@ -118,8 +126,9 @@ if [[ -z $CHROME ]]; then
   exit 1
 fi
 case $CHROME in
-  *.app/Contents/MacOS/*)
-    echo "drift-check: using an app-bundled browser, which may show a Dock icon per probe;" \
+  *chrome-headless-shell*) ;;
+  *)
+    echo "drift-check: using a full browser install, which may show a desktop icon per probe;" \
       "install chrome-headless-shell (npx @puppeteer/browsers install chrome-headless-shell@stable) to avoid it" >&2 ;;
 esac
 

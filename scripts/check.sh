@@ -9,21 +9,23 @@
 #
 # Usage: scripts/check.sh [--rust-only] [--linux]
 #
-# Where the stages run. On a Mac, every freshly built test binary costs a
-# macOS security scan, and a full gate builds dozens of them while other
-# work shares the machine. So on a Mac the build-server stages (every cargo
-# stage, plus the Python and git checks that sit beside them and the Rust
-# half of the lab comparison) run on the Linux build server, as one
-# `ck motor run` job that snapshots this working tree, uncommitted edits
-# included, and runs this script there with --linux. The Mac runs Swift and
-# the browser half of the lab comparison, which need macOS and a browser,
-# plus the TypeScript port and the committed core binary's freshness, which
-# compile no Rust. Each mode selects its own set of stages; a stage that runs
-# in more than one mode runs the same command in each.
+# Where the stages run. A full gate compiles and runs dozens of fresh test
+# binaries, and the workstation pushing is shared with other work (on macOS
+# each new binary also costs a security scan). So by default, on any
+# operating system, the build-server stages (every cargo stage, plus the
+# Python and git checks that sit beside them and the Rust half of the lab
+# comparison) run on the Linux build server, as one `ck motor run` job that
+# snapshots this working tree, uncommitted edits included, and runs this
+# script there with --linux. This machine runs the browser half of the lab
+# comparison, the TypeScript port, the committed core binary's freshness
+# and, where Swift is installed, the Swift suite. Each mode selects its own
+# set of stages; a stage that runs in more than one mode runs the same
+# command in each.
 #
-# AVATAR_GATE_LOCAL=1 runs everything on this machine instead, for when the
-# build server is down. It is a choice the caller makes, never an automatic
-# fallback: a fallback would quietly put the load back on the Mac.
+# AVATAR_GATE_LOCAL=1 runs everything on this machine instead: without the
+# build-server client (`ck`), or when the build server is down. It is a
+# choice the caller makes, never an automatic fallback: a fallback would
+# quietly put the whole build back on the workstation.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -39,10 +41,14 @@ for arg in "$@"; do
 done
 if [[ $LINUX -eq 1 ]]; then
   WHERE=linux
-elif [[ ${AVATAR_GATE_LOCAL:-} == 1 || $(uname -s) != Darwin ]]; then
+elif [[ ${AVATAR_GATE_LOCAL:-} == 1 ]]; then
   WHERE=local
+elif command -v ck >/dev/null 2>&1; then
+  WHERE=remote
 else
-  WHERE=mac
+  echo "check.sh: the build-server client 'ck' is not on PATH." \
+    "Set AVATAR_GATE_LOCAL=1 to run every stage on this machine." >&2
+  exit 2
 fi
 
 FAILED=()
@@ -62,7 +68,7 @@ case $WHERE in
     STAGES=("mint tables" "mint is reproducible" "core binary current"
       "${CARGO_STAGES[@]}" "lab matches canonical")
     PREAMBLE=3 ;;
-  mac)
+  remote)
     STAGES=("core binary current" "linux gates" "lab matches canonical")
     PREAMBLE=1 ;;
 esac
@@ -125,7 +131,7 @@ tree_before=$(git status --porcelain | sort)
 # every uncommitted edit as mint drift. Hash the tree around the mint
 # instead: the property is "minting changed nothing", not "the tree is
 # clean".
-if [[ $WHERE != mac ]]; then
+if [[ $WHERE != remote ]]; then
   mint_fingerprint() { { git status --porcelain; git diff; } | shasum -a 256; }
   mint_before=$(mint_fingerprint)
   run "mint tables"     cargo run --locked -p avatar-tables --bin mint
@@ -219,7 +225,7 @@ web_lane() {
   case $WHERE in
     linux)
       # The build server has no browser: it produces the Rust half, and the
-      # Mac compares it against the browser half (remote_lane below).
+      # workstation compares it against the browser half (remote_lane below).
       run "lab probes" ./scripts/drift-check.sh --probes-only ;;
     local)
       run "lab matches canonical" bash -c \
@@ -261,17 +267,22 @@ remote_lane() {
 }
 
 swift_lane() {
-  # Xcode's toolchain is required on macOS; CI uses a Linux Swift image.
-  # Resolve the toolchain rather than inheriting one. Apple's /usr/bin/git
-  # shim exports SDKROOT (CommandLineTools) into hook environments, so as
-  # a pre-push hook this gate got Xcode's compiler with CommandLineTools'
-  # SDK — a half-inherited toolchain that cannot build the stdlib, and it
-  # reported a Swift conformance FAILURE for a suite that passes. A gate
-  # whose verdict depends on who invoked it is not a gate.
-  swift_dev_dir=/Applications/Xcode.app/Contents/Developer
-  [[ -d $swift_dev_dir ]] || swift_dev_dir=$(xcode-select -p 2>/dev/null)
   # --parallel runs the test cases in several worker processes. Serially the
   # suite spends about 30 s in a handful of corpus-wide tests, one after another.
+  if [[ $(uname -s) != Darwin ]]; then
+    # Linux and Windows use the toolchain on PATH. The embedded-core tests
+    # need the Apple-platform core binary, so they are compiled only there.
+    run "swift conformance" swift test --parallel
+    return
+  fi
+  # On macOS, resolve Xcode's toolchain rather than inheriting one. Apple's
+  # /usr/bin/git shim exports SDKROOT (CommandLineTools) into hook
+  # environments, so as a pre-push hook this gate got Xcode's compiler with
+  # CommandLineTools' SDK — a half-inherited toolchain that cannot build the
+  # stdlib, and it reported a Swift conformance FAILURE for a suite that
+  # passes. A gate whose verdict depends on who invoked it is not a gate.
+  swift_dev_dir=/Applications/Xcode.app/Contents/Developer
+  [[ -d $swift_dev_dir ]] || swift_dev_dir=$(xcode-select -p 2>/dev/null)
   run "swift conformance" \
     env -u SDKROOT DEVELOPER_DIR="$swift_dev_dir" swift test --parallel
 }
@@ -281,7 +292,7 @@ swift_lane() {
 # SwiftPM uses .build; neither it nor the web lane shares the root target/.
 PARALLEL=1
 pids=()
-if [[ $WHERE == mac ]]; then
+if [[ $WHERE == remote ]]; then
   remote_lane &
   pids+=($!)
   ts_stages &

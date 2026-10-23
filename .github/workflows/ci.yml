@@ -18,22 +18,29 @@ on:
 env:
   CARGO_TERM_COLOR: always
 jobs:
-  # Linux only for now: this repo is pure computation (no I/O, no platform
-  # paths, no networking), and its whole design goal is that outputs are
-  # byte-identical across platforms — a property enforced by pinned integer
-  # math and golden vectors rather than by a CI matrix. macOS is the
-  # continuously-exercised development platform. A Windows leg becomes
-  # worthwhile the moment any consumer builds this crate on Windows;
-  # revisit then.
-  #
-  # Runner is Blacksmith, not GitHub-hosted: free-plan org, private repo —
-  # GitHub bills private-repo Actions minutes and blocks jobs at the zero
-  # spending limit. Blacksmith runners do not consume GitHub minutes.
-  # Revert to ubuntu-latest if the repo becomes public.
+  # Every operating system a creature is drawn on must produce the same
+  # bytes, and the golden corpus test below is that comparison: it renders
+  # every reference genome and compares the bytes with the committed files.
+  # So this job runs on Linux and Windows. macOS is covered when check.sh
+  # runs there (the maintainer's pre-push hook runs it), and Linux on both
+  # architectures by scripts/wild-cross-platform.sh.
   test:
-    name: Test (ubuntu)
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      # Windows runners check out text files with CRLF line endings, which
+      # would make every byte-for-byte corpus comparison fail for a reason
+      # that has nothing to do with the generator.
+      - name: Check out with the committed line endings
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
@@ -128,8 +135,9 @@ jobs:
       # never on the runner. drift-check.sh itself stays local because it
       # drives a headless browser; this does not, and had no reason to
       # inherit that dependency.
+      # A comparison of source files, so one operating system is enough.
       - name: Renderer constants agree
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         run: python3 scripts/const-drift.py
 
       # A generated file edited by hand is invisible to every test above.
