@@ -134,10 +134,9 @@ trig and easing from committed lookup tables, which also keeps its Swift
 and TypeScript builders identical to Rust. `creature.wild` uses `f64`
 limited to the operations IEEE 754 makes exact everywhere, with its own
 trig built from those, and is checked byte-identical across macOS and
-Linux on ARM and Intel. The CI workflow also runs the corpus comparison on
-Windows, but no Windows run has passed yet, so for Windows the guarantee
-rests on the argument (IEEE-exact operations, no maths library) until one
-does. Serialization is hand-rolled and canonical.
+Linux on ARM and Intel, and on Windows x86_64, where every golden tree
+renders byte-identical to the committed corpus. Serialization is
+hand-rolled and canonical.
 
 An observable output change is **never** a silent edit to a shipped
 version, because an agent's face must not change because we shipped:
