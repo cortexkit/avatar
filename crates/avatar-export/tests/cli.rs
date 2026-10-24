@@ -103,6 +103,51 @@ fn wild_cli_renders_a_corpus_genome_from_a_file() {
 }
 
 #[test]
+fn the_out_extension_selects_svg_or_tree_json() {
+    let genome = GenomeFile::new(WILD_HEX.trim());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (out, golden) in [
+        ("wild.svg", "vectors/tree-svg/wild-port-0005__happy.svg"),
+        ("wild.json", "vectors/tree/wild-port-0005__happy.json"),
+    ] {
+        let dir = ExportDir::new();
+        let output = dir.run(&[
+            "--genome-file",
+            &genome.path,
+            "--type",
+            "creature.wild",
+            "--mood",
+            "happy",
+            "--out",
+            out,
+        ]);
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            std::fs::read(dir.0.join(out)).unwrap(),
+            std::fs::read(root.join(golden)).unwrap(),
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn an_unsupported_out_extension_is_refused_without_writing_a_file() {
+    let genome = GenomeFile::new(WILD_HEX.trim());
+    let dir = ExportDir::new();
+    let output = dir.run(&[
+        "--genome-file",
+        &genome.path,
+        "--type",
+        "creature.wild",
+        "--out",
+        "wild.jpg",
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported extension"));
+    assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+}
+
+#[test]
 fn wild_cli_reads_the_genome_from_standard_input() {
     let dir = ExportDir::new();
     let mut args = vec!["--genome-file", "-"];

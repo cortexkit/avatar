@@ -20,13 +20,20 @@
 //!     a Windows command line (CreateProcess allows 32,767 characters including
 //!     its terminating NUL, and the program name counts too), so callers that
 //!     must work on every operating system pass genomes this way.
+//!     The --out extension picks the format: .png or no extension (PNG),
+//!     .svg (the drawing itself; a wild SVG is a 240-unit square canvas with
+//!     no background), or .json (canonical render-tree JSON, which clients
+//!     decode and draw). Any other extension is refused. --size applies to
+//!     PNG only.
 //!   avatar-export --manifest agents.json --out-dir avatars/
 //!     manifest: JSON array of {"stable_id": "pj-…"} (unknown keys ignored,
 //!     so callers can pass richer records); output files are <stable_id>.png.
 //!   Options: --size N (default 400), --mood M (default neutral).
 
 use avatar_genome::{decode, derive_genome, derive_genome_bytes, Genome, SeatIdentity};
-use avatar_svg::{render_svg, render_tree_for_bytes, serialize_tree, Mood, RenderParams, Q32};
+use avatar_svg::{
+    render_svg, render_tree_for_bytes, serialize_tree, serialize_tree_json, Mood, RenderParams, Q32,
+};
 
 /// The avatar TYPE: which procedural representation renders the genome.
 /// Types are different representations OF THE SAME GENOME behind one
@@ -90,14 +97,10 @@ fn export_png(stable_id: &str, mood: Mood, size: u32) -> Result<Vec<u8>, String>
     export_png_from_genome(&genome, mood, size)
 }
 
-fn export_png_from_hex(
-    hex: &str,
-    type_name: &str,
-    version: u32,
-    mood: Mood,
-    size: u32,
-    rasterizer: impl FnOnce(&[u8], u32) -> Result<Vec<u8>, String>,
-) -> Result<Vec<u8>, String> {
+/// Checks a stored genome against its type and version, in that order, and
+/// returns its bytes. Every export of a stored genome goes through this, so a
+/// malformed row is refused the same way whatever is being written.
+fn stored_genome_bytes(hex: &str, type_name: &str, version: u32) -> Result<Vec<u8>, String> {
     let (_, len, supported_version) =
         mintable(type_name).ok_or_else(|| format!("unknown avatar type {type_name:?}"))?;
     if version != supported_version {
@@ -106,38 +109,86 @@ fn export_png_from_hex(
         ));
     }
     let hex = hex.trim();
+    if hex.len() != len * 2 {
+        return Err(format!(
+            "expected {} hex characters, got {}",
+            len * 2,
+            hex.len()
+        ));
+    }
+    hex.as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            let hi = char::from(pair[0]).to_digit(16);
+            let lo = char::from(pair[1]).to_digit(16);
+            match (hi, lo) {
+                (Some(hi), Some(lo)) => Ok(((hi << 4) | lo) as u8),
+                _ => Err(format!("invalid hex at byte {i}")),
+            }
+        })
+        .collect()
+}
+
+/// Renders a stored genome to SVG and hands it to `encode`, which rasterizes
+/// it to PNG or, for an SVG export, returns it unchanged.
+fn export_from_hex(
+    hex: &str,
+    type_name: &str,
+    version: u32,
+    mood: Mood,
+    size: u32,
+    encode: impl FnOnce(&[u8], u32) -> Result<Vec<u8>, String>,
+) -> Result<Vec<u8>, String> {
+    let bytes = stored_genome_bytes(hex, type_name, version)?;
     let svg = if type_name == AVATAR_TYPE {
         // Keep classic SVG bytes unchanged; tree serialization has a different byte format.
-        let genome = Genome::from_hex(hex).map_err(|e| e.to_string())?;
+        let genome = Genome::from_hex(hex.trim()).map_err(|e| e.to_string())?;
         classic_svg(&genome, mood)?
     } else {
-        if hex.len() != len * 2 {
-            return Err(format!(
-                "expected {} hex characters, got {}",
-                len * 2,
-                hex.len()
-            ));
-        }
-        let bytes: Result<Vec<u8>, String> = hex
-            .as_bytes()
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .enumerate()
-            .map(|(i, pair)| {
-                let hi = char::from(pair[0]).to_digit(16);
-                let lo = char::from(pair[1]).to_digit(16);
-                match (hi, lo) {
-                    (Some(hi), Some(lo)) => Ok(((hi << 4) | lo) as u8),
-                    _ => Err(format!("invalid hex at byte {i}")),
-                }
-            })
-            .collect();
         let tree =
-            render_tree_for_bytes(&bytes?, type_name, version, mood).map_err(|e| e.to_string())?;
+            render_tree_for_bytes(&bytes, type_name, version, mood).map_err(|e| e.to_string())?;
         serialize_tree(&tree)
     };
-    rasterizer(&svg, size)
+    encode(&svg, size)
+}
+
+/// Renders a stored genome to canonical render-tree JSON, the transport
+/// clients decode and draw. Any type has a tree, including classic.
+fn tree_json_from_hex(
+    hex: &str,
+    type_name: &str,
+    version: u32,
+    mood: Mood,
+) -> Result<Vec<u8>, String> {
+    let bytes = stored_genome_bytes(hex, type_name, version)?;
+    let tree =
+        render_tree_for_bytes(&bytes, type_name, version, mood).map_err(|e| e.to_string())?;
+    Ok(serialize_tree_json(&tree).into_bytes())
+}
+
+/// What a stored-genome export writes, chosen by the `--out` extension.
+/// An extension that names no supported format is refused (`None`), so a
+/// caller asking for, say, `face.jpg` does not silently get PNG bytes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OutputFormat {
+    Png,
+    Svg,
+    TreeJson,
+}
+
+fn output_format(out: &str) -> Option<OutputFormat> {
+    let extension = std::path::Path::new(out)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase());
+    match extension.as_deref() {
+        None | Some("png") => Some(OutputFormat::Png),
+        Some("svg") => Some(OutputFormat::Svg),
+        Some("json") => Some(OutputFormat::TreeJson),
+        Some(_) => None,
+    }
 }
 
 fn rasterize(svg: &[u8], size: u32) -> Result<Vec<u8>, String> {
@@ -348,9 +399,22 @@ fn main() {
             None => default_version,
         };
         let out = get("--out").unwrap_or_else(|| "avatar.png".to_owned());
-        match export_png_from_hex(&hex, &type_name, version, mood, size, rasterize) {
-            Ok(png) => {
-                std::fs::write(&out, png).expect("write png");
+        let Some(format) = output_format(&out) else {
+            eprintln!("--out {out}: unsupported extension; use .png, .svg or .json");
+            std::process::exit(2);
+        };
+        let exported = match format {
+            OutputFormat::Png => export_from_hex(&hex, &type_name, version, mood, size, rasterize),
+            OutputFormat::Svg => {
+                export_from_hex(&hex, &type_name, version, mood, size, |svg, _| {
+                    Ok(svg.to_vec())
+                })
+            }
+            OutputFormat::TreeJson => tree_json_from_hex(&hex, &type_name, version, mood),
+        };
+        match exported {
+            Ok(bytes) => {
+                std::fs::write(&out, bytes).expect("write output");
                 println!("{out}");
             }
             Err(e) => {
@@ -432,7 +496,7 @@ fn main() {
     }
 
     eprintln!(
-        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       avatar-export --genome <hex> | --genome-file <path|-> [--type creature.classic|creature.wild] [--version N] [--out f.png]\n       options: --size N (default 400), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild"
+        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       avatar-export --genome <hex> | --genome-file <path|-> [--type creature.classic|creature.wild] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild"
     );
     std::process::exit(2);
 }
@@ -485,7 +549,7 @@ mod tests {
             let expected =
                 serialize_tree(&render_tree_for_bytes(&bytes, "creature.wild", 1, mood).unwrap());
             let mut calls = 0;
-            let png = export_png_from_hex(WILD_HEX, "creature.wild", 1, mood, 64, |svg, size| {
+            let png = export_from_hex(WILD_HEX, "creature.wild", 1, mood, 64, |svg, size| {
                 calls += 1;
                 assert_eq!(svg, expected, "SVG at the rasterizer boundary for {mood:?}");
                 assert_eq!(size, 64);
@@ -511,7 +575,7 @@ mod tests {
             },
         )
         .unwrap();
-        let png = export_png_from_hex(
+        let png = export_from_hex(
             &genome.to_hex(),
             AVATAR_TYPE,
             AVATAR_VERSION,
@@ -543,10 +607,48 @@ mod tests {
             (invalid_hex.as_str(), "creature.wild", 1, "invalid hex"),
             (unicode_hex.as_str(), "creature.wild", 1, "invalid hex"),
         ] {
-            let result = export_png_from_hex(hex, type_name, version, Mood::Neutral, 64, |_, _| {
+            let result = export_from_hex(hex, type_name, version, Mood::Neutral, 64, |_, _| {
                 panic!("invalid input reached the rasterizer")
             });
             assert!(result.unwrap_err().contains(error));
+            let json = tree_json_from_hex(hex, type_name, version, Mood::Neutral);
+            assert!(json.unwrap_err().contains(error));
+        }
+    }
+
+    #[test]
+    fn output_format_follows_the_out_extension() {
+        assert_eq!(output_format("a.png"), Some(OutputFormat::Png));
+        assert_eq!(output_format("a"), Some(OutputFormat::Png));
+        assert_eq!(output_format("dir/a.SVG"), Some(OutputFormat::Svg));
+        assert_eq!(output_format("a.svg"), Some(OutputFormat::Svg));
+        assert_eq!(output_format("a.json"), Some(OutputFormat::TreeJson));
+        // An unsupported extension is refused, never answered with PNG.
+        assert_eq!(output_format("a.jpg"), None);
+        assert_eq!(output_format("a.gif"), None);
+    }
+
+    #[test]
+    fn wild_svg_and_tree_json_exports_match_the_golden_corpus() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (mood, name) in [
+            (Mood::Neutral, "neutral"),
+            (Mood::Working, "working"),
+            (Mood::Happy, "happy"),
+            (Mood::Waiting, "waiting"),
+            (Mood::Blocked, "blocked"),
+            (Mood::Sad, "sad"),
+            (Mood::Sleepy, "sleepy"),
+        ] {
+            let svg = export_from_hex(WILD_HEX, "creature.wild", 1, mood, 64, |svg, _| {
+                Ok(svg.to_vec())
+            })
+            .unwrap();
+            let golden = root.join(format!("vectors/tree-svg/wild-port-0005__{name}.svg"));
+            assert_eq!(svg, std::fs::read(golden).unwrap(), "SVG for {name}");
+            let json = tree_json_from_hex(WILD_HEX, "creature.wild", 1, mood).unwrap();
+            let golden = root.join(format!("vectors/tree/wild-port-0005__{name}.json"));
+            assert_eq!(json, std::fs::read(golden).unwrap(), "tree JSON for {name}");
         }
     }
 
