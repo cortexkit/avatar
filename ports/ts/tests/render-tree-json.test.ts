@@ -9,6 +9,10 @@ const repoRoot = resolve(import.meta.dir, "..", "..", "..");
 const treeRoot = resolve(repoRoot, "vectors", "tree");
 const treeFiles = (await readdir(treeRoot)).filter((file) => file.endsWith(".json")).sort();
 
+test("render-tree corpus is non-empty", () => {
+  expect(treeFiles.length).toBeGreaterThan(0);
+});
+
 function assertBytesEqual(name: string, actual: Uint8Array, expected: Uint8Array): void {
   const commonLength = Math.min(actual.length, expected.length);
   let offset = 0;

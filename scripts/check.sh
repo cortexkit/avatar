@@ -53,7 +53,7 @@ fi
 
 FAILED=()
 CARGO_STAGES=(
-  "fmt" "clippy" "clippy release" "test" "doc tests" "golden corpus"
+  "fmt" "clippy" "clippy release" "test" "doc tests"
   "corpus coverage" "playground fmt" "playground clippy" "playground tests"
   "wild invariants" "renderer consts" "no ignored internal files tracked"
   "cross-platform comparison" "gate scheduler"
@@ -76,6 +76,8 @@ if [[ $RUST_ONLY -eq 0 && $WHERE != linux ]]; then
   STAGES+=("ts typecheck" "ts conformance")
   if command -v swift >/dev/null 2>&1; then
     STAGES+=("swift conformance")
+  else
+    echo "swift conformance: skipped, no swift toolchain on PATH"
   fi
 fi
 
@@ -122,9 +124,24 @@ run() {
   fi
 }
 
-# Did the build rewrite a tracked file? Compared against a snapshot rather
-# than against an empty tree, so a dirty working copy does not make it fire.
-tree_before=$(git status --porcelain | sort)
+# Compare content as well as status: rewriting an already-dirty file need not
+# change its status. Include untracked inputs, but leave ignored build output out.
+tree_fingerprint() {
+  {
+    git status --porcelain=v1 -z &&
+    git diff HEAD --binary &&
+    git ls-files --others --exclude-standard -z |
+      while IFS= read -r -d '' file; do
+        printf '%s\0' "$file"
+        if [[ -L $file ]]; then
+          readlink "$file" || return
+        else
+          git hash-object --no-filters -- "$file" || return
+        fi
+      done
+  } | shasum -a 256
+}
+tree_before=$(tree_fingerprint) || exit 1
 
 # CI can use `git diff --exit-code` here because it mints on a clean
 # checkout. Locally the tree is usually dirty, so that check would report
@@ -157,7 +174,6 @@ rust_lane() {
   run "clippy release"  cargo clippy --workspace --release --locked -- -D warnings
   run "test"            cargo test --workspace --all-targets --locked
   run "doc tests"       cargo test --workspace --doc --locked
-  run "golden corpus"   cargo test --locked -p avatar-vectors
   # Does the corpus still cover what real genomes reach? The hand-picked
   # vectors once missed nine decode selectors that live agents hit, including
   # a mouth dispatch arm no port had ever been byte-compared on. Uniform draws
@@ -192,9 +208,8 @@ web_lane() {
   # A gate on "no unreached branches" would demand deleting a safety net or
   # faking its coverage. Run it by hand when choosing corpus vectors or
   # after changing the decoder.
-  # Runs here as well as inside drift-check.sh: this half needs no browser,
-  # and reaching it only through the half that does made it skippable on any
-  # machine without one.
+  # The constant scan needs no browser, so keep it separate from the lab's
+  # runtime comparison to ensure it also runs on browserless machines.
   run "renderer consts"   python3 scripts/const-drift.py
   # .cortexkit/ holds internal notes and worker briefs that must never reach
   # git. The ignore rule only stops new files; a file committed before the
@@ -219,17 +234,17 @@ web_lane() {
   # drift-check.sh renders the same seeds through both and compares the
   # derived geometry.
   #
-  # The gate greps for the script's agreement line instead of trusting its
-  # exit code, because a comparison that never ran must not be reportable as
-  # a successful comparison.
+  # Require both a successful drift process and its agreement line: neither a
+  # skipped comparison nor a late process failure can count as agreement.
+  # grep consumes the whole stream so an early match cannot close the pipe.
   case $WHERE in
     linux)
       # The build server has no browser: it produces the Rust half, and the
       # workstation compares it against the browser half (remote_lane below).
       run "lab probes" ./scripts/drift-check.sh --probes-only ;;
     local)
-      run "lab matches canonical" bash -c \
-        './scripts/drift-check.sh | tee /dev/stderr | grep -q "seeds: renderers agree"'
+      run "lab matches canonical" bash -o pipefail -c \
+        './scripts/drift-check.sh | tee /dev/stderr | grep "seeds: renderers agree" >/dev/null'
       ts_stages ;;
   esac
 }
@@ -261,8 +276,8 @@ linux_gates() {
 
 remote_lane() {
   run "linux gates" linux_gates
-  run "lab matches canonical" bash -c \
-    'DRIFT_RUST_PROBES="$0" ./scripts/drift-check.sh | tee /dev/stderr | grep -q "seeds: renderers agree"' \
+  run "lab matches canonical" bash -o pipefail -c \
+    'DRIFT_RUST_PROBES="$0" ./scripts/drift-check.sh | tee /dev/stderr | grep "seeds: renderers agree" >/dev/null' \
     "$log_dir/linux.out"
 }
 
@@ -327,7 +342,8 @@ for pid in "${pids[@]}"; do wait "$pid"; done
 exec 3>&-
 
 # Did the build rewrite a tracked file?
-if [[ "$(git status --porcelain | sort)" != "$tree_before" ]]; then
+tree_after=$(tree_fingerprint) || exit 1
+if [[ "$tree_after" != "$tree_before" ]]; then
   printf '\n\033[31m▸ build rewrote tracked files\033[0m\n'
   git status --porcelain
   FAILED+=("tracked-file guard")

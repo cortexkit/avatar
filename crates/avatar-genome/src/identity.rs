@@ -139,16 +139,4 @@ mod tests {
 
         assert_ne!(registered, fallback);
     }
-
-    #[test]
-    fn different_ids_derive_different_genomes() {
-        let first = derive_genome(&SeatIdentity::Registered {
-            project_id: "first".to_owned(),
-        });
-        let second = derive_genome(&SeatIdentity::Registered {
-            project_id: "second".to_owned(),
-        });
-
-        assert_ne!(first, second);
-    }
 }

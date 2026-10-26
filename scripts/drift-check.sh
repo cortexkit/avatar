@@ -14,6 +14,8 @@
 #
 # Compares derived geometry rather than SVG text: number formatting differs
 # between the languages and would drown real divergence in noise.
+# The sampling-free constant scan is a separate check (scripts/const-drift.py),
+# run by check.sh even on machines without a browser.
 #
 # Usage: scripts/drift-check.sh [--probes-only] [start] [count]
 #
@@ -224,14 +226,6 @@ PY
     fails=$((fails + 1))
   fi
 done
-
-# The sampling-free half. The loop above compares rendered geometry for a
-# sample of seeds; this compares the tuning constants themselves, which a
-# sample cannot reach exhaustively. It exists because the geometry half
-# reported agreement while the lab drew every mouth 0.8r high.
-if ! python3 "$(dirname "$0")/const-drift.py"; then
-  fails=$((fails + 1))
-fi
 
 if [[ $fails -eq 0 ]]; then
   printf '\033[32m%d seeds: renderers agree\033[0m\n' "$COUNT"

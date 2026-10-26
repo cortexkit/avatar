@@ -145,7 +145,7 @@ version, because an agent's face must not change because we shipped:
 
 Either way: re-mint only the affected vectors (`UPDATE_GOLDEN=1` or
 `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact
---nocapture`), review `vectors/contact-sheet.html` by eye, rebuild the
+--nocapture --ignored`), review `vectors/contact-sheet.html` by eye, rebuild the
 embedded core, and every port's conformance leg must re-pass before it
 ships. `docs/design/012` has the full procedure.
 

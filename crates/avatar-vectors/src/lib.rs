@@ -219,8 +219,9 @@ mod tests {
     /// the Rust source revision that generated them. Routine tests must compare,
     /// not refresh, these byte-level compatibility expectations.
     /// To preserve the classic corpus, refresh only wild fixtures with
-    /// `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture`.
+    /// `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`.
     #[test]
+    #[ignore = "set UPDATE_GOLDEN or UPDATE_WILD_GOLDEN to regenerate committed fixtures"]
     fn mint() {
         // A wild-only refresh must leave the classic fixtures and their
         // manifest's recorded source revision unchanged.
@@ -294,7 +295,7 @@ mod tests {
         assert_eq!(
             fs::read(manifest_path()).expect("read vectors/manifest.json"),
             manifest_bytes(&manifest.producer_sha),
-            "vectors/manifest.json is not canonical; regenerate with UPDATE_GOLDEN=1 cargo test -p avatar-vectors"
+            "vectors/manifest.json is not canonical; regenerate with UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --ignored"
         );
 
         let expected_root = BTreeSet::from([
@@ -837,7 +838,7 @@ mod tests {
             .position(|(expected, actual)| expected != actual)
             .unwrap_or(expected.len().min(actual.len()));
         panic!(
-            "golden corpus drift in {}: first differing byte offset {offset} (expected {}, found {}); if the change to the renderer was intended, regenerate with UPDATE_GOLDEN=1 cargo test -p avatar-vectors and LOOK at vectors/contact-sheet.html before committing. Changing what a shipped row renders to is a version event, and versions are added rather than edited: see docs/design/012-version-and-type-procedure.md",
+            "golden corpus drift in {}: first differing byte offset {offset} (expected {}, found {}); if the change to the renderer was intended, regenerate with UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --ignored and LOOK at vectors/contact-sheet.html before committing. Changing what a shipped row renders to is a version event, and versions are added rather than edited: see docs/design/012-version-and-type-procedure.md",
             corpus_relative_path(path),
             described_byte(expected.get(offset)),
             described_byte(actual.get(offset)),

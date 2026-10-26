@@ -21,7 +21,7 @@ import unittest
 GATE = Path(__file__).with_name("check.sh")
 STAGES = [
     "mint tables", "mint is reproducible", "core binary current",
-    "fmt", "clippy", "clippy release", "test", "doc tests", "golden corpus",
+    "fmt", "clippy", "clippy release", "test", "doc tests",
     "corpus coverage", "playground fmt", "playground clippy", "playground tests",
     "wild invariants", "renderer consts", "no ignored internal files tracked",
     "cross-platform comparison", "gate scheduler", "lab matches canonical", "ts typecheck",
@@ -37,7 +37,6 @@ COMMANDS = [
     ("clippy release", ".", "cargo", "clippy --workspace --release --locked -- -D warnings"),
     ("test", ".", "cargo", "test --workspace --all-targets --locked"),
     ("doc tests", ".", "cargo", "test --workspace --doc --locked"),
-    ("golden corpus", ".", "cargo", "test --locked -p avatar-vectors"),
     ("corpus coverage", ".", "cargo", "run --locked -q -p avatar-genome --example fleet_coverage -- --population 1000"),
     ("playground fmt", "playground", "cargo", "fmt --all -- --check"),
     ("playground clippy", "playground", "cargo", "clippy --all-targets --locked -- -D warnings"),
@@ -102,11 +101,11 @@ if stage == os.environ.get("WRITE_STAGE"):
                       for name in ("corpus coverage", "ts conformance")):
             assert time.monotonic() < deadline, "other lanes did not finish"
             time.sleep(0.01)
-    (root / "stray.txt").write_text("unexpected build output\n")
+    (root / os.environ.get("WRITE_PATH", "stray.txt")).write_text("unexpected build output\n")
 failed = stage in os.environ.get("FAIL_STAGES", "").split(",")
 if stage == "core binary current":
     print("stale" if failed else "current")
-if stage == "lab matches canonical" and not failed and not os.environ.get("OMIT_AGREEMENT"):
+if stage == "lab matches canonical" and not os.environ.get("OMIT_AGREEMENT"):
     print("24 seeds: renderers agree")
 event("end")
 (scratch / (stage + ".done")).touch()
@@ -141,18 +140,21 @@ class GateTests(unittest.TestCase):
             (self.root / path).chmod(0o755)
         self.git("init", "-q")
         self.git("add", ".")
+        self.git("-c", "user.name=Gate Test", "-c", "user.email=gate@example.invalid",
+                 "commit", "-qm", "Initial gate fixture")
 
     def git(self, *args):
         return subprocess.check_output(["git", *args], cwd=self.root, env=self.env, text=True)
 
-    def gate(self, failures=(), write="", rust_only=False, parallel_probe=False, omit_agreement=False):
+    def gate(self, failures=(), write="", rust_only=False, parallel_probe=False, omit_agreement=False,
+             write_path="stray.txt"):
         # AVATAR_GATE_LOCAL pins the run-everything-here layout these tests
         # describe; without it, and with the build-server client on PATH, the
         # gate sends its build-server stages to the Linux build server as one
         # job, on any operating system.
         env = dict(self.env, GATE_TEST_ROOT=str(self.root), AVATAR_GATE_LOCAL="1",
                    PATH=str(self.root / "tools") + os.pathsep + os.environ["PATH"],
-                   FAIL_STAGES=",".join(failures), WRITE_STAGE=write,
+                   FAIL_STAGES=",".join(failures), WRITE_STAGE=write, WRITE_PATH=write_path,
                    PARALLEL_PROBE="1" if parallel_probe else "",
                    OMIT_AGREEMENT="1" if omit_agreement else "")
         with subprocess.Popen(["bash", "scripts/check.sh"] + (["--rust-only"] if rust_only else []),
@@ -195,7 +197,7 @@ class GateTests(unittest.TestCase):
     def test_all_stages_overlap_across_lanes_but_not_within_targets(self):
         events = self.gate(parallel_probe=True)
         positions = {(stage, phase): index for index, (stage, phase) in enumerate(events)}
-        for lane in (("fmt", "clippy", "clippy release", "test", "doc tests", "golden corpus", "corpus coverage"),
+        for lane in (("fmt", "clippy", "clippy release", "test", "doc tests", "corpus coverage"),
                      ("playground fmt", "playground clippy", "playground tests", "wild invariants", "lab matches canonical", "ts typecheck", "ts conformance")):
             for before, after in zip(lane, lane[1:]):
                 self.assertLess(positions[before, "end"], positions[after, "start"],
@@ -216,6 +218,9 @@ class GateTests(unittest.TestCase):
     def test_successful_browser_exit_without_agreement_still_fails(self):
         self.gate(omit_agreement=True)
 
+    def test_browser_agreement_with_failed_exit_still_fails(self):
+        self.gate(failures=("lab matches canonical",))
+
     def test_two_lanes_fail(self):
         self.gate(failures=("test", "swift conformance"))
 
@@ -229,8 +234,18 @@ class GateTests(unittest.TestCase):
         self.gate(failures=("core binary current",))
 
     def test_existing_dirty_tree_does_not_trip_guard(self):
+        (self.root / "ports/swift/AvatarCore.source-hash").write_text("current\n\n")
         (self.root / "preexisting.txt").write_text("already here\n")
         self.gate()
+
+    def test_rewriting_already_modified_tracked_file_trips_guard(self):
+        path = "playground/tracked.txt"
+        (self.root / path).write_text("committed input\n")
+        self.git("add", path)
+        self.git("-c", "user.name=Gate Test", "-c", "user.email=gate@example.invalid",
+                 "commit", "-qm", "Track build input")
+        (self.root / path).write_text("preexisting edit\n")
+        self.gate(write="playground tests", write_path=path)
 
 
 if __name__ == "__main__":

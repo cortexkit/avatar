@@ -225,14 +225,45 @@ mod tests {
 
     #[test]
     fn concurrent_calls_own_independent_strings() {
-        std::thread::scope(|scope| {
-            for seed in 0..8 {
-                scope.spawn(move || {
-                    let (status, output) = render(&[seed; 1_024], avatar_svg::CLASSIC, 2, "happy");
-                    assert_eq!(status, OK);
-                    unsafe { avatar_string_free(output) };
-                });
-            }
+        let expected: Vec<_> = (0..8)
+            .map(|seed| {
+                let (status, output) = render(&[seed; 1_024], avatar_svg::CLASSIC, 2, "happy");
+                assert_eq!(status, OK);
+                assert!(!output.is_null());
+                unsafe {
+                    let bytes = CStr::from_ptr(output).to_bytes().to_vec();
+                    avatar_string_free(output);
+                    bytes
+                }
+            })
+            .collect();
+        let outputs = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|seed| {
+                    scope.spawn(move || {
+                        let (status, output) =
+                            render(&[seed; 1_024], avatar_svg::CLASSIC, 2, "happy");
+                        assert_eq!(status, OK);
+                        assert!(!output.is_null());
+                        // Transfer ownership across the join without copying or
+                        // releasing the allocation returned by the FFI.
+                        unsafe { CString::from_raw(output) }
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
         });
+        for (index, (output, expected)) in outputs.iter().zip(&expected).enumerate() {
+            assert_eq!(output.to_bytes(), expected);
+            for other in &outputs[..index] {
+                assert_ne!(output.as_ptr(), other.as_ptr());
+            }
+        }
+        for output in outputs {
+            unsafe { avatar_string_free(output.into_raw()) };
+        }
     }
 }

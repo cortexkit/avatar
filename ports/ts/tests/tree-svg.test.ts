@@ -10,7 +10,13 @@ const repoRoot = resolve(import.meta.dir, "..", "..", "..");
 const treeRoot = resolve(repoRoot, "vectors", "tree");
 const treeSvgRoot = resolve(repoRoot, "vectors", "tree-svg");
 const treeFiles = (await readdir(treeRoot)).filter((file) => file.endsWith(".json")).sort();
+const treeSvgFiles = (await readdir(treeSvgRoot)).filter((file) => file.endsWith(".svg")).sort();
 const encoder = new TextEncoder();
+
+test("tree and tree-SVG corpora have the same non-empty names", () => {
+  expect(treeFiles.length).toBeGreaterThan(0);
+  expect(treeSvgFiles.map((file) => file.replace(/\.svg$/, ".json"))).toEqual(treeFiles);
+});
 
 function assertBytesEqual(name: string, actual: Uint8Array, expected: Uint8Array): void {
   const commonLength = Math.min(actual.length, expected.length);

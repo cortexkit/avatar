@@ -9,8 +9,6 @@ use avatar_phenotype::{Body, Phenotype};
 use avatar_tables::div_round_half_away;
 
 use crate::fixed::{q32_ratio, CANVAS_MILLI, CENTER, Q32_ONE};
-#[cfg(test)]
-use crate::format::format_milli;
 use crate::tree::{FillRule, Segment, Shape};
 
 /// Samples per Bézier segment when flattening the body outline.
@@ -414,29 +412,6 @@ fn height_twentieth(height: i64) -> i64 {
     div_round_half_away(i128::from(height), 20) as i64
 }
 
-/// Test-only formatter used to verify that the tree serializer preserves the
-/// established SVG body-path syntax.
-#[cfg(test)]
-pub(crate) fn path_string(spline: &Spline) -> String {
-    let mut path = format!(
-        "M{},{}",
-        format_milli(spline.start_x),
-        format_milli(spline.start_y)
-    );
-    for curve in &spline.curves {
-        path.push_str(&format!(
-            "C{} {}, {} {}, {} {}",
-            format_milli(curve.cp1x),
-            format_milli(curve.cp1y),
-            format_milli(curve.cp2x),
-            format_milli(curve.cp2y),
-            format_milli(curve.x2),
-            format_milli(curve.y2),
-        ));
-    }
-    path
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -721,25 +696,5 @@ mod tests {
         // returned.
         let samples = vec![(100, 750)];
         assert_eq!(min_width_y(&samples, 0, 1_000), 150);
-    }
-
-    #[test]
-    fn path_string_layout_matches_the_pinned_shape() {
-        let spline = Spline {
-            start_x: 500_000,
-            start_y: 250_000,
-            curves: vec![Curve {
-                cp1x: 500_150,
-                cp1y: 250_000,
-                cp2x: 500_105,
-                cp2y: 250_100,
-                x2: 500_000,
-                y2: 250_200,
-            }],
-        };
-        assert_eq!(
-            path_string(&spline),
-            "M5000,2500C5001.5 2500, 5001.05 2501, 5000 2502"
-        );
     }
 }

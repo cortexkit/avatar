@@ -341,5 +341,5 @@ fn main() {
         std::process::exit(1);
     }
     println!("\nnow register them in vectors/manifest.json and mint:");
-    println!("  UPDATE_GOLDEN=1 cargo test -p avatar-vectors");
+    println!("  UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --ignored");
 }

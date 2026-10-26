@@ -50,6 +50,16 @@ class CrossPlatformComparisonTests(unittest.TestCase):
         path.write_text(json.dumps(tree))
         self.assertFalse(self.quiet_compare(candidate))
 
+    def test_comparison_rejects_whitespace_only_changes(self):
+        candidate = self.copy_trees("whitespace")
+        path = candidate / sorted(self.names)[0]
+        original = path.read_bytes()
+        rewritten = b" \n" + original
+        self.assertEqual(json.loads(rewritten), json.loads(original))
+        self.assertNotEqual(rewritten, original)
+        path.write_bytes(rewritten)
+        self.assertFalse(self.quiet_compare(candidate))
+
     def test_comparison_rejects_empty_short_and_extra_inventories(self):
         candidate = self.directory / "inventory"
         candidate.mkdir()

@@ -260,7 +260,7 @@ stricter (subc's JSON corpus pins semantic shape; we must pin **bytes**):
   min-area bodies that stress the mouth-fit search), every easing table
   boundary byte (0, 1, 127, 128, 254, 255), plus N seats' real derived
   DNA as realistic samples.
-- **Minting**: `UPDATE_GOLDEN=1 cargo test -p avatar-vectors` (subc
+- **Minting**: `UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --ignored` (subc
   convention), which also stamps `manifest.json` with the producer
   commit. CI never regenerates, only verifies. Ports vendor the corpus
   with the recorded producer SHA (cross-repo payload rule).

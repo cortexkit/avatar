@@ -157,8 +157,8 @@
 
 **New Golden Conformance Vector:**
 1. Never write corpus files by hand; the mint generates them.
-2. For a `creature.classic` vector: add it to the list in `crates/avatar-vectors/src/lib.rs`, then run `UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture`.
-3. For a `creature.wild` vector: add a project id and its moods to `vectors/wild/corpus.tsv`, then run `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture`, which leaves classic untouched.
+2. For a `creature.classic` vector: add it to the list in `crates/avatar-vectors/src/lib.rs`, then run `UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`.
+3. For a `creature.wild` vector: add a project id and its moods to `vectors/wild/corpus.tsv`, then run `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`, which leaves classic untouched.
 4. Paste the printed pins back into `crates/avatar-vectors/src/lib.rs`, open `vectors/contact-sheet.html` and look at every new cell, and rebuild the xcframework if generator source changed.
 
 **New Tests:**
