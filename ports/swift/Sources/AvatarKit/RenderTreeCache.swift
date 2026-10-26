@@ -1,3 +1,4 @@
+#if canImport(AvatarCore)
 import Foundation
 
 /// A host-owned bounded cache of resolution-independent render trees.
@@ -41,12 +42,12 @@ public final class RenderTreeCache: @unchecked Sendable {
 
     /// Builds or returns the tree for one complete rendering identity.
     public func renderTree(
-        genome: Genome,
+        genomeBytes: [UInt8],
         type: String,
         version: UInt32,
         mood: Mood
     ) throws -> RenderTree {
-        let key = Key(genomeBytes: genome.bytes, type: type, version: version, mood: mood)
+        let key = Key(genomeBytes: genomeBytes, type: type, version: version, mood: mood)
         lock.lock()
         if var entry = entries[key] {
             entry.lastAccess = nextAccess()
@@ -56,8 +57,8 @@ public final class RenderTreeCache: @unchecked Sendable {
         }
         lock.unlock()
 
-        let tree = try AvatarKit.renderTree(
-            genome: genome, type: type, version: version, mood: mood)
+        let tree = try renderTreeViaCore(
+            genomeBytes: genomeBytes, type: type, version: version, mood: mood)
         guard capacity > 0 else { return tree }
 
         lock.lock()
@@ -95,3 +96,4 @@ public final class RenderTreeCache: @unchecked Sendable {
         return accessClock
     }
 }
+#endif

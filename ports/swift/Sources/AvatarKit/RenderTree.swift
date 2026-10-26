@@ -177,44 +177,7 @@ public struct Transform: Equatable, Decodable, Sendable {
     public init(ops: [TransformOp]) {
         self.ops = ops
     }
-
-    /// Composes SVG transform operations in their serialized order. Matrix
-    /// products narrow once per Q32 multiply, matching the geometry helpers.
-    public func affine() -> Affine {
-        var result = Affine(
-            a: .one, b: Q32(0), c: Q32(0), d: .one,
-            tx: 0, ty: 0)
-        for op in ops {
-            let next: Affine
-            switch op {
-            case .translate(let tx, let ty):
-                next = Affine(a: .one, b: Q32(0), c: Q32(0), d: .one, tx: tx, ty: ty)
-            case .scale(let sx, let sy):
-                next = Affine(a: sx, b: Q32(0), c: Q32(0), d: sy, tx: 0, ty: 0)
-            case .rotate(let angle, let cx, let cy):
-                let cosine = Int64(cosQ30(angle.value)) * 4
-                let sine = Int64(sinQ30(angle.value)) * 4
-                next = Affine(
-                    a: Q32(cosine), b: Q32(sine), c: Q32(-sine), d: Q32(cosine),
-                    tx: cx - q32Mul(cx, cosine) + q32Mul(cy, sine),
-                    ty: cy - q32Mul(cx, sine) - q32Mul(cy, cosine))
-            }
-            result = composeAffine(result, next)
-        }
-        return result
-    }
 }
-
-private func composeAffine(_ lhs: Affine, _ rhs: Affine) -> Affine {
-    Affine(
-        a: Q32(q32Mul(lhs.a.value, rhs.a.value) + q32Mul(lhs.c.value, rhs.b.value)),
-        b: Q32(q32Mul(lhs.b.value, rhs.a.value) + q32Mul(lhs.d.value, rhs.b.value)),
-        c: Q32(q32Mul(lhs.a.value, rhs.c.value) + q32Mul(lhs.c.value, rhs.d.value)),
-        d: Q32(q32Mul(lhs.b.value, rhs.c.value) + q32Mul(lhs.d.value, rhs.d.value)),
-        tx: lhs.tx + q32Mul(rhs.tx, lhs.a.value) + q32Mul(rhs.ty, lhs.c.value),
-        ty: lhs.ty + q32Mul(rhs.tx, lhs.b.value) + q32Mul(rhs.ty, lhs.d.value))
-}
-
 
 // MARK: - Canonical tree JSON decoding
 

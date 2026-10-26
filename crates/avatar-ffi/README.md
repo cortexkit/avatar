@@ -29,12 +29,11 @@ whenever the Rust generator, boundary, headers or locked dependencies change.
 
 ## Calling from Swift
 
-AvatarKit's existing `renderTree` remains the native classic builder. On the
-included Apple platforms, opt into the embedded generator explicitly:
+On the included Apple platforms, every type goes through the embedded generator:
 
 ```swift
 let tree = try renderTreeViaCore(
-    genome: genome, type: classicAvatarType, version: 2, mood: .happy)
+    genomeBytes: genomeBytes, type: "creature.classic", version: 2, mood: .happy)
 ```
 
 The wrapper releases Rust's C string after decoding it with AvatarKit's
@@ -51,8 +50,8 @@ foreign allocator. There is no mutable global state or thread affinity.
 ## Verification
 
 `./scripts/check.sh` includes the crate through `cargo test --workspace` and
-runs the Swift suite on macOS. `EmbeddedCoreTests` compares every corpus genome
-in all seven moods against the native Swift classic builder using complete
+runs the Swift suite on macOS. `EmbeddedCoreTests` compares every committed
+classic and wild tree against the embedded core using complete
 `RenderTree` equality, exercises error mapping, and makes concurrent calls.
-The Linux Swift package keeps the native builder without importing AvatarCore;
+The Linux Swift package decodes committed trees without importing AvatarCore;
 the binary dependency is platform-conditional.

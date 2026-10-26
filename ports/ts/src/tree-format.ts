@@ -1,10 +1,10 @@
 // Numeric formatting for SVG output (transcribed from
 // crates/avatar-svg/src/format.rs).
 //
-// Pinned formatters cover the decimal contracts emitted by the SVG serializers.
+// Pinned formatters cover the decimal contracts emitted by the tree serializer.
 // Coordinates are exact (milliunits divide evenly into two decimal places of a
-// viewBox unit); fixed-point values use the precision selected by each canonical
-// projection. No formatting path converts through a float.
+// viewBox unit); fixed-point values use rounded nine-digit precision.
+// No formatting path converts through a float.
 
 /**
  * Formats a bigint milliunit value as an exact decimal string in viewBox
@@ -37,49 +37,8 @@ export function formatMilli(value: bigint): string {
 }
 
 /**
- * Formats a Q32.32 value as a decimal string with up to six fractional
- * digits.
- *
- * Six digits is the pinned precision for scale factors: digits come from
- * repeated ×10 expansion of the fractional bits (truncating after the sixth
- * digit), with trailing zeros stripped. Coordinates never use this formatter
- * — they stay two-digit exact via `formatMilli`.
- */
-export function formatQ32Decimal(value: bigint): string {
-  const FRACTION_MASK = (1n << 32n) - 1n;
-  const magnitude = value < 0n ? -value : value;
-  const whole = magnitude >> 32n;
-  let fraction = magnitude & FRACTION_MASK;
-
-  const digits: number[] = [];
-  for (let index = 0; index < 6; index += 1) {
-    fraction *= 10n;
-    digits.push(Number(fraction >> 32n));
-    fraction &= FRACTION_MASK;
-  }
-  let significant = digits.length;
-  while (significant > 0 && digits[significant - 1] === 0) {
-    significant -= 1;
-  }
-
-  let text = "";
-  if (value < 0n && (whole !== 0n || significant !== 0)) {
-    text = "-";
-  }
-  text += whole.toString();
-  if (significant !== 0) {
-    text += ".";
-    for (let index = 0; index < significant; index += 1) {
-      text += digits[index].toString();
-    }
-  }
-  return text;
-}
-
-/**
  * Formats Q32.32 with the generic tree serializer's rounded nine-digit
- * precision. The classic serializer intentionally keeps using its six-digit
- * truncating representation above because those byte contracts are distinct.
+ * precision.
  */
 export function formatQ32Rounded(value: bigint): string {
   const SCALE = 1n << 32n;

@@ -1,4 +1,4 @@
-import { formatMilli, formatQ32Rounded } from "./svg/format";
+import { formatMilli, formatQ32Rounded } from "./tree-format";
 import type { Effect, Paint, Primitive, RenderTree, Shape, TransformOp } from "./tree";
 
 /** Serializes every primitive in painter order without interpreting its label. */

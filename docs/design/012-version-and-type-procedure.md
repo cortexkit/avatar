@@ -55,6 +55,8 @@ off the body. Something a user would call a defect rather than a style.
 4. **Port the new arm to Swift and TS.** Dispatch is per-language; a
    version that renders in Rust and errors in Swift is a row that draws
    on one surface and blanks on another.
+
+   > Note (2026-10-26): Native Swift/TS builders were removed; new version arms are implemented once in Rust and consumed via render trees.
 5. **Announce the upgrade path, not the change.** Nobody's face moves on
    deploy. Rows move when the operator or the agent chooses, through
    prefrontal's gated op.
@@ -70,6 +72,8 @@ off the body. Something a user would call a defect rather than a style.
 3. Implement its dispatch arm in all three languages, plus corpus
    vectors. Unknown types must keep erroring cleanly on older clients —
    that path is what makes shipping a type safe while phones lag.
+
+   > Note (2026-10-26): Native Swift/TS builders were removed; new types are implemented once in Rust and consumed via render trees.
 4. If the layout differs from an existing type, existing agents need a
    **new genome** to wear it. That is a deliberate re-deposit, never an
    automatic migration.

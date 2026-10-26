@@ -536,6 +536,8 @@ Classic keeps its fixed-point implementation unchanged. The ports
 still carry an independent classic generator, which is the case
 fixed-point was built for.
 
+> Note (2026-10-26): Native Swift/TS classic builders were removed; every creature generator now lives only in Rust, and ports consume render trees.
+
 What this removes from the inventory above: integer sqrt, the integer
 atan2 question, and the fixed-point rewrite itself. The port becomes a
 move of the playground pipeline into the shipped crates, with four

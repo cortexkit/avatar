@@ -18,8 +18,8 @@
 │   ├── avatar-tables/            # Pinned lookup tables and division rounding logic
 │   └── avatar-vectors/           # Golden vector conformance test suite
 ├── ports/                        # Port implementations in secondary languages
-│   ├── swift/                    # Swift AvatarKit, the embedded AvatarCore.xcframework, CBlake3 vendor source
-│   └── ts/                       # TypeScript classic renderer, tree decoder, and Bun test suite
+│   ├── swift/                    # Swift AvatarKit and the embedded AvatarCore.xcframework
+│   └── ts/                       # TypeScript tree decoder, generic SVG serializer, and Bun tests
 ├── vectors/                      # Golden vector corpus for cross-language conformance
 │   ├── dna/                      # Raw 8192-bit hex DNA files
 │   ├── phenotype/                # Canonical decoded phenotype JSON files
@@ -50,7 +50,7 @@
 - Key files: `crates/avatar-tables/src/lib.rs`, `crates/avatar-tables/src/generated/tables.rs`, `crates/avatar-tables/src/bin/mint.rs`.
 
 **`crates/avatar-svg/`:**
-- Purpose: Every creature generator, written once in Rust; builds render trees and serializes them. (Only `creature.classic` also has Swift and TypeScript builders.)
+- Purpose: Every creature generator, written once in Rust; builds render trees and serializes them.
 - Contains: The `creature.classic` generator (`face.rs`, `eyes.rs`, `brows.rs`, `mouth.rs`, `lashes.rs`, `pattern.rs`, `mood.rs`, `build.rs`), the `creature.wild` generator (`src/wild/`, with its deterministic maths in `src/wild/math.rs`), `RenderTree` and the primitive `role` (`tree.rs`), canonical tree JSON (`tree_json.rs`), type and version dispatch (`dispatch.rs`), the classic SVG serializer (`serialize.rs`) and the generic tree serializer (`tree_serialize.rs`).
 - Key files: `crates/avatar-svg/src/lib.rs`, `crates/avatar-svg/src/dispatch.rs`, `crates/avatar-svg/src/tree.rs`, `crates/avatar-svg/src/tree_json.rs`, `crates/avatar-svg/src/wild/mod.rs`.
 
@@ -70,17 +70,17 @@
 - Key files: `crates/avatar-vectors/src/lib.rs`.
 
 **`ports/ts/`:**
-- Purpose: TypeScript consumer for Web and Node: draws any type from its render tree, and carries a native generator for `creature.classic` only.
-- Contains: The classic generator (genome decoding, phenotype model, lookup tables, geometry), the fail-closed tree decoder and generic serializer (`src/tree.ts`, `src/tree-serialize.ts`), and Bun conformance tests.
-- Key files: `ports/ts/src/svg/index.ts`, `ports/ts/src/genome.ts`, `ports/ts/src/phenotype.ts`, `ports/ts/src/tables.ts`, `ports/ts/src/svg/dispatch.ts`, `ports/ts/tests/golden-conformance.test.ts`.
+- Purpose: TypeScript consumer for Web and Node: draws any type from its render tree.
+- Contains: The fail-closed tree decoder and generic serializer (`src/tree.ts`, `src/tree-serialize.ts`), numeric formatting helpers, and Bun conformance tests.
+- Key files: `ports/ts/src/tree.ts`, `ports/ts/src/tree-serialize.ts`, `ports/ts/src/tree-format.ts`, `ports/ts/tests/render-tree-json.test.ts`, `ports/ts/tests/tree-svg.test.ts`.
 
 **`ports/swift/`:**
 - Purpose: Swift `AvatarKit` framework for iOS and macOS client applications.
-- Contains: `AvatarKit` target, vendored `CBlake3` target, the committed `AvatarCore.xcframework` (the embedded Rust generator) with `AvatarCore.source-hash` recording what it was built from, a native builder for `creature.classic` only, the fail-closed tree decoder, SVG serializer, SwiftPM test suite.
-- Key files: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift` (`renderTreeViaCore`, the path for every type), `ports/swift/Sources/AvatarKit/RenderTree.swift`, `ports/swift/Sources/AvatarKit/TreeBuilder.swift` (classic only), `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`, `ports/swift/Tests/AvatarKitTests/GoldenConformanceTests.swift`.
+- Contains: `AvatarKit` target, the committed `AvatarCore.xcframework` (the embedded Rust generator) with `AvatarCore.source-hash` recording what it was built from, the fail-closed tree decoder, numeric wire types, host-owned tree cache, and SwiftPM test suite.
+- Key files: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift` (`renderTreeViaCore`, the path for every type), `ports/swift/Sources/AvatarKit/RenderTree.swift`, `ports/swift/Sources/AvatarKit/RenderTreeJSON.swift`, `ports/swift/Sources/AvatarKit/RenderTreeCache.swift`, `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`, `ports/swift/Tests/AvatarKitTests/CorpusFixtures.swift`.
 
 **`vectors/`:**
-- Purpose: Shared golden vector corpus pinning phenotype JSON and SVG rendering across all language implementations.
+- Purpose: Shared golden vector corpus pinning Rust generation and the tree transport and generic SVG consumed by the ports.
 - Contains: Hex DNA vectors, JSON phenotype expectations, golden SVG files, vector manifest.
 - Key files: `vectors/manifest.json`, `vectors/contact-sheet.html`, `vectors/dna/`, `vectors/phenotype/`, `vectors/svg/`, `vectors/tree/`, `vectors/tree-svg/`, `vectors/wild/` (wild genomes and `corpus.tsv`).
 - Generated, never hand-edited: test commands in `crates/avatar-vectors/src/lib.rs` write these files and print the size and hash pins to paste back into that file (see "New Golden Conformance Vector" below).
@@ -96,8 +96,8 @@
 **Entry Points:**
 - Canonical Rust Library: `crates/avatar-svg/src/lib.rs`
 - PNG Export CLI Tool: `crates/avatar-export/src/main.rs`
-- TypeScript Port Library: `ports/ts/src/svg/index.ts`
-- Swift Framework Library: `ports/swift/Sources/AvatarKit/AvatarKit.swift`; any type through the embedded core: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift`
+- TypeScript Port Library: `ports/ts/src/tree.ts`, `ports/ts/src/tree-serialize.ts`
+- Swift Framework Library: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift` renders any type through the embedded core; `ports/swift/Sources/AvatarKit/RenderTree.swift` decodes its tree.
 - Embedded Core C Boundary: `crates/avatar-ffi/src/lib.rs`
 - SwiftPM Manifest: `Package.swift`
 
@@ -116,8 +116,8 @@
 
 **Tests & Conformance:**
 - Rust Golden Vector Suite: `crates/avatar-vectors/src/lib.rs`
-- TypeScript Golden Vector Suite: `ports/ts/tests/golden-conformance.test.ts`
-- Swift Golden Vector Suite: `ports/swift/Tests/AvatarKitTests/GoldenConformanceTests.swift`
+- TypeScript Tree Corpus Suite: `ports/ts/tests/render-tree-json.test.ts`, `ports/ts/tests/tree-svg.test.ts`
+- Swift Tree Corpus Suite: `ports/swift/Tests/AvatarKitTests/RenderConformanceTests.swift`, `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`
 - Swift Embedded Core Suite: `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`
 - Cross-Platform Byte Check (by hand; needs containers): `scripts/wild-cross-platform.sh`
 - The Repository Gate: `scripts/check.sh`
@@ -126,7 +126,7 @@
 
 **Files:**
 - Rust Source: `snake_case.rs` (e.g., `crates/avatar-svg/src/serialize.rs`)
-- TypeScript Source: `camelCase.ts` or `kebab-case.test.ts` (e.g., `ports/ts/src/genome.ts`, `ports/ts/tests/golden-conformance.test.ts`)
+- TypeScript Source: `camelCase.ts` or `kebab-case.test.ts` (e.g., `ports/ts/src/tree.ts`, `ports/ts/tests/tree-svg.test.ts`)
 - Swift Source: `PascalCase.swift` (e.g., `ports/swift/Sources/AvatarKit/RenderTree.swift`)
 - Spec Data & Generation: `snake_case.rs` or `kebab-case` (e.g., `crates/avatar-tables/src/bin/mint.rs`, `vectors/manifest.json`)
 
@@ -148,12 +148,12 @@
 1. Add table generation or mathematical definition to `crates/avatar-tables/src/bin/mint.rs`.
 2. Re-mint committed Rust table code via `cargo run -p avatar-tables --bin mint`.
 3. Export table wrappers and helpers in `crates/avatar-tables/src/lib.rs`.
-4. Import/generate updated table sources into TS (`ports/ts/src/generated/tables.ts`) and Swift (`ports/swift/Sources/AvatarKit/Generated/GeneratedTables.swift`), which only the Swift and TypeScript builders of `creature.classic`, the original creature type, use.
+4. Tables stay Rust-only; do not add TS or Swift copies.
 
 **New Geometry Feature Pass:**
 1. Geometry belongs to a type: add it in Rust, inside that type's module.
 2. Changing what an existing type draws changes agents' creatures, so it ships as a new version or a new type, never as an edit (`docs/design/012`). A type no agent has been switched to yet may still be edited in place, because no agent's creature changes.
-3. Only `creature.classic` has native Swift and TypeScript builders. A classic change must be mirrored in `ports/ts/src/svg/` and `ports/swift/Sources/AvatarKit/TreeBuilder.swift`, and the golden corpus gates all three.
+3. All geometry changes live in Rust only; the ports consume render trees and gate their decoding against the golden corpus.
 
 **New Golden Conformance Vector:**
 1. Never write corpus files by hand; the mint generates them.
@@ -163,5 +163,5 @@
 
 **New Tests:**
 - Rust unit tests: Co-located in source files inside `#[cfg(test)] mod tests`.
-- Cross-language conformance: `crates/avatar-vectors/src/lib.rs`, `ports/ts/tests/golden-conformance.test.ts`, and `ports/swift/Tests/AvatarKitTests/GoldenConformanceTests.swift`.
+- Tree consumer conformance: `crates/avatar-vectors/src/lib.rs`, `ports/ts/tests/render-tree-json.test.ts`, `ports/ts/tests/tree-svg.test.ts`, `ports/swift/Tests/AvatarKitTests/RenderConformanceTests.swift`, and `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`.
 - Every new check must be shown failing on a deliberately introduced defect before it is trusted, and that defect must exercise the condition the check exists to catch (a pipe bug that only appears on large output needs a large-output test, not a short one).

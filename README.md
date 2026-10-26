@@ -43,9 +43,7 @@ the argument.
 | TypeScript | `ports/ts/` | decodes a tree, renders SVG | `bun test` |
 | Swift (`AvatarKit`, SPM by git URL) | `Package.swift` → `ports/swift/` | runs the Rust generator embedded as `AvatarCore.xcframework`, decodes the tree, draws it | `swift test` |
 
-The ports still carry a full generator for `creature.classic`, the
-original creature type, which predates this decision and is byte-gated.
-Newer types, starting with `creature.wild`, are implemented once, in Rust.
+Every creature type, classic included, is implemented once, in Rust.
 
 Four corpus boundaries in `vectors/`, checked in every language by
 `scripts/check.sh` on every push (there is no automatic CI):
@@ -68,8 +66,7 @@ let tree = try renderTreeViaCore(genomeBytes: row.genome, type: row.type,
 for primitive in tree.primitives { /* walk into SwiftUI Path */ }
 ```
 
-`renderTree(genome:type:version:mood:)` builds `creature.classic` natively
-in Swift; every other type goes through `renderTreeViaCore`. Rendering is
+Every type goes through `renderTreeViaCore`. Rendering is
 pure and safe from any thread, and the tree types are `Sendable`.
 
 Two things that have bitten a consumer, both worth reading before you
@@ -130,8 +127,7 @@ type, and why a rendering path is added to rather than edited.
 The same genome, type, version and mood produce the same bytes on every
 platform. No generation path calls the platform maths library; a lint
 refuses it. `creature.classic` uses integer and fixed-point maths with
-trig and easing from committed lookup tables, which also keeps its Swift
-and TypeScript builders identical to Rust. `creature.wild` uses `f64`
+trig and easing from committed lookup tables. `creature.wild` uses `f64`
 limited to the operations IEEE 754 makes exact everywhere, with its own
 trig built from those, and is checked byte-identical across macOS and
 Linux on ARM and Intel, and on Windows x86_64, where every golden tree

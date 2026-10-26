@@ -19,27 +19,9 @@ let package = Package(
             name: "AvatarCore",
             path: "ports/swift/AvatarCore.xcframework"
         ),
-        // Vendored BLAKE3 reference implementation, portable-only build.
-        // The BLAKE3_NO_* defines disable every x86 SIMD path; the upstream
-        // NEON path keys off BLAKE3_USE_NEON (autodetected as 1 on AArch64),
-        // so it must be pinned to 0 explicitly. See Sources/CBlake3/VENDORED.md.
-        .target(
-            name: "CBlake3",
-            path: "ports/swift/Sources/CBlake3",
-            publicHeadersPath: "include",
-            cSettings: [
-                .define("BLAKE3_NO_SSE2"),
-                .define("BLAKE3_NO_SSE41"),
-                .define("BLAKE3_NO_AVX2"),
-                .define("BLAKE3_NO_AVX512"),
-                .define("BLAKE3_NO_NEON"),
-                .define("BLAKE3_USE_NEON", to: "0"),
-            ]
-        ),
         .target(
             name: "AvatarKit",
             dependencies: [
-                "CBlake3",
                 .target(name: "AvatarCore", condition: .when(platforms: [.iOS, .macOS])),
             ],
             path: "ports/swift/Sources/AvatarKit"

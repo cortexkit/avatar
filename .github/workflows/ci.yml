@@ -154,8 +154,8 @@ jobs:
             exit 1
           fi
 
-  # Keep port conformance separate from the canonical Rust gate so a byte drift
-  # identifies the affected implementation directly in the CI job list.
+  # Keep tree decoding and generic SVG serialization conformance separate from
+  # the Rust generator gate so transport drift identifies the affected port.
   ts-port:
     name: TypeScript port (ubuntu)
     runs-on: ubuntu-latest
@@ -179,15 +179,9 @@ jobs:
         working-directory: ports/ts
         run: bun test
 
-  # Swift port conformance. One Linux leg is sufficient even though this
-  # package's consumers are Apple platforms: AvatarKit is pure computation
-  # with no platform APIs, and its BLAKE3 dependency is the portable-only C
-  # reference build (no SIMD), so every byte it produces is identical by
-  # construction on any host. The golden corpus IS the cross-platform
-  # assertion — this leg exercises the same committed vectors the Rust and
-  # TypeScript legs use. If the container route ever hits a runner
-  # limitation, fall back to installing Swift in the job via swiftly or a
-  # toolchain tarball instead.
+  # Linux checks the fail-closed tree decoder and lossless JSON round trips.
+  # Embedded-core and cache tests require the Apple-platform AvatarCore binary
+  # and run through scripts/check.sh on macOS instead.
   #
   # `swift test` runs from the repository root: the manifest lives there (not
   # under ports/swift/) so the package is consumable by git URL.

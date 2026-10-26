@@ -267,8 +267,8 @@ remote_lane() {
 }
 
 swift_lane() {
-  # --parallel runs the test cases in several worker processes. Serially the
-  # suite spends about 30 s in a handful of corpus-wide tests, one after another.
+  # --parallel runs the corpus-wide tree and embedded-core tests in several
+  # worker processes.
   if [[ $(uname -s) != Darwin ]]; then
     # Linux and Windows use the toolchain on PATH. The embedded-core tests
     # need the Apple-platform core binary, so they are compiled only there.

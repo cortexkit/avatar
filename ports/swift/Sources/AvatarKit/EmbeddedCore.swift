@@ -15,20 +15,9 @@ public enum CoreRenderError: Error, Equatable {
     case unknownStatus(Int32)
 }
 
-/// Renders with the bundled Rust core, not the native Swift classic builder.
-/// Each call owns its inputs and result; no shared state or main thread is used.
-public func renderTreeViaCore(
-    genome: Genome,
-    type: String,
-    version: UInt32,
-    mood: Mood
-) throws -> RenderTree {
-    try renderTreeViaCoreBytes(
-        genomeBytes: genome.bytes, type: type, version: version, moodName: mood.rawValue)
-}
-
-/// Renders type-specific genome bytes without imposing the classic Genome size.
+/// Renders every creature type with the bundled Rust core.
 /// The bundled Rust core validates the type, version, and required byte count.
+/// Each call owns its inputs and result; no shared state or main thread is used.
 public func renderTreeViaCore(
     genomeBytes: [UInt8],
     type: String,
