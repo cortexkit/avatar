@@ -76,8 +76,8 @@
 
 **`ports/swift/`:**
 - Purpose: Swift `AvatarKit` framework for iOS and macOS client applications.
-- Contains: `AvatarKit` target, the committed `AvatarCore.xcframework` (the embedded Rust generator) with `AvatarCore.source-hash` recording what it was built from, the fail-closed tree decoder, numeric wire types, host-owned tree cache, and SwiftPM test suite.
-- Key files: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift` (`renderTreeViaCore`, the path for every type), `ports/swift/Sources/AvatarKit/RenderTree.swift`, `ports/swift/Sources/AvatarKit/RenderTreeJSON.swift`, `ports/swift/Sources/AvatarKit/RenderTreeCache.swift`, `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`, `ports/swift/Tests/AvatarKitTests/CorpusFixtures.swift`.
+- Contains: `AvatarKit` target, the committed `AvatarCore.xcframework` (the embedded Rust generator) with `AvatarCore.source-hash` recording what it was built from, the fail-closed tree decoder, numeric wire types, transform composition helpers with only the quarter-wave sine table, host-owned tree cache, and SwiftPM test suite.
+- Key files: `ports/swift/Sources/AvatarKit/EmbeddedCore.swift` (`renderTreeViaCore`, the path for every type), `ports/swift/Sources/AvatarKit/RenderTree.swift`, `ports/swift/Sources/AvatarKit/RenderTreeJSON.swift`, `ports/swift/Sources/AvatarKit/TreeAffine.swift`, `ports/swift/Sources/AvatarKit/RenderTreeCache.swift`, `ports/swift/Tests/AvatarKitTests/EmbeddedCoreTests.swift`, `ports/swift/Tests/AvatarKitTests/CorpusFixtures.swift`.
 
 **`vectors/`:**
 - Purpose: Shared golden vector corpus pinning Rust generation and the tree transport and generic SVG consumed by the ports.
@@ -148,7 +148,7 @@
 1. Add table generation or mathematical definition to `crates/avatar-tables/src/bin/mint.rs`.
 2. Re-mint committed Rust table code via `cargo run -p avatar-tables --bin mint`.
 3. Export table wrappers and helpers in `crates/avatar-tables/src/lib.rs`.
-4. Tables stay Rust-only; do not add TS or Swift copies.
+4. Generator tables stay Rust-only. Swift mirrors only `SIN_QUARTER` for drawing decoded transform operations; `RenderConformanceTests` compares its samples to Rust and pins the canonical bytes on Apple platforms. Do not copy easing, palette, or Voronoi data into the ports.
 
 **New Geometry Feature Pass:**
 1. Geometry belongs to a type: add it in Rust, inside that type's module.

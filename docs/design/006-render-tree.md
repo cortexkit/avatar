@@ -1,6 +1,6 @@
 # Design note 006 — Render tree: geometry-primary API v1 (rev 2)
 
-> Note (2026-10-26): The native Swift classic builder and its table-backed `Transform.affine()` helper were removed; consumers draw the decoded transform operations, while Rust retains its geometry helpers.
+> Note (2026-10-26): The native Swift classic builder was removed; consumers draw decoded trees using the retained `Transform.affine()` helper and its quarter-wave sine table.
 
 Status: rev 2 after CKIOS's corpus-first review. Rev 1 was written from
 the generator's intent and the corpus proved it wrong in four places;
