@@ -143,11 +143,12 @@ version, because an agent's face must not change because we shipped:
 - Changing the **depiction** is a new type, not a version — types are
   different representations of the same genome behind one interface.
 
-Either way: re-mint only the affected vectors (`UPDATE_GOLDEN=1` or
-`UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact
---nocapture --ignored`), review `vectors/contact-sheet.html` by eye, rebuild the
-embedded core, and every port's conformance leg must re-pass before it
-ships. `docs/design/012` has the full procedure.
+Either way: re-mint only the affected vectors by setting `UPDATE_GOLDEN=1`
+(classic) or `UPDATE_WILD_GOLDEN=1` (wild) on
+`cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`,
+review `vectors/contact-sheet.html` by eye, rebuild the embedded core, and
+every port's conformance leg must re-pass before it ships.
+`docs/design/012` has the full procedure.
 
 The manifest's `corpus_revision` is **not** that version. It counts
 re-mints, moves when a vector or a boundary is added, and implies nothing
