@@ -12,6 +12,8 @@ use avatar_svg::wild::{
 };
 use avatar_svg::{Primitive, RenderTree};
 
+mod drawn_probe;
+
 const CELL: f64 = 240.0;
 const PAD: f64 = 12.0;
 
@@ -465,12 +467,11 @@ fn main() {
         let belly = p
             .map(|pl| belly_patch(&outline, 120.0, belly_top_for(pl.eye_y, pl.r), 0.72).len())
             .unwrap_or(0);
-        // Probed because it is DERIVED at draw time rather than produced by
-        // the search: the lab agreed on every placement field and still drew
-        // its mouths 0.8r high, because nothing compared this step's output.
+        // Keep the scaling pivot separate from the rendered mouth
+        // anchor: face::mouth uses a different, unscaled baseline.
         let mouth_y = p.map(|pl| mouth_y_for(pl.eye_y, pl.r));
         println!(
-            "seed={seed} spokes={} exts={} topo={} vor={} pts={} bbox={:.1},{:.1},{:.1},{:.1} face={} mouthy={} belly={}",
+            "seed={seed} spokes={} exts={} topo={} vor={} pts={} bbox={:.1},{:.1},{:.1},{:.1} face={} mouthy={} belly={}{}",
             c.wb.spokes.len(),
             c.exts.len(),
             c.topology,
@@ -489,6 +490,7 @@ fn main() {
                 None => "none".to_owned(),
             },
             belly,
+            drawn_probe::fields(&c),
         );
         return;
     }

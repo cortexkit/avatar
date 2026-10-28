@@ -156,7 +156,9 @@ probe_seed() {
     "$GRID" --probe "$seed" > "$probes/$seed.rust" 2> "$probes/$seed.rust-err"
     echo $? > "$probes/$seed.rust-rc"
   fi
-  "$CHROME" --headless --disable-gpu --user-data-dir="$probes/chrome-$seed" \
+  # Chrome cannot start its nested sandbox inside an agent worker's sandbox.
+  # Only the trusted local lab page is opened with the browser sandbox off.
+  "$CHROME" --headless --no-sandbox --disable-gpu --user-data-dir="$probes/chrome-$seed" \
     --virtual-time-budget=20000 --dump-dom "$LAB?probe=$seed" \
     > "$probes/$seed.dom" 2>/dev/null
 }
@@ -199,26 +201,34 @@ def fields(line):
 a, b = fields(sys.argv[1]), fields(sys.argv[2])
 # Require the stdout contract, not just equal key sets: two blank or truncated
 # probes must never masquerade as agreement.
-KEYS = {"seed", "spokes", "exts", "topo", "vor", "pts", "bbox", "face", "mouthy", "belly"}
-if a.keys() != KEYS or b.keys() != KEYS:
+KEYS = {"seed", "spokes", "exts", "topo", "vor", "pts", "bbox", "face", "mouthy", "belly",
+        "scale", "drawn", "blush", "mouth", "mouthscale", "zzcount", "zz"}
+def drift(key, reason):
+    print(f"  field {key}: {reason}")
     sys.exit(1)
-EXACT = {"seed", "spokes", "exts", "topo", "vor", "pts", "belly"}
+
+if a.keys() != KEYS or b.keys() != KEYS:
+    drift("keys", f"rust missing={sorted(KEYS - a.keys())} js missing={sorted(KEYS - b.keys())} "
+          f"unexpected={sorted((a.keys() | b.keys()) - KEYS)}")
+EXACT = {"seed", "spokes", "exts", "topo", "vor", "pts", "belly", "zzcount"}
 for key in a:
     if key in EXACT:
         if a[key] != b[key]:
-            sys.exit(1)
+            drift(key, f"rust={a[key]} js={b[key]}")
         continue
     av, bv = a[key].split(","), b[key].split(",")
     if len(av) != len(bv):
-        sys.exit(1)
-    for x, y in zip(av, bv):
+        drift(key, f"rust={a[key]} js={b[key]}")
+    # Scale is dimensionless and needs tighter comparison than coordinates.
+    for index, (x, y) in enumerate(zip(av, bv)):
+        tolerance = 0.00001 if key == "scale" else 0.0000011 if key == "mouthscale" and index < 2 else 0.15
         try:
             ax, by = float(x), float(y)
-            if not math.isfinite(ax) or not math.isfinite(by) or abs(ax - by) > 0.15:
-                sys.exit(1)
+            if not math.isfinite(ax) or not math.isfinite(by) or abs(ax - by) > tolerance:
+                drift(key, f"rust={a[key]} js={b[key]}")
         except ValueError:
             if x != y:
-                sys.exit(1)
+                drift(key, f"rust={a[key]} js={b[key]}")
 sys.exit(0)
 PY
   then

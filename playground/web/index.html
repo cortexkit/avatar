@@ -284,14 +284,32 @@ function preparedPoints(spokes, dom) {
   }));
 }
 
+// Tangent roots bound the cubic between samples, as Rust build_raw does.
+function cubicExtremes(p0, c1, c2, p3) {
+  const a = p3 - 3*c2 + 3*c1 - p0, b = 2*(c2 - 2*c1 + p0), c = c1 - p0;
+  const roots = [];
+  if (Math.abs(a) < 1e-12) {
+    if (Math.abs(b) > 1e-12) roots.push(-c / b);
+  } else {
+    const disc = b*b - 4*a*c;
+    if (disc >= 0) roots.push((-b + Math.sqrt(disc))/(2*a), (-b - Math.sqrt(disc))/(2*a));
+  }
+  return [p0, p3, ...roots.filter(t => t > 0 && t < 1).map(t => {
+    const v = 1 - t;
+    return v*v*v*p0 + 3*v*v*t*c1 + 3*v*t*t*c2 + t*t*t*p3;
+  })];
+}
 function sampleOutline(spokes, dom) {
   const pts = preparedPoints(spokes, dom);
   const n = pts.length;
   const out = [];
+  let bx0=Infinity, by0=Infinity, bx1=-Infinity, by1=-Infinity;
   for (let i = 0; i < n; i++) {
     const p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
     const c1 = [p1.x + (p2.x - p0.x) / 6 * p1.t, p1.y + (p2.y - p0.y) / 6 * p1.t];
     const c2 = [p2.x - (p3.x - p1.x) / 6 * p2.t, p2.y - (p3.y - p1.y) / 6 * p2.t];
+    for (const x of cubicExtremes(p1.x, c1[0], c2[0], p2.x)) { bx0=Math.min(bx0,x); bx1=Math.max(bx1,x); }
+    for (const y of cubicExtremes(p1.y, c1[1], c2[1], p2.y)) { by0=Math.min(by0,y); by1=Math.max(by1,y); }
     for (let s = 0; s < 18; s++) {
       const u = s / 18, v = 1 - u;
       out.push([
@@ -306,6 +324,8 @@ function sampleOutline(spokes, dom) {
   const ground = maxY - (maxY - minY) * 0.14;
   const squash = 0.30 + 0.35 * dom;
   for (const p of out) if (p[1] > ground) p[1] = ground + (p[1] - ground) * squash;
+  const exactGround = by1 - (by1 - by0) * 0.14;
+  out.bbox = [bx0, by0, bx1, exactGround + (by1 - exactGround) * squash];
   return out;
 }
 
@@ -524,14 +544,31 @@ function pebblePath(poly, inset) {
 }
 
 // ============ palette ============
-function hsl(h, s, l) { return `hsl(${(((h % 360) + 360) % 360) | 0} ${s}% ${l}%)`; }
+function roundHalfEven(value) {
+  const lo = Math.floor(value);
+  return value - lo === 0.5 ? lo + (lo % 2) : Math.round(value);
+}
+// Rust first formats whole HSL components, then resolves them to RGB bytes.
+// Leaving HSL conversion to CSS skips both rounding steps.
+function hsl(h, s, l, alpha = 1) {
+  h = roundHalfEven(((h % 360) + 360) % 360);
+  s = roundHalfEven(s) / 100;
+  l = roundHalfEven(l) / 100;
+  const chroma = (1 - Math.abs(2*l - 1)) * s, sector = (h % 360) / 60;
+  const second = chroma * (1 - Math.abs((sector % 2) - 1)), offset = l - chroma/2;
+  const rgb = (sector < 1 ? [chroma,second,0] : sector < 2 ? [second,chroma,0]
+    : sector < 3 ? [0,chroma,second] : sector < 4 ? [0,second,chroma]
+    : sector < 5 ? [second,0,chroma] : [chroma,0,second]).map(v => Math.round((v+offset)*255));
+  return alpha === 1 ? "#" + rgb.map(v => v.toString(16).padStart(2,"0")).join("")
+    : `rgba(${rgb.join(",")},${alpha})`;
+}
 function resolveColors(recipe, h) {
   switch (+recipe) {
     // ink = LINE work (flips light on dark bodies); pupil = always dark;
     // sclera = light backing behind pupils on dark bodies only.
     case 0: return { body: hsl(h,66,82), outline: hsl(h,42,38), belly: "rgba(255,255,255,0.45)", part: hsl(h+28,55,62), blush: hsl(h+8,75,72), ink: "#241f26", pupil: "#241f26", sclera: null };
     case 2: return { body: hsl(h,78,64), outline: hsl(h,62,30), belly: "rgba(255,255,255,0.6)", part: hsl(h+40,80,55), blush: hsl(h-12,85,70), ink: "#241f26", pupil: "#241f26", sclera: null };
-    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: `hsl(${(((h+6)%360)+360)%360|0} 45% 42% / 0.55)`, part: hsl(h+24,45,44), blush: `hsl(${(((h+14)%360)+360)%360|0} 60% 55% / 0.4)`, ink: "#f4eee6", pupil: hsl(h,32,12), sclera: "#f6f1e9" };
+    case 3: return { body: hsl(h,38,26), outline: hsl(h,30,14), belly: hsl(h+6,45,42,0.55), part: hsl(h+24,45,44), blush: hsl(h+14,60,55,0.4), ink: "#f4eee6", pupil: hsl(h,32,12), sclera: "#f6f1e9" };
     default: return { body: hsl(h,24,62), outline: hsl(h,26,30), belly: "rgba(250,246,235,0.5)", part: hsl(h-26,30,48), blush: hsl(h+20,35,58), ink: "#2b2622", pupil: "#2b2622", sclera: null };
   }
 }
@@ -613,7 +650,7 @@ function tone(recipe, h, dir) {
   return hsl(h, Math.max(12, base[0] - Math.abs(dl)*0.3), Math.min(94, Math.max(10, base[1] + dl)));
 }
 function mottle(recipe, h) {
-  const a = (hh,s,l,al) => `hsl(${(((hh%360)+360)%360)|0} ${s}% ${l}% / ${al})`;
+  const a = hsl;
   switch (+recipe) {
     case 0: return [a(h,70,90,0.55), a(h+10,55,68,0.35)];
     case 2: return [a(h,82,76,0.5), a(h+14,70,52,0.35)];
@@ -641,14 +678,11 @@ function bboxOf(outline) {
   for (const [x,y] of outline) { a=Math.min(a,x); b=Math.min(b,y); c=Math.max(c,x); d=Math.max(d,y); }
   return [a,b,c,d];
 }
-// Where the mouth is DRAWN, derived from the placement the search returned.
-// Mirrors Rust mouth_y_for. Shared by the renderer and the drift probe so
-// the probe cannot report a mouth the renderer does not draw: this file
-// carried its own literal (1.9) and drifted 0.8r below canonical's 2.706
-// while every placement field still agreed.
+// Rust mouth_y_for is the scaling pivot, not the mouth's unscaled baseline.
+// The face shim draws the baseline at eyeY + 0.15 * height.
 function mouthYFor(eyeY, r) { return eyeY + (r / 0.085) * 0.23; }
-// Belly patch start, shared for the same reason: a derivation duplicated
-// across renderers agrees only until someone edits one copy.
+// Share the belly patch start between rendering and metrics so both measure
+// the same band of the silhouette.
 function bellyTopFor(eyeY, r) { return eyeY + r * 3.4; }
 
 // SDF-verified placement (mirrors Rust place_face): both eye centers must
@@ -733,6 +767,7 @@ function drawEyes(kind, f, accent, ink, pupil, sclera, wonk = 0) {
       for (const [x, r] of eyes) {
         const rw = r*1.1, rh = r*1.25;
         s += `<ellipse cx='${x}' cy='${f.y}' rx='${rw}' ry='${rh}' fill='white' stroke='${accent}' stroke-width='2'/><circle cx='${x}' cy='${f.y+rh*0.08}' r='${r*0.78}' fill='${pupil}'/><circle cx='${x+r*0.28}' cy='${f.y-r*0.2}' r='${r*0.22}' fill='white' opacity='0.9'/>`;
+        s += `<path d='M${x-rw} ${f.y-rh*0.1} A${rw} ${rh} 0 0 1 ${x+rw} ${f.y-rh*0.1} L${x+rw} ${f.y-rh*0.28} A${rw} ${rh*0.9} 0 0 0 ${x-rw} ${f.y-rh*0.28} Z' fill='${accent}' opacity='0.5'/>`;
       }
       break;
     case 2:
@@ -793,7 +828,10 @@ function drawBrow(kind, x, y, r, side, ink) {
   return `<line x1='${x - side*w}' y1='${by+innerDy+lift}' x2='${x + side*w}' y2='${by+outerDy+lift}' stroke='${ink}' stroke-width='3.2' stroke-linecap='round'/>`;
 }
 function drawAdjunct(kind, cx, topY, sc, ink) {
-  if (kind === 1) return `<text x='${cx+68*sc}' y='${topY+16*sc}' font-family='monospace' font-weight='bold' font-size='${22*sc}' fill='${ink}' opacity='0.75'>z</text><text x='${cx+86*sc}' y='${topY-2*sc}' font-family='monospace' font-weight='bold' font-size='${28*sc}' fill='${ink}' opacity='0.55'>Z</text>`;
+  if (kind === 1) {
+    const z = (x, baseline, size, opacity) => `<path d='M${x} ${baseline-size} L${x+size*0.6} ${baseline-size} L${x} ${baseline} L${x+size*0.6} ${baseline}' fill='none' stroke='${ink}' stroke-width='${Math.max(size*0.13,1.2)}' opacity='${opacity}'/>`;
+    return z(cx+68*sc, topY+16*sc, 22*sc, 0.75) + z(cx+86*sc, topY-2*sc, 28*sc, 0.55);
+  }
   if (kind === 2) return `<path d='M${cx+52*sc} ${topY+18*sc} Q${cx+60*sc} ${topY+34*sc} ${cx+52*sc} ${topY+40*sc} Q${cx+44*sc} ${topY+34*sc} ${cx+52*sc} ${topY+18*sc} Z' fill='#7fb8e8' opacity='0.85'/>`;
   return "";
 }
@@ -834,15 +872,11 @@ function creatureSVG(k, moodName, size) {
     const right = extremityOutline(e, ringRAt(e.theta), meanR, false);
     extOutlines.push([i, right], [i, right.map(p => [-p[0], p[1]])]);
   });
-  let bx0=1/0, by0=1/0, bx1=-1/0, by1=-1/0;
-  for (const p of raw) { bx0=Math.min(bx0,p[0]); by0=Math.min(by0,p[1]); bx1=Math.max(bx1,p[0]); by1=Math.max(by1,p[1]); }
+  let [bx0, by0, bx1, by1] = raw.bbox;
   for (const [,pts] of extOutlines) for (const p of pts) { bx0=Math.min(bx0,p[0]); by0=Math.min(by0,p[1]); bx1=Math.max(bx1,p[0]); by1=Math.max(by1,p[1]); }
   const view = size || 420;
-  // EXACTLY canonical's fit: Rust scales into 172x198 of a 240-unit cell,
-  // i.e. 0.71667 and 0.825 of the frame. The lab had 0.72 and 0.8, so every
-  // creature here was a slightly different shape from the one the corpus
-  // will pin — a review instrument showing a near-miss of the real thing.
-  const scale = Math.min((view*(172/240))/(bx1-bx0 || 1), (view*(198/240))/(by1-by0 || 1));
+  // Fit body and limbs together, using the cubic's exact bounds like Rust.
+  const scale = Math.min((view*(172/240))/Math.max(bx1-bx0,1e-6), (view*(198/240))/Math.max(by1-by0,1e-6));
   const cx = view/2, cy = view/2;
   const mx = (bx0+bx1)/2, my2 = (by0+by1)/2;
   const T = p => [cx + (p[0]-mx)*scale, cy + (p[1]-my2)*scale];
@@ -872,7 +906,7 @@ function creatureSVG(k, moodName, size) {
   }
   const d = outline.map((p,i) => (i?'L':'M') + p.map(v=>v.toFixed(1)).join(' ')).join(' ') + ' Z';
   const clip = `lab${uid++}`;
-  s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='1.5'/>`;
+  s += `<defs><clipPath id='${clip}'><path d='${d}'/></clipPath></defs><path data-part='body' d='${d}' fill='${colors.body}' stroke='${colors.outline}' stroke-width='1.5'/>`;
   s += `<g clip-path='url(#${clip})'>`;
 
   const p = placeFace(outline, k.mouthW ?? 1, k.mouthD ?? 1);
@@ -910,11 +944,10 @@ function creatureSVG(k, moodName, size) {
           spokes: k.spokes.length, exts: extOutlines.length / 2,
           topo: +k.topology, vor: k.voronoi ? 1 : 0,
           pts: outline.length, bbox: [minX, minY, maxX, maxY],
+          scale,
           fx: p.fx, eyeY: p.eyeY, ipd: p.ipd, r: p.r,
           mouthFits: p.mouthFits === false ? 0 : 1,
-          // Probed because it is DERIVED at draw time rather than produced
-          // by the search: every placement field agreed while this drew
-          // 0.8r high, because nothing compared this step's output.
+          // Keep the scaling pivot alongside the separately probed drawing.
           mouthY: mouthYFor(p.eyeY, p.r),
           belly: 0, // filled in below, once the patch is built
         },
@@ -926,8 +959,9 @@ function creatureSVG(k, moodName, size) {
     const cellBbox = [minX, minY, maxX, maxY];
     const scaled = k.sites.map(site => ({ x: cx + site.x*(maxX-minX)/2, y: (minY+maxY)/2 + site.y*(maxY-minY)/2, shade: site.shade }));
     for (let it = 0; it < 2; it++) {
+      const polys = scaled.map((_, i) => clipCell(scaled, i, cellBbox));
       scaled.forEach((site, i) => {
-        const poly = clipCell(scaled, i, cellBbox);
+        const poly = polys[i];
         if (poly.length >= 3) { const [ccx, ccy] = centroid(poly); site.x = ccx; site.y = ccy; }
       });
     }
@@ -963,8 +997,8 @@ function creatureSVG(k, moodName, size) {
     // The search-chosen ipd IS the spacing (it may have pulled eyes inward
     // off thin side masses) — never re-derive from halfW.
     const f = eyeFrame(p);
-    s += `<ellipse cx='${f.lx - p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
-    s += `<ellipse cx='${f.rx + p.r*1.28}' cy='${f.y + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
+    s += `<ellipse data-part='blush' cx='${p.fx - p.ipd*1.28}' cy='${p.eyeY + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
+    s += `<ellipse data-part='blush' cx='${p.fx + p.ipd*1.28}' cy='${p.eyeY + p.r*1.3}' rx='${p.r*0.82}' ry='${p.r*0.5}' fill='${colors.blush}' opacity='0.8'/>`;
     let eyesSvg = drawEyes(k.eyes, f, colors.outline, colors.ink, colors.pupil, colors.sclera, k.eyeWonk ?? 0);
     // Eye aspect as min-scaling: both factors <= 1, so an eye can only
     // shrink inside the placed radius the invariants were proved for.
@@ -991,18 +1025,19 @@ function creatureSVG(k, moodName, size) {
       s += drawBrow(brows, x, f.y, f.r, side, colors.ink);
     }
     const mouthKind = spec.mouth === 0 ? k.mouth : spec.mouth === 1 ? 2 : spec.mouth === 2 ? 6 : spec.mouth === 3 ? 4 : 7;
-    const my = mouthYFor(f.y, p.r);
+    const my = f.y + (p.r / 0.085) * 0.15;
     let mouthSvg = p.mouthFits === false
       ? ""
-      : drawMouth(mouthKind, p.fx, my, p.r, colors.outline, colors.ink);
+      : drawMouth(mouthKind, p.fx, my, f.r, colors.outline, colors.ink);
     // Mouth proportion; the placement search already tested fit at exactly
     // these factors, so a wide mouth moved the face rather than overflowing.
     const mw = k.mouthW ?? 1, md = k.mouthD ?? 1;
+    const mouthPivot = mouthYFor(p.eyeY, p.r);
     if (Math.abs(mw - 1) > 0.02 || Math.abs(md - 1) > 0.02)
-      mouthSvg = `<g transform='translate(${p.fx} ${my}) scale(${mw.toFixed(3)} ${md.toFixed(3)}) translate(${-p.fx} ${-my})'>${mouthSvg}</g>`;
-    s += mouthSvg;
+      mouthSvg = `<g transform='translate(${p.fx} ${mouthPivot}) scale(${mw} ${md}) translate(${-p.fx} ${-mouthPivot})'>${mouthSvg}</g>`;
+    s += `<g data-part='mouth'>${mouthSvg}</g>`;
     s += `</g>`;
-    s += drawAdjunct(spec.adj, cx, minY, h/200, colors.ink);
+    s += `<g data-part='adjunct'>${drawAdjunct(spec.adj, cx, minY, h/200, colors.ink)}</g>`;
   } else {
     s += `</g>`;
   }
@@ -1213,8 +1248,35 @@ $("sweep300").addEventListener("click", () => stressSweep(300));
 const params = new URLSearchParams(location.search);
 if (params.has("seed")) $("seed").value = params.get("seed");
 if (params.has("mood") && MOODS.includes(params.get("mood"))) mood = params.get("mood");
-// ?stress=N runs the sweep on load — a shareable "prove it" link, and the
-// path headless screenshots exercise.
+// Read the SVG that was actually drawn, including mouth transforms and the
+// sleepy adjunct. Placement metrics alone cannot detect drawing-only drift.
+function drawnProbe(svg, sleepySvg, scale) {
+  const parse = text => new DOMParser().parseFromString(text, "image/svg+xml");
+  const doc = parse(svg), sleepy = parse(sleepySvg);
+  const nums = text => (text.match(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+  const attrs = (el, names) => names.map(name => Number(el.getAttribute(name)));
+  const fmt = values => values.length ? values.map(v => v.toFixed(3)).join(",") : "none";
+  const body = nums(doc.querySelector("[data-part='body']").getAttribute("d"));
+  const points = [];
+  for (let i = 0; i < body.length; i += 2) points.push([body[i], body[i+1]]);
+  const blush = [...doc.querySelectorAll("[data-part='blush']")].flatMap(el => attrs(el, ["cx", "cy", "rx", "ry"]));
+  const mouth = doc.querySelector("[data-part='mouth'] path, [data-part='mouth'] line, [data-part='mouth'] ellipse");
+  let mouthPoint = [], mouthScale = [];
+  if (mouth) {
+    mouthPoint = mouth.tagName === "path" ? nums(mouth.getAttribute("d")).slice(0, 2)
+      : attrs(mouth, mouth.tagName === "line" ? ["x1", "y1"] : ["cx", "cy"]);
+    const transform = mouth.parentElement.getAttribute("transform");
+    const t = transform ? nums(transform) : null;
+    mouthScale = t ? [t[2], t[3], t[0], t[1]] : [1, 1, 0, 0];
+  }
+  const zz = [...sleepy.querySelectorAll("[data-part='adjunct'] path")];
+  const zzGeometry = zz.flatMap(el => [...nums(el.getAttribute("d")), ...attrs(el, ["stroke-width", "opacity"])]);
+  const mouthScaleText = mouthScale.length ? mouthScale.map((v, i) => v.toFixed(i < 2 ? 6 : 3)).join(",") : "none";
+  return ` scale=${scale.toFixed(6)} drawn=${fmt(bboxOf(points))}`
+    + ` blush=${fmt(blush)} mouth=${fmt(mouthPoint)} mouthscale=${mouthScaleText}`
+    + ` zzcount=${zz.length} zz=${fmt(zzGeometry)}`;
+}
+
 // ?probe=SEED emits the same canonical geometry line the Rust --probe
 // prints, so scripts/drift-check.sh can diff the two renderers instead of
 // assuming they agree. Written into the DOM for --dump-dom to read.
@@ -1222,8 +1284,10 @@ if (params.has("probe")) {
   const seed = seedFromText(params.get("probe"));
   // Render at the canonical 240-unit cell so the numbers are comparable
   // with Rust --probe, which works in that cell.
-  creatureSVG(paramsFromSeed(seed), "neutral", 240);
+  const k = paramsFromSeed(seed);
+  const svg = creatureSVG(k, "neutral", 240);
   const m = lastMetrics;
+  const sleepySvg = creatureSVG(k, "sleepy", 240);
   const f1 = v => v.toFixed(1);
   let line;
   if (!m || !m.placed) {
@@ -1235,11 +1299,14 @@ if (params.has("probe")) {
       + ` bbox=${q.bbox.map(f1).join(",")}`
       + ` face=${f1(q.fx)},${f1(q.eyeY)},${f1(q.ipd)},${f1(q.r)},${q.mouthFits}`
       + ` mouthy=${f1(q.mouthY)}`
-      + ` belly=${q.belly}`;
+      + ` belly=${q.belly}`
+      + drawnProbe(svg, sleepySvg, q.scale);
   }
   document.body.innerHTML = `<pre id="probe">${line}</pre>`;
   throw new Error("probe-done"); // stop the normal render path
 }
+// ?stress=N runs the sweep on load — a shareable "prove it" link, and the
+// path headless screenshots exercise.
 if (params.has("stress")) {
   const n = Math.max(1, Math.min(2000, parseInt(params.get("stress"), 10) || 50));
   setTimeout(() => stressSweep(n), 0);
