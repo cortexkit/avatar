@@ -1,5 +1,6 @@
 /target/
-/.cortexkit/
+/.cortexkit/*
+!/.cortexkit/WORKER.md
 /.build/
 target/
 __pycache__/
