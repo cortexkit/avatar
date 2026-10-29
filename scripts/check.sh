@@ -286,15 +286,13 @@ bounded() {
 linux_gates() {
   # Runs this script with --linux on the build server. Its output, including
   # every remote stage's log and the Rust lab probes, is kept so the lab
-  # stage can read the probes. --allow-spill lets the job move to hosted
-  # capacity, where ck-motor has it configured, when the build server is
-  # full, instead of queueing there. Exit
+  # stage can read the probes. Exit
   # 200 means the job was refused before starting; nothing ran, so retrying
   # is safe. Any other non-zero exit fails the stage, including ck's own
   # codes for a lost or timed-out job and the 124 of an overrun limit.
   local attempt rc
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    bounded ck motor run --vcpus 4 --allow-spill --timeout 1800 -- bash scripts/check.sh --linux | tee "$log_dir/linux.out"
+    bounded ck motor run --vcpus 4 --timeout 1800 -- bash scripts/check.sh --linux | tee "$log_dir/linux.out"
     rc=$?
     [[ $rc -eq 200 ]] || return "$rc"
     echo "build server refused the job before starting it (attempt $attempt of 12); retrying in 15 s"
