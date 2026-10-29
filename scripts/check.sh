@@ -256,16 +256,45 @@ ts_stages() {
   fi
 }
 
+# How long the build-server job may take, queue included. A job can wait in
+# the build server's queue before its command starts, and ck's --timeout
+# bounds the command, not that wait: one push sat queued for 30 minutes with
+# no output until something else ended it. The job itself takes under a
+# minute.
+GATE_JOB_LIMIT=${GATE_JOB_LIMIT:-600}
+
+bounded() {
+  # Runs a command, ending it once it has run for GATE_JOB_LIMIT seconds.
+  # ck cancels its remote job when it is sent SIGTERM.
+  "$@" &
+  local pid=$! waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ $waited -ge $GATE_JOB_LIMIT ]]; then
+      echo "the build-server job did not finish within ${GATE_JOB_LIMIT} s, queue included;" \
+        "cancelling it. 'ck motor attach JOB_ID --status' shows why it waited;" \
+        "AVATAR_GATE_LOCAL=1 runs the gate on this machine instead." >&2
+      kill -TERM "$pid" 2>/dev/null
+      wait "$pid"
+      return 124
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  wait "$pid"
+}
+
 linux_gates() {
   # Runs this script with --linux on the build server. Its output, including
   # every remote stage's log and the Rust lab probes, is kept so the lab
-  # stage can read the probes. Exit 200 means the server refused the job
-  # before starting it (for example when it is full); nothing ran, so
-  # retrying is safe. Any other non-zero exit fails the stage, including
-  # ck's own codes for a lost or timed-out job.
+  # stage can read the probes. --allow-spill lets the job move to hosted
+  # capacity, where ck-motor has it configured, when the build server is
+  # full, instead of queueing there. Exit
+  # 200 means the job was refused before starting; nothing ran, so retrying
+  # is safe. Any other non-zero exit fails the stage, including ck's own
+  # codes for a lost or timed-out job and the 124 of an overrun limit.
   local attempt rc
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    ck motor run --vcpus 4 --timeout 1800 -- bash scripts/check.sh --linux | tee "$log_dir/linux.out"
+    bounded ck motor run --vcpus 4 --allow-spill --timeout 1800 -- bash scripts/check.sh --linux | tee "$log_dir/linux.out"
     rc=$?
     [[ $rc -eq 200 ]] || return "$rc"
     echo "build server refused the job before starting it (attempt $attempt of 12); retrying in 15 s"
