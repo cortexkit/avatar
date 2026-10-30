@@ -256,23 +256,24 @@ ts_stages() {
   fi
 }
 
-# How long the build-server job may take, queue included. A job can wait in
-# the build server's queue before its command starts, and ck's --timeout
-# bounds the command, not that wait: one push sat queued for 30 minutes with
-# no output until something else ended it. The job itself takes under a
-# minute.
+# How long the build-server half may take, counting queueing, refusals and
+# retries together. A job can wait in the build server's queue before its
+# command starts, and ck's --timeout bounds the command, not that wait: one
+# push sat queued for 30 minutes with no output until something else ended
+# it. The server can also refuse a job (exit 200) after it has queued, so a
+# limit per attempt would let twelve retries hold a push for hours. The job
+# itself takes under a minute.
 GATE_JOB_LIMIT=${GATE_JOB_LIMIT:-600}
 
 bounded() {
-  # Runs a command, ending it once it has run for GATE_JOB_LIMIT seconds.
+  # bounded SECONDS COMMAND...: runs COMMAND, ending it after SECONDS.
   # ck cancels its remote job when it is sent SIGTERM.
+  local limit=$1
+  shift
   "$@" &
   local pid=$! waited=0
   while kill -0 "$pid" 2>/dev/null; do
-    if [[ $waited -ge $GATE_JOB_LIMIT ]]; then
-      echo "the build-server job did not finish within ${GATE_JOB_LIMIT} s, queue included;" \
-        "cancelling it. 'ck motor attach JOB_ID --status' shows why it waited;" \
-        "AVATAR_GATE_LOCAL=1 runs the gate on this machine instead." >&2
+    if [[ $waited -ge $limit ]]; then
       kill -TERM "$pid" 2>/dev/null
       wait "$pid"
       return 124
@@ -286,14 +287,25 @@ bounded() {
 linux_gates() {
   # Runs this script with --linux on the build server. Its output, including
   # every remote stage's log and the Rust lab probes, is kept so the lab
-  # stage can read the probes. Exit
-  # 200 means the job was refused before starting; nothing ran, so retrying
-  # is safe. Any other non-zero exit fails the stage, including ck's own
-  # codes for a lost or timed-out job and the 124 of an overrun limit.
-  local attempt rc
+  # stage can read the probes. Exit 200 means the job was refused before
+  # starting; nothing ran, so retrying is safe, within what is left of
+  # GATE_JOB_LIMIT. Any other non-zero exit fails the stage, including ck's
+  # own codes for a lost or timed-out job and the 124 of the spent limit.
+  local attempt rc left deadline=$((SECONDS + GATE_JOB_LIMIT))
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    bounded ck motor run --vcpus 4 --timeout 1800 -- bash scripts/check.sh --linux | tee "$log_dir/linux.out"
-    rc=$?
+    left=$((deadline - SECONDS))
+    rc=124
+    if [[ $left -gt 0 ]]; then
+      bounded "$left" ck motor run --vcpus 4 --timeout 1800 -- bash scripts/check.sh --linux | tee "$log_dir/linux.out"
+      rc=$?
+    fi
+    if [[ $rc -eq 124 ]]; then
+      echo "the build-server job did not finish within ${GATE_JOB_LIMIT} s, queueing and" \
+        "$((attempt - 1)) refused attempts included; it was cancelled. 'ck motor attach" \
+        "JOB_ID --status' shows why it waited; AVATAR_GATE_LOCAL=1 runs the gate on" \
+        "this machine instead." >&2
+      return 124
+    fi
     [[ $rc -eq 200 ]] || return "$rc"
     echo "build server refused the job before starting it (attempt $attempt of 12); retrying in 15 s"
     sleep 15
