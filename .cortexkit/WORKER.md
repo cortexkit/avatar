@@ -1,23 +1,27 @@
 # Working in avatar
 
-Standing rules for every worker in this repository. A brief can tighten them but never loosens them.
+Standing rules for every worker in this repository. A brief can tighten them but never loosens them. "The head" is the agent that launched you, reviews your delivery and merges it.
 
 ## Build and test remotely
 
-- Run cargo builds and tests on the build server (`runon: "linux"`, `linux,8c` or more for the whole workspace). Every gate's Rust stage runs on Linux; only the iPhone engine binary (`scripts/build-xcframework.sh`) needs Xcode, and the head builds that.
+- Run cargo builds and tests on the build server (`runon: "linux"`, or `linux,4c` for clippy on a crate). Only the iPhone engine binary (`scripts/build-xcframework.sh`) needs Xcode, and the head builds that.
+- Keep the normal build directory. Never set your own `CARGO_TARGET_DIR`: a fresh one makes every run a cold build.
 - In a fresh worktree, install the TypeScript dependencies with `bun install --frozen-lockfile` (in `ports/ts`) before running anything that touches the TypeScript port.
 
-## Gate before you deliver
+## Test what you changed, nothing more
 
-Filtered tests alone are never a gate. Before delivering, run the build-server half of the repository gate on Linux:
+Run only the checks for what you changed:
+- the tests for the files and behaviour you changed, by name or filter (`cargo test -p <crate> <filter>`, `bun test <file>`);
+- formatting and lint for what you touched (`cargo fmt --check`, `cargo clippy -p <crate> --all-targets -- -D warnings`, and `bunx tsc --noEmit` if you touched `ports/ts`);
+- for a bug fix, one test shown once to fail without the fix.
 
-```
-./scripts/check.sh --linux
-```
+Never run the repository gate (`./scripts/check.sh`, with or without `--linux`), a whole crate's or package's test suite, or the workspace tests. The head runs the full gate once per landing, over the merged deliveries.
 
-It runs every cargo stage (fmt, clippy in dev and release, the workspace tests and doc tests, the corpus coverage check, the playground's fmt, clippy, tests and placement invariants) and the checks beside them. If you touched `ports/ts`, also run its typecheck and tests there (`bunx tsc --noEmit`, `bun test`), as the gate does. The rest of the gate (the browser lab comparison, the embedded core binary's freshness and, where Swift is installed, the Swift suite) runs on the head's machine before merge; say in your report if your change touches what they check.
+If a test you didn't touch fails, rerun that one test by name on your base commit, never a suite. A filtered run that takes more than about 15 minutes means the filter is too broad: narrow it instead of waiting on it.
 
-Put each command, its pass and fail counts, and every failing test name in your report. If a failure isn't yours, show it fails the same way on your base commit.
+In `playground/experiments/`, no cargo test covers your change. Check your pages with the kit tools instead (`kit/measure.sh`, `kit/shot.sh`).
+
+Put each command, its pass and fail counts, and every failing test name in your report. Say if your change touches what the head's own checks cover: the browser lab comparison, the embedded core binary's freshness, or the Swift suite.
 
 ## Pre-approved, so don't ask
 
