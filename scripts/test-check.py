@@ -2,7 +2,7 @@
 """Exercise the real gate scheduler with stub leaf tools, not compilers/browsers.
 
 Run with python3 scripts/test-check.py. Each run uses a disposable git tree so
-status comparisons, mint fingerprints, command dispatch and log collection are
+status comparisons, command dispatch and log collection are
 real, while a deliberate compiler failure costs milliseconds rather than minutes.
 """
 
@@ -20,7 +20,7 @@ import unittest
 
 GATE = Path(__file__).with_name("check.sh")
 STAGES = [
-    "mint tables", "mint is reproducible", "core binary current",
+    "mint is current", "core binary current",
     "fmt", "clippy", "clippy release", "test", "doc tests",
     "corpus coverage", "playground fmt", "playground clippy", "playground tests",
     "wild invariants", "renderer consts", "no ignored internal files tracked",
@@ -30,7 +30,7 @@ STAGES = [
 # Record the expected command for each stage so losing a flag or a check
 # cannot pass just because the scheduler still prints the right headings.
 COMMANDS = [
-    ("mint tables", ".", "cargo", "run --locked -p avatar-tables --bin mint"),
+    ("mint is current", ".", "cargo", "run --locked -p avatar-tables --bin mint -- --check"),
     ("core binary current", ".", "source-hash", ""),
     ("fmt", ".", "cargo", "fmt --all -- --check"),
     ("clippy", ".", "cargo", "clippy --workspace --all-targets --locked -- -D warnings"),
@@ -73,7 +73,7 @@ def event(phase):
     finally:
         os.close(fd)
 event("start")
-if stage == "mint tables":
+if stage == "mint is current":
     (scratch / "mint.done").touch()
 elif stage == "core binary current":
     assert (scratch / "mint.done").exists()
@@ -227,8 +227,8 @@ class GateTests(unittest.TestCase):
     def test_stray_file_from_last_lane_trips_guard(self):
         self.gate(write="swift conformance")
 
-    def test_mint_change_trips_both_guards_and_other_stages_still_run(self):
-        self.gate(failures=("mint is reproducible",), write="mint tables")
+    def test_stale_tables_fail_and_other_stages_still_run(self):
+        self.gate(failures=("mint is current",))
 
     def test_stale_core_does_not_skip_lanes(self):
         self.gate(failures=("core binary current",))

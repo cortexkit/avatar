@@ -62,12 +62,12 @@ CARGO_STAGES=(
 # run one after another before the parallel lanes start.
 case $WHERE in
   linux)
-    STAGES=("mint tables" "mint is reproducible" "${CARGO_STAGES[@]}" "lab probes")
-    PREAMBLE=2 ;;
+    STAGES=("mint is current" "${CARGO_STAGES[@]}" "lab probes")
+    PREAMBLE=1 ;;
   local)
-    STAGES=("mint tables" "mint is reproducible" "core binary current"
+    STAGES=("mint is current" "core binary current"
       "${CARGO_STAGES[@]}" "lab matches canonical")
-    PREAMBLE=3 ;;
+    PREAMBLE=2 ;;
   remote)
     STAGES=("core binary current" "linux gates" "lab matches canonical")
     PREAMBLE=1 ;;
@@ -143,20 +143,12 @@ tree_fingerprint() {
 }
 tree_before=$(tree_fingerprint) || exit 1
 
-# CI can use `git diff --exit-code` here because it mints on a clean
-# checkout. Locally the tree is usually dirty, so that check would report
-# every uncommitted edit as mint drift. Hash the tree around the mint
-# instead: the property is "minting changed nothing", not "the tree is
-# clean".
+# The committed tables must be exactly what the mint produces. --check
+# compares them without writing, because build-server jobs cannot change
+# tracked files.
 if [[ $WHERE != remote ]]; then
-  mint_fingerprint() { { git status --porcelain; git diff; } | shasum -a 256; }
-  mint_before=$(mint_fingerprint)
-  run "mint tables"     cargo run --locked -p avatar-tables --bin mint
-  run "mint is reproducible" bash -c \
-    "[[ \"\$( { git status --porcelain; git diff; } | shasum -a 256 )\" == \"$mint_before\" ]]"
+  run "mint is current" cargo run --locked -p avatar-tables --bin mint -- --check
 fi
-# Mint is the only stage that writes source. Finish it before any compiler
-# or source-hash reader starts, so all three lanes see the same inputs.
 # The committed AvatarCore binary is what phones run. Every other test
 # builds from source, so a forgotten rebuild passes them all; this compares
 # the source the binary was built from against the source here.

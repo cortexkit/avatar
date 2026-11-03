@@ -6,6 +6,7 @@ Standing rules for every worker in this repository. A brief can tighten them but
 
 - Run cargo builds and tests on the build server (`runon: "linux"`, or `linux,4c` for clippy on a crate). Only the iPhone engine binary (`scripts/build-xcframework.sh`) needs Xcode, and the head builds that.
 - Keep the normal build directory. Never set your own `CARGO_TARGET_DIR`: a fresh one makes every run a cold build.
+- Build-server jobs cannot change tracked files. Run anything that rewrites them, such as the mint commands below, in your worktree, not on the build server.
 - In a fresh worktree, install the TypeScript dependencies with `bun install --frozen-lockfile` (in `ports/ts`) before running anything that touches the TypeScript port.
 
 ## Test what you changed, nothing more

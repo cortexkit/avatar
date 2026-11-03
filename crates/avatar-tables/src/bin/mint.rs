@@ -18,8 +18,33 @@ const Q32_ONE: u64 = 1 << 32;
 
 fn main() {
     let output = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/generated/tables.rs");
-    fs::write(&output, mint_source()).expect("write generated table source");
-    println!("wrote {}", output.display());
+    let source = mint_source();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.as_slice() {
+        [] => {
+            fs::write(&output, source).expect("write generated table source");
+            println!("wrote {}", output.display());
+        }
+        // The repository gate checks without writing: its build-server jobs
+        // cannot change tracked files, and a check should leave the tree it
+        // inspects untouched.
+        [flag] if flag == "--check" => {
+            let committed = fs::read_to_string(&output).expect("read generated table source");
+            if committed != source {
+                eprintln!(
+                    "{} differs from what the mint produces; regenerate it with \
+                     `cargo run -p avatar-tables --bin mint` and commit the result",
+                    output.display()
+                );
+                std::process::exit(1);
+            }
+            println!("{} matches the mint", output.display());
+        }
+        _ => {
+            eprintln!("usage: mint [--check]");
+            std::process::exit(2);
+        }
+    }
 }
 
 // Offline table minting pins the platform formula's results as committed data;
