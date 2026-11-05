@@ -27,7 +27,19 @@ done
 
 mkdir -p "$root/target"
 scratch=$(mktemp -d "$root/target/xcframework.XXXXXX")
-trap 'rm -rf "$scratch"' EXIT
+# macOS /bin/bash 3.2 exits with status 0 through an EXIT trap when
+# `set -eu` aborts on an unbound variable, so a build that stopped halfway
+# would report success. Any exit before `finished=1` is a failure.
+finished=0
+cleanup() {
+    local status=$?
+    rm -rf "$scratch"
+    if [[ $status -eq 0 && $finished -ne 1 ]]; then
+        status=1
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
 # Keep unwinding enabled so the C boundary can turn panics into statuses.
 export CARGO_PROFILE_RELEASE_LTO=fat
 export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
@@ -73,3 +85,4 @@ mv "$scratch/AvatarCore.xcframework" "$output"
 "$root/scripts/xcframework-source-hash.sh" > "$root/ports/swift/AvatarCore.source-hash"
 echo "Built static-library xcframework: $output"
 du -sh "$output"
+finished=1
