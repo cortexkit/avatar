@@ -16,7 +16,9 @@ uname -sm
 rustc --version --verbose
 [[ $(rustc --version) == 'rustc 1.99.'* ]] || { echo "Use Rust 1.99 for the reference mint"; exit 1; }
 docker version
-unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER
+# The mint links against debug/deps inside CARGO_TARGET_DIR. A Cargo build-dir
+# setting moves deps elsewhere, so clear it to keep that layout.
+unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_BUILD_DIR
 export CARGO_INCREMENTAL=0
 # One build directory shared by every run: cargo rebuilds what changed. A
 # directory per run left a full debug build behind on every run.
