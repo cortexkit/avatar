@@ -4,8 +4,8 @@
 //! 001): it consumes the typed phenotype and render-time inputs, never DNA.
 //! Classic geometry is integer-only — i64 milliunits on a 1_000_000 canonical
 //! canvas, Q32.32 factors, and `avatar_tables::div_round_half_away` as the
-//! single pinned narrowing primitive — so every port produces byte-identical
-//! output. Wild geometry uses floating-point arithmetic with shared polynomial
+//! single pinned narrowing primitive — so its output is byte-identical on every
+//! platform. Wild geometry uses floating-point arithmetic with shared polynomial
 //! maths instead of platform maths-library calls.
 //!
 //! The body and face passes assemble the flat render contract from design note

@@ -178,28 +178,15 @@ rust_lane() {
 }
 
 web_lane() {
-  # The playground is its own workspace, so the gates above never reached it.
-  # That mattered once it stopped being a sketch: it is the source the second
-  # creature type will be ported from, and its placement invariants (eyes
-  # inside the body, eyes clear of each other, mouth inside the body) were
-  # only ever proved by hand. A proof nobody runs is a proof nobody has.
+  # The playground is its own workspace, so the gates above never reach it.
+  # It draws through the shipped wild generator, and its placement invariants
+  # (eyes inside the body, eyes clear of each other, mouth inside the body)
+  # are checked over 300 seeds here. A proof nobody runs is a proof nobody
+  # has.
   run "playground fmt"    bash -c 'cd playground && cargo fmt --all -- --check'
   run "playground clippy" bash -c 'cd playground && cargo clippy --all-targets --locked -- -D warnings'
   run "playground tests"  bash -c 'cd playground && cargo test --locked'
   run "wild invariants"   bash -c 'cd playground && cargo run --locked -q --bin grid -- --check 300'
-  # NOT gated here, deliberately, and the reason is worth more than the
-  # step would be. `--bin grid -- --coverage` is a REPORT: it prints how
-  # often each divergence-prone branch is reached and solves a minimal
-  # covering set. It has no failure condition, so wiring it in would add
-  # runtime and produce a green tick that means nothing.
-  #
-  # It cannot honestly become pass/fail either. It currently shows the
-  # placement eyes-only fallback at 0 of 4000 seeds, and that branch SHOULD
-  # be unreachable: it is the guarantee that a creature always has a face,
-  # for bodies the population does not contain but the genome space allows.
-  # A gate on "no unreached branches" would demand deleting a safety net or
-  # faking its coverage. Run it by hand when choosing corpus vectors or
-  # after changing the decoder.
   # The constant scan needs no browser, so keep it separate from the lab's
   # runtime comparison to ensure it also runs on browserless machines.
   run "renderer consts"   python3 scripts/const-drift.py

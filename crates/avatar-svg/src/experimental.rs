@@ -3,10 +3,11 @@
 //! `ExperimentalOptions::asymmetry_strength` asks how much right-side control
 //! point drift keeps a creature recognizable, while `ExperimentalOptions::layers`
 //! asks whether small, offset harmonic body echoes add useful depth. This module
-//! is not covered by golden vectors, has no cross-language port, and makes no
-//! compatibility promise. Graduating either preview into the stable pipeline
-//! requires activating its genome region, minting a generator version,
-//! implementing cross-language ports, and extending the conformance corpus.
+//! is not covered by the golden corpus (`vectors/`, pinned by `avatar-vectors`)
+//! and makes no compatibility promise.
+//! Graduating either preview into the stable pipeline requires activating its
+//! genome region, shipping it as a new type or version through dispatch, and
+//! extending the conformance corpus.
 //!
 //! The stable SVG serializer deliberately reproduces the established body
 //! emission structure rather than projecting arbitrary render trees. The
