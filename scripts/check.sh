@@ -149,13 +149,10 @@ tree_before=$(tree_fingerprint) || exit 1
 if [[ $WHERE != remote ]]; then
   run "mint is current" cargo run --locked -p avatar-tables --bin mint -- --check
 fi
-# The committed AvatarCore binary is what phones run. Every other test
-# builds from source, so a forgotten rebuild passes them all; this compares
-# the source the binary was built from against the source here.
+# Host tests do not exercise the embedded iPhone slices. Verify all shipped
+# slices against their build hashes and require the source stamp to match.
 if [[ $WHERE != linux ]]; then
-  run "core binary current" bash -c \
-    '[ "$(cat ports/swift/AvatarCore.source-hash 2>/dev/null)" = "$(./scripts/xcframework-source-hash.sh)" ] \
-     || { echo "  AvatarCore.xcframework is stale: rebuild with scripts/build-xcframework.sh"; exit 1; }'
+  run "core binary current" bash scripts/check-xcframework.sh
 fi
 
 rust_lane() {

@@ -4,7 +4,7 @@
 //! one avatar vocabulary. This module projects the render contract directly so
 //! preview tools can use the same geometry without inheriting that layout.
 
-use avatar_phenotype::Q32;
+use avatar_phenotype::{Rgb, Q32};
 
 use crate::tree::{
     Effect, FillRule, Paint, Primitive, RenderTree, Segment, Shape, StrokeCap, StrokeJoin,
@@ -123,12 +123,12 @@ fn serialize_primitive(
         ));
     }
 
-    let mut element = shape_element(&primitive.shape, &attributes);
+    let mut element = shape_element(&primitive.shape, &attributes, false);
     if let Some(clip) = &primitive.clip {
         let clip_id = format!("clip-{key}");
         defs.push_str(&format!(
             "<clipPath id=\"{clip_id}\" clipPathUnits=\"userSpaceOnUse\">{}</clipPath>\n",
-            shape_element(clip, "")
+            shape_element(clip, "", true)
         ));
         element = format!("<g clip-path=\"url(#{clip_id})\">{element}</g>");
     }
@@ -187,13 +187,13 @@ fn wrap_effects(
     content
 }
 
-/// A one-shape opaque solid mask is geometric clipping, not luminance work.
+/// Only an opaque white shape preserves full luminance inside the mask.
 /// Emitting a clip path avoids allocating a full off-screen mask surface.
 fn is_clip_mask(mask: &[Primitive]) -> bool {
     matches!(
         mask,
         [primitive]
-            if matches!(primitive.paint, Paint::Solid { .. })
+            if matches!(primitive.paint, Paint::Solid { color: Rgb { r: 255, g: 255, b: 255 } })
                 && primitive.opacity.is_none()
                 && primitive.stroke.is_none()
                 && primitive.clip.is_none()
@@ -207,7 +207,7 @@ fn clip_shape(primitive: &Primitive) -> String {
         .as_ref()
         .map(|transform| format!("transform=\"{}\"", transform_value(&transform.ops)))
         .unwrap_or_default();
-    shape_element(&primitive.shape, &attributes)
+    shape_element(&primitive.shape, &attributes, true)
 }
 
 fn paint_value(paint: &Paint, gradient_id: &str, defs: &mut String) -> String {
@@ -229,7 +229,7 @@ fn paint_value(paint: &Paint, gradient_id: &str, defs: &mut String) -> String {
     }
 }
 
-fn shape_element(shape: &Shape, attributes: &str) -> String {
+fn shape_element(shape: &Shape, attributes: &str, in_clip: bool) -> String {
     let suffix = if attributes.is_empty() {
         String::new()
     } else {
@@ -241,12 +241,13 @@ fn shape_element(shape: &Shape, attributes: &str) -> String {
             closed,
             fill_rule,
         } => {
-            let fill_rule = match fill_rule {
-                FillRule::NonZero => "nonzero",
-                FillRule::EvenOdd => "evenodd",
+            let rule = match fill_rule {
+                FillRule::NonZero => "fill-rule=\"nonzero\"",
+                FillRule::EvenOdd if in_clip => "clip-rule=\"evenodd\"",
+                FillRule::EvenOdd => "fill-rule=\"evenodd\"",
             };
             format!(
-                "<path d=\"{}\" fill-rule=\"{fill_rule}\"{suffix}/>",
+                "<path d=\"{}\" {rule}{suffix}/>",
                 path_data(segments, *closed)
             )
         }
@@ -418,6 +419,76 @@ mod tests {
             label: label.to_owned(),
             role: None,
         }
+    }
+
+    #[test]
+    fn generic_svg_preserves_even_odd_inside_both_clip_definitions() {
+        let path = Shape::Path {
+            segments: vec![Segment::MoveTo { x: 0, y: 0 }],
+            closed: true,
+            fill_rule: FillRule::EvenOdd,
+        };
+        let white = Paint::Solid {
+            color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+        };
+        let mut painted = primitive(path.clone(), white.clone(), "");
+        painted.clip = Some(path.clone());
+        painted.effects.push(Effect::Masked {
+            mask: vec![primitive(path, white, "")],
+        });
+        let svg = String::from_utf8(serialize_tree(&RenderTree {
+            canvas: 10,
+            background: None,
+            primitives: vec![painted],
+        }))
+        .unwrap();
+        assert_eq!(svg.matches("clip-rule=\"evenodd\"").count(), 2);
+        assert_eq!(svg.matches("fill-rule=\"evenodd\"").count(), 1);
+    }
+
+    fn assert_luminance_mask(value: u8, fill: &str) {
+        let shape = Shape::Rect {
+            x: 0,
+            y: 0,
+            w: 1000,
+            h: 1000,
+        };
+        let mut painted = primitive(shape.clone(), Paint::None, "");
+        painted.effects.push(Effect::Masked {
+            mask: vec![primitive(
+                shape,
+                Paint::Solid {
+                    color: Rgb {
+                        r: value,
+                        g: value,
+                        b: value,
+                    },
+                },
+                "",
+            )],
+        });
+        let svg = String::from_utf8(serialize_tree(&RenderTree {
+            canvas: 10,
+            background: None,
+            primitives: vec![painted],
+        }))
+        .unwrap();
+        assert!(svg.contains(&format!("mask-type=\"luminance\" maskContentUnits=\"userSpaceOnUse\"><rect x=\"0\" y=\"0\" width=\"10\" height=\"10\" fill=\"{fill}\"")), "{svg}");
+        assert!(!svg.contains("<clipPath"));
+    }
+
+    #[test]
+    fn generic_svg_keeps_black_solid_mask_as_luminance() {
+        assert_luminance_mask(0, "#000000");
+    }
+
+    #[test]
+    fn generic_svg_keeps_gray_solid_mask_as_luminance() {
+        assert_luminance_mask(239, "#efefef");
     }
 
     #[test]

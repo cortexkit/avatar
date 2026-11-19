@@ -1,5 +1,5 @@
 use avatar_svg::wild::{draw_full, shape as wild, Creature};
-use avatar_svg::{Mood, Segment, Shape, TransformOp};
+use avatar_svg::{Mood, Segment, Shape};
 
 fn numbers(values: impl IntoIterator<Item = f64>) -> String {
     values
@@ -68,26 +68,20 @@ pub fn fields(c: &Creature) -> String {
     let (mouth_point, mouth_scale) = mouth.map_or_else(
         || ("none".to_owned(), "none".to_owned()),
         |p| {
-            let mut values = [1.0, 1.0, 0.0, 0.0];
-            if let Some(transform) = &p.transform {
-                for op in &transform.ops {
-                    if let TransformOp::Scale { sx, sy } = op {
-                        values[0] = sx.0 as f64 / (1_u64 << 32) as f64;
-                        values[1] = sy.0 as f64 / (1_u64 << 32) as f64;
-                    }
-                }
-                if let Some(TransformOp::Translate { tx, ty }) = transform.ops.first() {
-                    values[2] = *tx as f64 / 100.0;
-                    values[3] = *ty as f64 / 100.0;
-                }
-            }
-            (
-                numbers(point(&p.shape)),
-                format!(
-                    "{:.6},{:.6},{:.3},{:.3}",
-                    values[0], values[1], values[2], values[3]
-                ),
-            )
+            let [x, y] = point(&p.shape);
+            let Some(transform) = &p.transform else {
+                return (numbers([x, y]), "1.000000,1.000000".to_owned());
+            };
+            let matrix = transform.affine();
+            let [a, b, c, d] = [matrix.a, matrix.b, matrix.c, matrix.d]
+                .map(|value| value.0 as f64 / (1_u64 << 32) as f64);
+            let anchor = [
+                a * x + c * y + matrix.tx as f64 / 100.0,
+                b * x + d * y + matrix.ty as f64 / 100.0,
+            ];
+            let sx = (a * a + b * b).sqrt();
+            let sy = (c * c + d * d).sqrt();
+            (numbers(anchor), format!("{sx:.6},{sy:.6}"))
         },
     );
     let sleepy = draw_full(c, Mood::Sleepy, 120.0, 120.0);

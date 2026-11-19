@@ -34,7 +34,7 @@ public struct Rgb: Equatable, Sendable {
     }
 }
 
-/// An error returned when render-tree JSON violates the integer wire grammar.
+/// An error returned for malformed render-tree JSON or unrepresentable transforms.
 public struct ParseError: Error, Equatable, CustomStringConvertible {
     public let message: String
 
@@ -221,17 +221,20 @@ struct JsonParser {
                 // the replacement character, matching serde_json's lossy
                 // string conversion.
                 if code >= 0xD800 && code <= 0xDBFF,
-                    peek == UInt8(ascii: "\\"),
-                    bytes[index + 1] == UInt8(ascii: "u")
+                    peek == UInt8(ascii: "\\")
                 {
-                    index += 2
-                    let low = try parseHex4()
-                    if low >= 0xDC00 && low <= 0xDFFF {
-                        code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
-                    } else {
-                        code = 0xFFFD
+                    guard index + 1 < bytes.count else {
+                        throw ParseError("invalid JSON: truncated surrogate pair")
                     }
-                } else if code >= 0xD800 && code <= 0xDFFF {
+                    if bytes[index + 1] == UInt8(ascii: "u") {
+                        index += 2
+                        let low = try parseHex4()
+                        if low >= 0xDC00 && low <= 0xDFFF {
+                            code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                        }
+                    }
+                }
+                if code >= 0xD800 && code <= 0xDFFF {
                     code = 0xFFFD
                 }
                 utf8.append(contentsOf: String(Unicode.Scalar(code)!).utf8)

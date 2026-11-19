@@ -74,7 +74,7 @@ function serializePrimitive(
   if (primitive.clip !== null) {
     const clipId = `clip-${key}`;
     definitions.push(
-      `<clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shapeElement(primitive.clip, "")}</clipPath>\n`,
+      `<clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shapeElement(primitive.clip, "", true)}</clipPath>\n`,
     );
     element = `<g clip-path="url(#${clipId})">${element}</g>`;
   }
@@ -128,6 +128,9 @@ function isClipMask(mask: Primitive[]): boolean {
   const primitive = mask[0];
   return (
     primitive.paint.kind === "solid" &&
+    primitive.paint.color.r === 255 &&
+    primitive.paint.color.g === 255 &&
+    primitive.paint.color.b === 255 &&
     primitive.opacity === null &&
     primitive.stroke === null &&
     primitive.clip === null &&
@@ -138,7 +141,7 @@ function isClipMask(mask: Primitive[]): boolean {
 function clipShape(primitive: Primitive): string {
   const attributes =
     primitive.transform === null ? "" : `transform="${transformValue(primitive.transform.ops)}"`;
-  return shapeElement(primitive.shape, attributes);
+  return shapeElement(primitive.shape, attributes, true);
 }
 
 function paintValue(paint: Paint, gradientId: string, definitions: string[]): string {
@@ -158,11 +161,14 @@ function paintValue(paint: Paint, gradientId: string, definitions: string[]): st
   }
 }
 
-function shapeElement(shape: Shape, attributes: string): string {
+function shapeElement(shape: Shape, attributes: string, inClip = false): string {
   const suffix = attributes.length === 0 ? "" : ` ${attributes}`;
   switch (shape.kind) {
-    case "path":
-      return `<path d="${pathData(shape.segments, shape.closed)}" fill-rule="${shape.fill_rule === "non_zero" ? "nonzero" : "evenodd"}"${suffix}/>`;
+    case "path": {
+      const rule = shape.fill_rule === "non_zero" ? 'fill-rule="nonzero"'
+        : inClip ? 'clip-rule="evenodd"' : 'fill-rule="evenodd"';
+      return `<path d="${pathData(shape.segments, shape.closed)}" ${rule}${suffix}/>`;
+    }
     case "circle":
       return `<circle cx="${formatMilli(shape.cx)}" cy="${formatMilli(shape.cy)}" r="${formatMilli(shape.r)}"${suffix}/>`;
     case "ellipse":

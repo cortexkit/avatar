@@ -77,12 +77,16 @@ with open(path, "wb") as handle:
     plistlib.dump(plist, handle, sort_keys=True)
 PY
 
+# Record the build inputs and the resulting libraries and headers so the gate
+# can spot a changed source or a stale slice without rebuilding the framework.
+bash "$root/scripts/xcframework-source-hash.sh" > "$scratch/source-hash"
+bash "$root/scripts/xcframework-artifact-hashes.sh" "$scratch/AvatarCore.xcframework" \
+    > "$scratch/artifact-hashes"
 output="$root/ports/swift/AvatarCore.xcframework"
 rm -rf "$output"
 mv "$scratch/AvatarCore.xcframework" "$output"
-# Record what this binary was built from; check.sh refuses when the source
-# has moved on without a rebuild.
-"$root/scripts/xcframework-source-hash.sh" > "$root/ports/swift/AvatarCore.source-hash"
+mv "$scratch/source-hash" "$root/ports/swift/AvatarCore.source-hash"
+mv "$scratch/artifact-hashes" "$root/ports/swift/AvatarCore.artifact-hashes"
 echo "Built static-library xcframework: $output"
 du -sh "$output"
 finished=1

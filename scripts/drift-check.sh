@@ -160,7 +160,8 @@ probe_seed() {
   # Only the trusted local lab page is opened with the browser sandbox off.
   "$CHROME" --headless --no-sandbox --disable-gpu --user-data-dir="$probes/chrome-$seed" \
     --virtual-time-budget=20000 --dump-dom "$LAB?probe=$seed" \
-    > "$probes/$seed.dom" 2>/dev/null
+    > "$probes/$seed.dom" 2> "$probes/$seed.chrome-err"
+  echo $? > "$probes/$seed.chrome-rc"
 }
 for ((i = 0; i < COUNT; i++)); do
   probe_seed $((START + i)) &
@@ -175,6 +176,12 @@ for ((i = 0; i < COUNT; i++)); do
     echo "drift-check: Rust probe failed for seed $seed" >&2
     cat "$probes/$seed.rust-err" >&2 2>/dev/null
     exit 1
+  fi
+  if [[ "$(cat "$probes/$seed.chrome-rc" 2>/dev/null)" != 0 ]]; then
+    echo "drift-check: browser probe failed for seed $seed" >&2
+    cat "$probes/$seed.chrome-err" >&2 2>/dev/null
+    fails=$((fails + 1))
+    continue
   fi
   rust=$(tail -1 "$probes/$seed.rust")
   js=$(grep -o 'seed=[^<]*' "$probes/$seed.dom" 2>/dev/null | head -1)
@@ -220,8 +227,8 @@ for key in a:
     if len(av) != len(bv):
         drift(key, f"rust={a[key]} js={b[key]}")
     # Scale is dimensionless and needs tighter comparison than coordinates.
-    for index, (x, y) in enumerate(zip(av, bv)):
-        tolerance = 0.00001 if key == "scale" else 0.0000011 if key == "mouthscale" and index < 2 else 0.15
+    for x, y in zip(av, bv):
+        tolerance = 0.00001 if key == "scale" else 0.0000011 if key == "mouthscale" else 0.15
         try:
             ax, by = float(x), float(y)
             if not math.isfinite(ax) or not math.isfinite(by) or abs(ax - by) > tolerance:

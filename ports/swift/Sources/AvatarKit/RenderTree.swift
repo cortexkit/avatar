@@ -191,7 +191,22 @@ public func decodeRenderTreeJson(_ bytes: [UInt8]) throws -> RenderTree {
     var parser = JsonParser(bytes: bytes)
     let document = try parser.parseDocument()
     try requireIntegerNumbers(document)
-    return try JSONDecoder().decode(RenderTree.self, from: Data(bytes))
+    let tree = try JSONDecoder().decode(RenderTree.self, from: Data(bytes))
+    try validateTransforms(tree.primitives)
+    return tree
+}
+
+private func validateTransforms(_ primitives: [Primitive]) throws {
+    for primitive in primitives {
+        if let transform = primitive.transform {
+            _ = try transform.checkedAffine()
+        }
+        for effect in primitive.effects {
+            if case .masked(let mask) = effect {
+                try validateTransforms(mask)
+            }
+        }
+    }
 }
 
 private func requireIntegerNumbers(_ value: JsonValue) throws {

@@ -23,9 +23,11 @@ cd "$(dirname "$0")/.."
        crates/avatar-phenotype crates/avatar-tables \
        -type f \( -name '*.rs' -o -name '*.toml' -o -name '*.h' -o -name '*.modulemap' \) \
        -not -path '*/target/*' | LC_ALL=C sort | while read -r file; do
-    printf '%s  %s\n' "$(shasum -a 256 < "$file" | cut -d' ' -f1)" "$file"
+    digest=$(shasum -a 256 < "$file" | cut -d' ' -f1) || exit 1
+    printf '%s  %s\n' "$digest" "$file"
   done
   for file in Cargo.toml Cargo.lock scripts/build-xcframework.sh; do
-    printf '%s  %s\n' "$(shasum -a 256 < "$file" | cut -d' ' -f1)" "$file"
+    digest=$(shasum -a 256 < "$file" | cut -d' ' -f1) || exit 1
+    printf '%s  %s\n' "$digest" "$file"
   done
 } | shasum -a 256 | cut -d' ' -f1

@@ -62,6 +62,28 @@ final class RenderConformanceTests: XCTestCase {
             of: ",\"transform\":null", with: "").utf8)))
     }
 
+    func testTruncatedSurrogateIntroducerThrows() {
+        XCTAssertThrowsError(try decodeRenderTreeJson([34, 92, 117, 68, 56, 48, 48, 92])) {
+            XCTAssertEqual($0 as? ParseError, ParseError("invalid JSON: truncated surrogate pair"))
+        }
+    }
+
+    func testTreeDecoderRejectsOverflowingTransformComposition() {
+        let overflowing = Primitive(
+            shape: .rect(x: 1, y: 2, w: 3, h: 4),
+            transform: Transform(ops: [.translate(tx: Int64.max, ty: 0), .translate(tx: 1, ty: 0)]),
+            paint: .none, label: "overflowing")
+        let masked = Primitive(
+            shape: overflowing.shape, paint: .none,
+            effects: [.masked(mask: [overflowing])], label: "nested overflow")
+        for primitive in [overflowing, masked] {
+            let tree = RenderTree(canvas: 10_000, background: nil, primitives: [primitive])
+            XCTAssertThrowsError(try decodeRenderTreeJson(canonicalTreeJSONBytes(tree))) {
+                XCTAssertTrue($0 is ParseError)
+            }
+        }
+    }
+
     private var roleDocument: String {
         """
         {"background":null,"canvas":1,"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}
@@ -94,15 +116,17 @@ final class RenderConformanceTests: XCTestCase {
         XCTAssertGreaterThan(transformCount, 900)
     }
 
-    func testFixedPointMultiplyKeepsFullWidthAndRoundsHalvesAwayFromZero() {
-        XCTAssertEqual(q32Mul(1, 1 << 31), 1)
-        XCTAssertEqual(q32Mul(-1, 1 << 31), -1)
-        XCTAssertEqual(q32Mul(-1, -(1 << 31)), 1)
-        XCTAssertEqual(q32Mul(3, 1 << 31), 2)
-        XCTAssertEqual(q32Mul(-3, 1 << 31), -2)
-        XCTAssertEqual(q32Mul(1, (1 << 31) - 1), 0)
-        XCTAssertEqual(q32Mul(Int64.max, 1 << 32), Int64.max)
-        XCTAssertEqual(q32Mul(Int64.min, 1 << 32), Int64.min)
+    func testFixedPointMultiplyKeepsFullWidthAndRoundsHalvesAwayFromZero() throws {
+        XCTAssertEqual(try q32Mul(1, 1 << 31), 1)
+        XCTAssertEqual(try q32Mul(-1, 1 << 31), -1)
+        XCTAssertEqual(try q32Mul(-1, -(1 << 31)), 1)
+        XCTAssertEqual(try q32Mul(3, 1 << 31), 2)
+        XCTAssertEqual(try q32Mul(-3, 1 << 31), -2)
+        XCTAssertEqual(try q32Mul(1, (1 << 31) - 1), 0)
+        XCTAssertEqual(try q32Mul(Int64.max, 1 << 32), Int64.max)
+        XCTAssertEqual(try q32Mul(Int64.min, 1 << 32), Int64.min)
+        XCTAssertThrowsError(try q32Mul(Int64.min, -(1 << 32)))
+        XCTAssertThrowsError(try q32Mul(Int64.max, Int64.max))
     }
 
     func testStrokeCapsAndJoinsMatchTheCorpusInventory() throws {

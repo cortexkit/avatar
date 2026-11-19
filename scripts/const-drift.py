@@ -32,7 +32,7 @@ BASELINE_RUST = set()
 BASELINE_JS = set()
 
 NUM = re.compile(
-    r"(?<![\w.])(\d[\d_]*(?:\.\d[\d_]*)?)"
+    r"(?<![\w.])((?:\d[\d_]*(?:\.(?!\.)[\d_]*)?|\.\d[\d_]*)(?:[eE][+-]?\d[\d_]*)?)"
     r"(?:_?(?:f32|f64|i8|i16|i32|i64|u8|u16|u32|u64|usize|isize))?"
     r"(?![\w.])"
 )
