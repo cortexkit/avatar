@@ -3,8 +3,19 @@
 //! The wire representation keeps fixed-point values as their raw integers so
 //! drawing identity never depends on decimal formatting or floating-point
 //! parsing in a consumer.
+//!
+//! Masks are written once, in the tree's top-level `masks` table, and a
+//! masked effect names its entry by index (`mask_ref`). Wild creatures clone
+//! one body mask into many primitives, so writing each copy in full made most
+//! of the document repeated mask contents. Entries are numbered in the
+//! post-order of a depth-first walk: a mask nested inside another mask's
+//! primitives gets the lower index, so every reference points to an earlier
+//! entry. Two masks share an entry when their canonical JSON is identical.
 
-use std::fmt::{self, Write as _};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use avatar_phenotype::{Rgb, Q32};
 
@@ -23,9 +34,37 @@ pub fn serialize_tree_json(tree: &RenderTree) -> String {
 #[derive(Default)]
 struct Writer {
     output: String,
+    /// Canonical JSON of each distinct mask, in table order.
+    masks: Vec<String>,
+    /// The table index of each mask, keyed by its canonical JSON.
+    mask_indices: HashMap<String, usize>,
 }
 
 impl Writer {
+    /// Runs `write` against an empty output and returns what it wrote, leaving
+    /// the output written so far untouched. The mask table is not swapped out,
+    /// so masks met inside still receive their table indices.
+    fn detached(&mut self, write: impl FnOnce(&mut Self)) -> String {
+        let outer = std::mem::take(&mut self.output);
+        write(self);
+        std::mem::replace(&mut self.output, outer)
+    }
+
+    /// Returns the table index of `mask`, adding it to the table when no
+    /// identical mask is there yet.
+    fn mask_ref(&mut self, mask: &[Primitive]) -> usize {
+        // Writing the entry first gives every mask nested inside it an index
+        // before this one, which keeps all references pointing backwards.
+        let entry = self.detached(|writer| writer.array(mask, write_primitive));
+        if let Some(&index) = self.mask_indices.get(&entry) {
+            return index;
+        }
+        let index = self.masks.len();
+        self.mask_indices.insert(entry.clone(), index);
+        self.masks.push(entry);
+        index
+    }
+
     fn integer<T: fmt::Display>(&mut self, value: T) {
         write!(self.output, "{value}").expect("writing to String cannot fail");
     }
@@ -104,14 +143,19 @@ fn write_tree(writer: &mut Writer, tree: &RenderTree) {
         background,
         primitives,
     } = tree;
+    // The mask table comes before the primitives in key order but is complete
+    // only once they have been walked, so the primitives are written aside.
+    let primitives = writer.detached(|writer| writer.array(primitives, write_primitive));
+    let masks = std::mem::take(&mut writer.masks);
     writer.object(|object| {
         object.field("background", |writer| {
             write_optional(writer, background, write_rgb)
         });
         object.field("canvas", |writer| writer.integer(*canvas));
-        object.field("primitives", |writer| {
-            writer.array(primitives, write_primitive)
+        object.field("masks", |writer| {
+            writer.array(&masks, |writer, entry| writer.output.push_str(entry))
         });
+        object.field("primitives", |writer| writer.output.push_str(&primitives));
     });
 }
 
@@ -286,10 +330,13 @@ fn write_effect(writer: &mut Writer, effect: &Effect) {
             object.field("kind", |writer| writer.string("lit"));
             object.field("light_y", |writer| writer.integer(*light_y));
         }),
-        Effect::Masked { mask } => writer.object(|object| {
-            object.field("kind", |writer| writer.string("masked"));
-            object.field("mask", |writer| writer.array(mask, write_primitive));
-        }),
+        Effect::Masked { mask } => {
+            let mask_ref = writer.mask_ref(mask);
+            writer.object(|object| {
+                object.field("kind", |writer| writer.string("masked"));
+                object.field("mask_ref", |writer| writer.integer(mask_ref));
+            });
+        }
         Effect::Turbulence {
             seed,
             freq_h,
@@ -497,7 +544,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json).expect("encoder emits JSON");
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
         assert!(json.contains("\"kind\":\"radial_gradient\""));
-        assert!(json.contains("\"kind\":\"masked\""));
+        assert!(json.contains("\"kind\":\"masked\",\"mask_ref\":0"));
         assert!(json.contains("\"fill_rule\":\"even_odd\""));
         assert!(json.contains("\"kind\":\"rotate\""));
         assert!(json.contains("\"opacity\":9223372036854775807"));
@@ -522,8 +569,135 @@ mod tests {
         });
         assert_eq!(
             json,
-            "{\"background\":null,\"canvas\":10000,\"primitives\":[{\"clip\":null,\"effects\":[],\"label\":\"ordered\",\"opacity\":null,\"paint\":{\"kind\":\"none\"},\"role\":null,\"shape\":{\"h\":4,\"kind\":\"rect\",\"w\":3,\"x\":1,\"y\":2},\"stroke\":null,\"transform\":null}]}"
+            "{\"background\":null,\"canvas\":10000,\"masks\":[],\"primitives\":[{\"clip\":null,\"effects\":[],\"label\":\"ordered\",\"opacity\":null,\"paint\":{\"kind\":\"none\"},\"role\":null,\"shape\":{\"h\":4,\"kind\":\"rect\",\"w\":3,\"x\":1,\"y\":2},\"stroke\":null,\"transform\":null}]}"
         );
+    }
+
+    fn circle(label: &str) -> Primitive {
+        primitive(Shape::Circle { cx: 1, cy: 2, r: 3 }, Paint::None, label)
+    }
+
+    fn masked_by(label: &str, mask: Vec<Primitive>) -> Primitive {
+        let mut primitive = circle(label);
+        primitive.effects = vec![Effect::Masked { mask }];
+        primitive
+    }
+
+    fn tree_value(primitives: Vec<Primitive>) -> serde_json::Value {
+        let json = serialize_tree_json(&RenderTree {
+            canvas: 240,
+            background: None,
+            primitives,
+        });
+        serde_json::from_str(&json).expect("encoder emits JSON")
+    }
+
+    /// The table index each top-level primitive's first effect refers to.
+    fn top_level_refs(tree: &serde_json::Value) -> Vec<u64> {
+        tree["primitives"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|primitive| primitive["effects"][0]["mask_ref"].as_u64().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn masked_effect_is_written_as_a_reference_into_the_mask_table() {
+        let json = serialize_tree_json(&RenderTree {
+            canvas: 1,
+            background: None,
+            primitives: vec![masked_by("drawn", vec![circle("mask")])],
+        });
+        let circle_json = |label: &str, effects: &str| {
+            format!("{{\"clip\":null,\"effects\":[{effects}],\"label\":\"{label}\",\"opacity\":null,\"paint\":{{\"kind\":\"none\"}},\"role\":null,\"shape\":{{\"cx\":1,\"cy\":2,\"kind\":\"circle\",\"r\":3}},\"stroke\":null,\"transform\":null}}")
+        };
+        assert_eq!(
+            json,
+            format!(
+                "{{\"background\":null,\"canvas\":1,\"masks\":[[{}]],\"primitives\":[{}]}}",
+                circle_json("mask", ""),
+                circle_json("drawn", "{\"kind\":\"masked\",\"mask_ref\":0}"),
+            )
+        );
+    }
+
+    #[test]
+    fn identical_masks_share_one_table_entry() {
+        let mask = vec![circle("mask")];
+        let json = serialize_tree_json(&RenderTree {
+            canvas: 240,
+            background: None,
+            primitives: vec![
+                masked_by("first", mask.clone()),
+                masked_by("second", mask.clone()),
+                masked_by("third", mask),
+            ],
+        });
+        let tree: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(tree["masks"].as_array().unwrap().len(), 1);
+        assert_eq!(top_level_refs(&tree), [0, 0, 0]);
+        assert_eq!(json.matches("\"label\":\"mask\"").count(), 1);
+    }
+
+    #[test]
+    fn masks_are_numbered_in_depth_first_post_order() {
+        let inner = vec![circle("inner")];
+        let outer = vec![masked_by("outer", inner.clone())];
+        let tree = tree_value(vec![
+            // Walking the outer mask reaches the inner one first: inner 0, outer 1.
+            masked_by("first", outer.clone()),
+            masked_by("second", vec![circle("other")]),
+            masked_by("third", inner),
+            masked_by("fourth", outer),
+        ]);
+        let labels = tree["masks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry[0]["label"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["inner", "outer", "other"]);
+        assert_eq!(tree["masks"][1][0]["effects"][0]["mask_ref"], 0);
+        assert_eq!(top_level_refs(&tree), [1, 2, 0, 1]);
+    }
+
+    #[test]
+    fn masks_differing_only_inside_a_nested_mask_are_separate_entries() {
+        let tree = tree_value(vec![
+            masked_by("first", vec![masked_by("outer", vec![circle("inner a")])]),
+            masked_by("second", vec![masked_by("outer", vec![circle("inner b")])]),
+        ]);
+        let masks = tree["masks"].as_array().unwrap();
+        assert_eq!(masks.len(), 4);
+        assert_eq!(masks[0][0]["label"], "inner a");
+        assert_eq!(masks[1][0]["effects"][0]["mask_ref"], 0);
+        assert_eq!(masks[2][0]["label"], "inner b");
+        assert_eq!(masks[3][0]["effects"][0]["mask_ref"], 2);
+        assert_eq!(top_level_refs(&tree), [1, 3]);
+    }
+
+    #[test]
+    fn every_mask_reference_points_to_an_earlier_entry() {
+        let leaf = vec![circle("leaf")];
+        let middle = vec![masked_by("middle", leaf.clone()), masked_by("beside", leaf)];
+        let tree = tree_value(vec![
+            masked_by("top", vec![masked_by("upper", middle.clone())]),
+            masked_by("again", middle),
+        ]);
+        for (index, entry) in tree["masks"].as_array().unwrap().iter().enumerate() {
+            for primitive in entry.as_array().unwrap() {
+                for effect in primitive["effects"].as_array().unwrap() {
+                    let mask_ref = effect["mask_ref"].as_u64().unwrap();
+                    assert!(
+                        (mask_ref as usize) < index,
+                        "entry {index} refers to {mask_ref}"
+                    );
+                }
+            }
+        }
+        assert_eq!(tree["masks"].as_array().unwrap().len(), 3);
+        assert_eq!(top_level_refs(&tree), [2, 1]);
     }
 
     #[test]
