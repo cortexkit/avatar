@@ -1,9 +1,7 @@
 //! Deterministic PNG export for agent avatars, including GitHub App images.
 //!
-//! Inputs are either a registry's opaque stable ID (never a display name)
-//! or a stored genome with its type and generation version. Stable IDs
-//! reproduce the original classic creature; stored genomes depict the
-//! current creature even after its genome has been re-rolled.
+//! Image exports take a stored genome with its type and generation version,
+//! so they depict the current creature even after its genome has been re-rolled.
 //!
 //! Classic renders through its legacy SVG renderer; wild renders through
 //! the render tree serializer. Both rasterize with resvg (pure Rust, with
@@ -12,7 +10,6 @@
 //! this tool keeps no cache.
 //!
 //! Usage:
-//!   avatar-export --stable-id pj-0000000000000001 --out ava.png
 //!   avatar-export --genome <hex> --type creature.wild --version 1 --out ava.png
 //!   avatar-export --genome-file ava.hex --type creature.wild --version 1 --out ava.png
 //!     --genome-file reads the same hex from a file ("-" reads standard
@@ -25,12 +22,12 @@
 //!     no background), or .json (canonical render-tree JSON, which clients
 //!     decode and draw). Any other extension is refused. --size applies to
 //!     PNG only.
-//!   avatar-export --manifest agents.json --out-dir avatars/
-//!     manifest: JSON array of {"stable_id": "pj-…"} (unknown keys ignored,
-//!     so callers can pass richer records); output files are <stable_id>.png.
-//!   Options: --size N (default 400), --mood M (default neutral).
+//!     Options: --size N (default 400), --mood M (default neutral).
+//!   avatar-export --mint-genomes <id,id,...|@file> [--type <type>] [--out <file>]
+//!     With @file, reads one agent ID per line, ignoring blank lines and # comments.
+//!     Writes a JSON genome manifest, to standard output if --out is absent.
 
-use avatar_genome::{decode, derive_genome, derive_genome_bytes, Genome, SeatIdentity};
+use avatar_genome::{decode, derive_genome_bytes, Genome, SeatIdentity};
 use avatar_svg::{
     render_svg, render_tree_for_bytes, serialize_tree, serialize_tree_json, Mood, RenderParams, Q32,
 };
@@ -68,18 +65,6 @@ fn mood_from(name: &str) -> Result<Mood, String> {
     })
 }
 
-/// Renders a genome that already exists, as opposed to deriving one.
-///
-/// This is the correct path for anything depicting a LIVE agent, because
-/// the registry row is the only truth once genomes can be re-rolled:
-/// deriving from an id reproduces the agent's ORIGINAL creature, which
-/// after a re-roll is a face that agent no longer wears. A GitHub App
-/// avatar minted by derivation and a phone rendering the stored row would
-/// then disagree permanently, each looking correct.
-fn export_png_from_genome(genome: &Genome, mood: Mood, size: u32) -> Result<Vec<u8>, String> {
-    rasterize(&classic_svg(genome, mood)?, size)
-}
-
 fn classic_svg(genome: &Genome, mood: Mood) -> Result<Vec<u8>, String> {
     let phenotype = decode(genome);
     let params = RenderParams {
@@ -88,13 +73,6 @@ fn classic_svg(genome: &Genome, mood: Mood) -> Result<Vec<u8>, String> {
         canvas: 10_000,
     };
     render_svg(&phenotype, &params).map_err(|e| e.to_string())
-}
-
-fn export_png(stable_id: &str, mood: Mood, size: u32) -> Result<Vec<u8>, String> {
-    let genome = derive_genome(&SeatIdentity::Registered {
-        project_id: stable_id.to_owned(),
-    });
-    export_png_from_genome(&genome, mood, size)
 }
 
 /// Checks a stored genome against its type and version, in that order, and
@@ -207,11 +185,11 @@ fn rasterize(svg: &[u8], size: u32) -> Result<Vec<u8>, String> {
 
 /// Reads agent ids from a comma list or, with a leading `@`, from a file of
 /// one id per line (`#` comments allowed).
-fn read_ids(arg: &str) -> Vec<String> {
+fn read_ids(arg: &str) -> Result<Vec<String>, String> {
     let text;
     let source = match arg.strip_prefix('@') {
         Some(path) => {
-            text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            text = std::fs::read_to_string(path).map_err(|e| format!("read {path}: {e}"))?;
             text.as_str()
         }
         None => arg,
@@ -221,11 +199,11 @@ fn read_ids(arg: &str) -> Vec<String> {
     } else {
         Box::new(source.split(','))
     };
-    split
+    Ok(split
         .map(str::trim)
         .filter(|s| !s.is_empty() && !s.starts_with('#'))
         .map(str::to_owned)
-        .collect()
+        .collect())
 }
 
 /// Mints the genome deposit manifest for a batch of agents.
@@ -277,42 +255,15 @@ fn mint_manifest(ids: &[String], type_name: &str) -> String {
             hex.push_str(&format!("{byte:02x}"));
         }
         let comma = if i + 1 == ids.len() { "" } else { "," };
-        out.push_str(&format!(
-            "  {{\"agent_id\":\"{id}\",\"avatar_genome\":\"{hex}\",\"avatar_type\":\"{type_name}\",\"avatar_version\":{version}}}{comma}\n",
-        ));
+        let record = serde_json::json!({
+            "agent_id": id,
+            "avatar_genome": hex,
+            "avatar_type": type_name,
+            "avatar_version": version,
+        });
+        out.push_str(&format!("  {record}{comma}\n"));
     }
     out.push_str("]\n");
-    out
-}
-
-/// Minimal manifest reader: extracts every `"stable_id": "…"` string value.
-/// Deliberately not a JSON library — the schema is one required key, and a
-/// dependency-free scan keeps the export crate's supply chain equal to the
-/// pipeline's own.
-fn manifest_ids(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let bytes = text.as_bytes();
-    let key = b"\"stable_id\"";
-    let mut i = 0;
-    while let Some(pos) = text[i..].find(std::str::from_utf8(key).unwrap()) {
-        let mut j = i + pos + key.len();
-        // Skip whitespace and the colon, then read the string value.
-        while j < bytes.len() && (bytes[j] as char).is_whitespace() {
-            j += 1;
-        }
-        if j < bytes.len() && bytes[j] == b':' {
-            j += 1;
-            while j < bytes.len() && (bytes[j] as char).is_whitespace() {
-                j += 1;
-            }
-            if j < bytes.len() && bytes[j] == b'"' {
-                if let Some(end) = text[j + 1..].find('"') {
-                    out.push(text[j + 1..j + 1 + end].to_owned());
-                }
-            }
-        }
-        i = j;
-    }
     out
 }
 
@@ -346,22 +297,75 @@ fn read_genome_file(path: &str) -> std::io::Result<String> {
     }
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let get = |flag: &str| -> Option<String> {
-        args.iter()
-            .position(|a| a == flag)
-            .and_then(|i| args.get(i + 1).cloned())
-    };
+#[derive(Default)]
+struct Options {
+    size: Option<String>,
+    mood: Option<String>,
+    genome: Option<String>,
+    genome_file: Option<String>,
+    type_name: Option<String>,
+    version: Option<String>,
+    out: Option<String>,
+    mint_genomes: Option<String>,
+}
 
-    let size = match parse_size(get("--size").as_deref()) {
+impl Options {
+    fn parse(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<Self, String> {
+        let mut options = Self::default();
+        while let Some(flag) = args.next() {
+            let flag = flag.into_string().map_err(|_| "option name is not UTF-8")?;
+            let slot = match flag.as_str() {
+                "--size" => &mut options.size,
+                "--mood" => &mut options.mood,
+                "--genome" => &mut options.genome,
+                "--genome-file" => &mut options.genome_file,
+                "--type" => &mut options.type_name,
+                "--version" => &mut options.version,
+                "--out" => &mut options.out,
+                "--mint-genomes" => &mut options.mint_genomes,
+                _ => return Err(format!("unknown option {flag:?}")),
+            };
+            let value = args
+                .next()
+                .ok_or_else(|| format!("{flag}: missing value"))?
+                .into_string()
+                .map_err(|_| format!("{flag}: value is not UTF-8"))?;
+            if value.is_empty() || value.starts_with("--") {
+                return Err(format!("{flag}: missing value"));
+            }
+            if slot.replace(value).is_some() {
+                return Err(format!("{flag}: passed more than once"));
+            }
+        }
+        Ok(options)
+    }
+}
+
+fn input_error(message: &str) -> ! {
+    eprintln!("{message}");
+    std::process::exit(2);
+}
+
+fn main() {
+    let options = Options::parse(std::env::args_os().skip(1)).unwrap_or_else(|e| input_error(&e));
+    if options.mint_genomes.is_some() {
+        if options.genome.is_some() || options.genome_file.is_some() {
+            input_error("--mint-genomes cannot be combined with --genome or --genome-file");
+        }
+        if options.version.is_some() || options.size.is_some() || options.mood.is_some() {
+            input_error("--version, --size and --mood are only for stored-genome exports");
+        }
+    }
+    let type_name = options.type_name.as_deref().unwrap_or(AVATAR_TYPE);
+
+    let size = match parse_size(options.size.as_deref()) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
         }
     };
-    let mood = match mood_from(&get("--mood").unwrap_or_else(|| "neutral".into())) {
+    let mood = match mood_from(options.mood.as_deref().unwrap_or("neutral")) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("{e}");
@@ -372,7 +376,7 @@ fn main() {
     // Renders a genome the caller already holds — the path anything
     // depicting a live agent must use, since after a re-roll the stored
     // genome and a derived one are different creatures.
-    let genome_hex = match (get("--genome"), get("--genome-file")) {
+    let genome_hex = match (options.genome, options.genome_file) {
         (Some(_), Some(_)) => {
             eprintln!("--genome and --genome-file are alternatives; pass one");
             std::process::exit(2);
@@ -388,33 +392,29 @@ fn main() {
         (None, None) => None,
     };
     if let Some(hex) = genome_hex {
-        let type_name = get("--type").unwrap_or_else(|| AVATAR_TYPE.to_owned());
-        let default_version =
-            mintable(&type_name).map_or(AVATAR_VERSION, |(_, _, version)| version);
-        let version = match get("--version") {
+        let default_version = mintable(type_name).map_or(AVATAR_VERSION, |(_, _, version)| version);
+        let version = match options.version {
             Some(value) => value.parse::<u32>().unwrap_or_else(|_| {
                 eprintln!("--version: expected an unsigned integer, got {value:?}");
                 std::process::exit(2);
             }),
             None => default_version,
         };
-        let out = get("--out").unwrap_or_else(|| "avatar.png".to_owned());
-        let Some(format) = output_format(&out) else {
+        let out = options.out.as_deref().unwrap_or("avatar.png");
+        let Some(format) = output_format(out) else {
             eprintln!("--out {out}: unsupported extension; use .png, .svg or .json");
             std::process::exit(2);
         };
         let exported = match format {
-            OutputFormat::Png => export_from_hex(&hex, &type_name, version, mood, size, rasterize),
-            OutputFormat::Svg => {
-                export_from_hex(&hex, &type_name, version, mood, size, |svg, _| {
-                    Ok(svg.to_vec())
-                })
-            }
-            OutputFormat::TreeJson => tree_json_from_hex(&hex, &type_name, version, mood),
+            OutputFormat::Png => export_from_hex(&hex, type_name, version, mood, size, rasterize),
+            OutputFormat::Svg => export_from_hex(&hex, type_name, version, mood, size, |svg, _| {
+                Ok(svg.to_vec())
+            }),
+            OutputFormat::TreeJson => tree_json_from_hex(&hex, type_name, version, mood),
         };
         match exported {
             Ok(bytes) => {
-                std::fs::write(&out, bytes).expect("write output");
+                std::fs::write(out, bytes).expect("write output");
                 println!("{out}");
             }
             Err(e) => {
@@ -425,14 +425,14 @@ fn main() {
         return;
     }
 
-    if let Some(ids_arg) = get("--mint-genomes") {
-        let ids = read_ids(&ids_arg);
+    if let Some(ids_arg) = options.mint_genomes {
+        let ids =
+            read_ids(&ids_arg).unwrap_or_else(|e| input_error(&format!("--mint-genomes: {e}")));
         if ids.is_empty() {
             eprintln!("--mint-genomes: no agent ids given");
             std::process::exit(2);
         }
-        let type_name = get("--type").unwrap_or_else(|| AVATAR_TYPE.to_owned());
-        if mintable(&type_name).is_none() {
+        if mintable(type_name).is_none() {
             eprintln!("--type: unknown avatar type {type_name:?}");
             eprintln!("  known: {}", {
                 let names: Vec<&str> = MINTABLE.iter().map(|(t, _, _)| *t).collect();
@@ -440,8 +440,8 @@ fn main() {
             });
             std::process::exit(2);
         }
-        let manifest = mint_manifest(&ids, &type_name);
-        match get("--out") {
+        let manifest = mint_manifest(&ids, type_name);
+        match options.out {
             Some(path) => {
                 std::fs::write(&path, &manifest).expect("write manifest");
                 eprintln!("minted {} genomes -> {path}", ids.len());
@@ -451,58 +451,15 @@ fn main() {
         return;
     }
 
-    if let Some(stable_id) = get("--stable-id") {
-        let out = get("--out").unwrap_or_else(|| format!("{stable_id}.png"));
-        match export_png(&stable_id, mood, size) {
-            Ok(png) => {
-                std::fs::write(&out, png).expect("write png");
-                println!("{out}");
-            }
-            Err(e) => {
-                eprintln!("export {stable_id}: {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-
-    if let Some(manifest_path) = get("--manifest") {
-        let out_dir = get("--out-dir").unwrap_or_else(|| ".".into());
-        std::fs::create_dir_all(&out_dir).expect("mkdir out-dir");
-        let text = std::fs::read_to_string(&manifest_path).expect("read manifest");
-        let ids = manifest_ids(&text);
-        if ids.is_empty() {
-            eprintln!("manifest contains no stable_id entries");
-            std::process::exit(2);
-        }
-        let mut failures = 0;
-        for id in &ids {
-            let out = format!("{out_dir}/{id}.png");
-            match export_png(id, mood, size) {
-                Ok(png) => {
-                    std::fs::write(&out, png).expect("write png");
-                    println!("{out}");
-                }
-                Err(e) => {
-                    eprintln!("export {id}: {e}");
-                    failures += 1;
-                }
-            }
-        }
-        if failures > 0 {
-            std::process::exit(1);
-        }
-        return;
-    }
-
-    eprintln!(
-        "usage: avatar-export --stable-id <id> [--out f.png] | --manifest agents.json [--out-dir d]\n       avatar-export --genome <hex> | --genome-file <path|-> [--type creature.classic|creature.wild] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild"
+    input_error(
+        "usage: avatar-export (--genome <hex> | --genome-file <path|->) [--type creature.classic|creature.wild] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild\n       avatar-export --mint-genomes <id,id,...|@file> [--type creature.classic|creature.wild] [--out <file>]"
     );
-    std::process::exit(2);
 }
 
 #[cfg(test)]
 mod tests {
+    use avatar_genome::derive_genome;
+
     #[test]
     fn size_defaults_only_when_the_flag_is_absent() {
         use super::parse_size;
@@ -587,10 +544,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(
-            png,
-            export_png_from_genome(&genome, Mood::Happy, 64).unwrap()
-        );
+        assert_eq!(png, rasterize(&expected, 64).unwrap());
     }
 
     #[test]
@@ -653,21 +607,6 @@ mod tests {
     }
 
     #[test]
-    fn export_is_deterministic_and_png_shaped() {
-        let a = export_png("pj-0000000000000001", Mood::Neutral, 400).unwrap();
-        let b = export_png("pj-0000000000000001", Mood::Neutral, 400).unwrap();
-        assert_eq!(a, b, "same stableId must produce identical PNG bytes");
-        assert_eq!(&a[..8], b"\x89PNG\r\n\x1a\n", "PNG magic");
-    }
-
-    #[test]
-    fn different_ids_differ() {
-        let a = export_png("pj-0000000000000001", Mood::Neutral, 64).unwrap();
-        let b = export_png("pj-000000000000dead", Mood::Neutral, 64).unwrap();
-        assert_ne!(a, b);
-    }
-
-    #[test]
     fn minted_manifest_holds_the_properties_the_fleet_deposits_on() {
         // These are the exact claims made to the registry when handing over
         // the backfill: reproducible, one genome per agent, and every genome
@@ -726,49 +665,14 @@ mod tests {
     }
 
     #[test]
-    fn stored_and_derived_paths_agree_until_a_reroll_separates_them() {
-        // The two paths must coincide for an un-re-rolled agent, which is
-        // what makes the stored path a safe drop-in today. They stop
-        // coinciding the moment a genome is re-rolled: derivation still
-        // reproduces the ORIGINAL creature while the row wears a new one.
-        // Anything depicting a live agent must therefore render the stored
-        // genome, or a GitHub avatar and a phone will disagree permanently,
-        // each looking entirely correct.
-        let id = "agent_0000000000000001";
-        let derived = derive_genome(&SeatIdentity::Registered {
-            project_id: id.to_owned(),
-        });
-
-        let from_id = export_png(id, Mood::Neutral, 64).expect("derived render");
-        let from_genome =
-            export_png_from_genome(&derived, Mood::Neutral, 64).expect("stored render");
-        assert_eq!(from_id, from_genome);
-
-        // A different genome must not render the same creature, or the
-        // assertion above would pass for the wrong reason.
-        let other = derive_genome(&SeatIdentity::Registered {
-            project_id: "agent_somebody_else".to_owned(),
-        });
-        let from_other = export_png_from_genome(&other, Mood::Neutral, 64).expect("other render");
-        assert_ne!(from_genome, from_other);
-    }
-
-    #[test]
     fn ids_parse_from_a_list_or_a_file() {
-        assert_eq!(read_ids("a, b ,c"), vec!["a", "b", "c"]);
+        assert_eq!(read_ids("a, b ,c").unwrap(), vec!["a", "b", "c"]);
         let path = std::env::temp_dir().join("avatar-export-ids-test.txt");
         std::fs::write(&path, "# roster\nagent_x\n\n  agent_y  \n").unwrap();
         assert_eq!(
-            read_ids(&format!("@{}", path.display())),
+            read_ids(&format!("@{}", path.display())).unwrap(),
             vec!["agent_x", "agent_y"]
         );
         let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn manifest_scan_reads_ids_and_ignores_unknown_keys() {
-        let ids =
-            manifest_ids(r#"[{"agent":"AVA","stable_id":"pj-1"},{"stable_id": "pj-2","x":1}]"#);
-        assert_eq!(ids, vec!["pj-1", "pj-2"]);
     }
 }

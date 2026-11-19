@@ -19,9 +19,7 @@ version                 creature.wild:   16 KiB          at render time
 The genome is **stored**, not derived at render time. It lives on the
 agent's registry row, and the operator or the agent can re-roll it, so the
 row is the only truth and nothing may be cached by agent id alone. Every
-byte pattern of the right length is a valid creature. The first fleet's
-genomes were derived from seat ids (`avatar-export --stable-id`); that was
-a one-time backfill, not how a creature is drawn.
+byte pattern of the right length is a valid creature.
 
 ## One generator, several consumers
 

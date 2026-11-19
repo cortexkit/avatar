@@ -3,12 +3,13 @@ name = "avatar-export"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "PNG export surface for fleet consumers (GitHub App avatars): stableId in, deterministic 400x400 PNG out."
+description = "Export stored avatar genomes to PNG, SVG, or render-tree JSON."
 
 [dependencies]
 avatar-genome = { path = "../avatar-genome" }
 avatar-svg = { path = "../avatar-svg" }
 resvg = "0.44"
+serde_json = "1"
 
 [[bin]]
 name = "avatar-export"

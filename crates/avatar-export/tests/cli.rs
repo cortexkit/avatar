@@ -227,21 +227,80 @@ fn invalid_wild_metadata_or_hex_writes_no_file() {
 }
 
 #[test]
-fn classic_stable_id_and_stored_genome_cli_outputs_agree() {
+fn cli_rejects_missing_option_values_before_writing() {
+    let hex = "00".repeat(1024);
+    for (args, missing) in [
+        (
+            vec!["--genome", &hex, "--out", "result.json", "--version"],
+            "--version",
+        ),
+        (
+            vec!["--genome", &hex, "--out", "result.json", "--size"],
+            "--size",
+        ),
+        (
+            vec![
+                "--genome",
+                &hex,
+                "--out",
+                "result.json",
+                "--mood",
+                "--type",
+                "creature.classic",
+            ],
+            "--mood",
+        ),
+        (vec!["--mint-genomes", "agent", "--out"], "--out"),
+    ] {
+        let dir = ExportDir::new();
+        let output = dir.run(&args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(&format!("{missing}: missing value"))
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "{args:?} unexpectedly wrote to stdout"
+        );
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn cli_reports_missing_mint_file_without_panicking() {
     let dir = ExportDir::new();
-    let id = "pj-0000000000000001";
-    let genome = avatar_genome::derive_genome(&avatar_genome::SeatIdentity::Registered {
+    let output = dir.run(&["--mint-genomes", "@missing.txt", "--out", "manifest.json"]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--mint-genomes: read missing.txt"));
+    assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+}
+
+#[test]
+fn cli_mint_round_trips_a_quoted_id() {
+    let dir = ExportDir::new();
+    let id = "agent\"quote";
+    let output = dir.run(&["--mint-genomes", id]);
+    assert!(output.status.success(), "{output:?}");
+    let records: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["agent_id"], id);
+    let expected = avatar_genome::derive_genome(&avatar_genome::SeatIdentity::Registered {
         project_id: id.to_owned(),
     });
-    let output = dir.run(&["--stable-id", id, "--size", "64", "--out", "stable.png"]);
-    assert!(output.status.success(), "{output:?}");
-    let expected = std::fs::read(dir.0.join("stable.png")).unwrap();
-    for type_args in [vec![], vec!["--type", "creature.classic", "--version", "2"]] {
-        let hex = genome.to_hex();
-        let mut args = vec!["--genome", &hex, "--size", "64", "--out", "stored.png"];
-        args.extend(type_args);
+    assert_eq!(records[0]["avatar_genome"], expected.to_hex());
+}
+
+#[test]
+fn cli_rejects_retired_backfill_options() {
+    for args in [
+        ["--stable-id", "agent", "--out", "image.png"],
+        ["--manifest", "missing.json", "--out-dir", "images"],
+    ] {
+        let dir = ExportDir::new();
         let output = dir.run(&args);
-        assert!(output.status.success(), "{output:?}");
-        assert_eq!(std::fs::read(dir.0.join("stored.png")).unwrap(), expected);
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr)
+            .contains(&format!("unknown option {:?}", args[0])));
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
     }
 }

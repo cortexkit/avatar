@@ -33,6 +33,7 @@ dependencies = [
  "avatar-genome",
  "avatar-svg",
  "resvg",
+ "serde_json",
 ]
 
 [[package]]
