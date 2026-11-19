@@ -38,12 +38,12 @@ test("rejects malformed render-tree JSON instead of defaulting fields", () => {
   const primitive =
     '{"clip":null,"effects":[],"label":"x","opacity":null,"paint":{"kind":"none"},"role":null,"shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}';
   const invalidDocuments = [
-    '{"canvas":1,"primitives":[]}',
-    '{"background":null,"canvas":1,"extra":0,"primitives":[]}',
-    '{"background":null,"canvas":1.0,"primitives":[]}',
-    '{"background":null,"canvas":4294967296,"primitives":[]}',
-    `{"background":null,"canvas":1,"primitives":[${primitive.replace('"kind":"none"', '"kind":"unknown"')}]}`,
-    `{"background":null,"canvas":1,"primitives":[${primitive.replace('"r":1', '"r":9223372036854775808')}]}`,
+    '{"canvas":1,"masks":[],"primitives":[]}',
+    '{"background":null,"canvas":1,"extra":0,"masks":[],"primitives":[]}',
+    '{"background":null,"canvas":1.0,"masks":[],"primitives":[]}',
+    '{"background":null,"canvas":4294967296,"masks":[],"primitives":[]}',
+    `{"background":null,"canvas":1,"masks":[],"primitives":[${primitive.replace('"kind":"none"', '"kind":"unknown"')}]}`,
+    `{"background":null,"canvas":1,"masks":[],"primitives":[${primitive.replace('"r":1', '"r":9223372036854775808')}]}`,
   ];
 
   for (const document of invalidDocuments) {
@@ -52,7 +52,7 @@ test("rejects malformed render-tree JSON instead of defaulting fields", () => {
 });
 
 const roleDocument =
-  '{"background":null,"canvas":1,"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}';
+  '{"background":null,"canvas":1,"masks":[],"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}';
 
 test("role decoder rejects unknown values", () => {
   expect(() => decodeRenderTreeJson(roleDocument.replace('"ground_shadow"', '"unknown_role"'))).toThrow();

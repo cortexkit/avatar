@@ -89,6 +89,8 @@ export interface Stroke {
 /** Optional rendering behavior attached to a drawable primitive. */
 export type Effect =
   | { kind: "lit"; light_y: Milli }
+  // On the wire this is a `mask_ref` into the tree's mask table. Every
+  // reference to one entry resolves to the same array, so treat it as shared.
   | { kind: "masked"; mask: Primitive[] }
   | {
       kind: "turbulence";
@@ -145,19 +147,71 @@ export function decodeRenderTreeJson(bytes: Uint8Array | string): RenderTree {
 }
 
 function decodeRenderTree(value: JsonValue, path: string): RenderTree {
-  const fields = object(value, path, ["background", "canvas", "primitives"]);
-  return {
+  const fields = object(value, path, ["background", "canvas", "masks", "primitives"]);
+  const masks = new MaskTable(required(fields, "masks", path), `${path}.masks`);
+  const tree = {
     background: nullable(fields, "background", path, decodeRgb),
     canvas: unsignedInteger(required(fields, "canvas", path), `${path}.canvas`, U32_MAX),
-    primitives: array(required(fields, "primitives", path), `${path}.primitives`, decodePrimitive),
+    primitives: array(required(fields, "primitives", path), `${path}.primitives`, (item, itemPath) =>
+      decodePrimitive(item, itemPath, masks),
+    ),
   };
+  masks.requireEveryEntryReferenced();
+  return tree;
 }
 
-function decodePrimitive(value: JsonValue, path: string): Primitive {
+/**
+ * The tree's shared masks. A masked effect names its mask by index into this
+ * table, so a mask cloned into many primitives is written once. Entries decode
+ * in table order and may refer only to entries before them: every reference
+ * then resolves to an already-decoded mask, and no reference can form a cycle.
+ */
+class MaskTable {
+  private readonly entries: Primitive[][] = [];
+  private readonly referenced: boolean[];
+  private readonly size: number;
+
+  constructor(
+    value: JsonValue,
+    private readonly path: string,
+  ) {
+    if (value.type !== "array") fail(`${path}: expected an array`);
+    this.size = value.values.length;
+    this.referenced = new Array<boolean>(this.size).fill(false);
+    value.values.forEach((entry, index) => {
+      this.entries.push(
+        array(entry, `${path}[${index}]`, (item, itemPath) => decodePrimitive(item, itemPath, this)),
+      );
+    });
+  }
+
+  resolve(value: JsonValue, path: string): Primitive[] {
+    if (value.type !== "integer") fail(`${path}: expected an integer JSON token`);
+    const index = value.value;
+    if (index < 0n || index >= BigInt(this.size)) {
+      fail(`${path}: mask_ref ${index} is outside the mask table of ${this.size} entries`);
+    }
+    // While entry `i` decodes, exactly the entries before it are present.
+    if (index >= BigInt(this.entries.length)) {
+      fail(`${path}: mask_ref ${index} must refer to an entry before mask entry ${this.entries.length}`);
+    }
+    this.referenced[Number(index)] = true;
+    return this.entries[Number(index)]!;
+  }
+
+  requireEveryEntryReferenced(): void {
+    const unused = this.referenced.indexOf(false);
+    if (unused !== -1) fail(`${this.path}[${unused}]: mask entry is never referenced`);
+  }
+}
+
+function decodePrimitive(value: JsonValue, path: string, masks: MaskTable): Primitive {
   const fields = object(value, path, ["clip", "effects", "label", "opacity", "paint", "role", "shape", "stroke", "transform"]);
   return {
     clip: nullable(fields, "clip", path, decodeShape),
-    effects: array(required(fields, "effects", path), `${path}.effects`, decodeEffect),
+    effects: array(required(fields, "effects", path), `${path}.effects`, (item, itemPath) =>
+      decodeEffect(item, itemPath, masks),
+    ),
     label: string(required(fields, "label", path), `${path}.label`),
     opacity: nullable(fields, "opacity", path, integer64),
     paint: decodePaint(required(fields, "paint", path), `${path}.paint`),
@@ -317,7 +371,7 @@ function decodeStrokeJoin(value: JsonValue, path: string): StrokeJoin {
   return fail(`${path}: unknown stroke-join tag ${JSON.stringify(tag)}`);
 }
 
-function decodeEffect(value: JsonValue, path: string): Effect {
+function decodeEffect(value: JsonValue, path: string, masks: MaskTable): Effect {
   const fields = rawObject(value, path);
   const kind = string(required(fields, "kind", path), `${path}.kind`);
   switch (kind) {
@@ -325,8 +379,8 @@ function decodeEffect(value: JsonValue, path: string): Effect {
       requireExactKeys(fields, ["kind", "light_y"], path);
       return { kind, light_y: integer64(required(fields, "light_y", path), `${path}.light_y`) };
     case "masked":
-      requireExactKeys(fields, ["kind", "mask"], path);
-      return { kind, mask: array(required(fields, "mask", path), `${path}.mask`, decodePrimitive) };
+      requireExactKeys(fields, ["kind", "mask_ref"], path);
+      return { kind, mask: masks.resolve(required(fields, "mask_ref", path), `${path}.mask_ref`) };
     case "turbulence":
       requireExactKeys(fields, ["freq_h", "freq_v", "kind", "octaves", "scale", "seed"], path);
       return {

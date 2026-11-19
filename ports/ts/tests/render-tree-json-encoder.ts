@@ -25,17 +25,52 @@ type Field = (name: string, writeValue: () => void) => void;
 
 class TreeJsonWriter {
   private output = "";
+  /** Canonical JSON of each distinct mask, in table order. */
+  private readonly masks: string[] = [];
+  /** The table index of each mask, keyed by its canonical JSON. */
+  private readonly maskIndices = new Map<string, number>();
 
   finish(): string {
     return this.output;
   }
 
   writeTree(tree: RenderTree): void {
+    // The mask table comes before the primitives in key order but is complete
+    // only once they have been walked, so the primitives are written aside.
+    const primitives = this.detached(() =>
+      this.array(tree.primitives, (primitive) => this.writePrimitive(primitive)),
+    );
     this.fields((field) => {
       field("background", () => this.optional(tree.background, (color) => this.writeRgb(color)));
       field("canvas", () => this.integer(tree.canvas));
-      field("primitives", () => this.array(tree.primitives, (primitive) => this.writePrimitive(primitive)));
+      field("masks", () => this.array(this.masks, (entry) => (this.output += entry)));
+      field("primitives", () => (this.output += primitives));
     });
+  }
+
+  /**
+   * Returns the table index of `mask`, adding it when no identical mask is in
+   * the table yet. Writing the entry first gives every mask nested inside it
+   * an index before this one, as the Rust encoder does.
+   */
+  private maskRef(mask: readonly Primitive[]): number {
+    const entry = this.detached(() => this.array(mask, (primitive) => this.writePrimitive(primitive)));
+    const existing = this.maskIndices.get(entry);
+    if (existing !== undefined) return existing;
+    const index = this.masks.length;
+    this.masks.push(entry);
+    this.maskIndices.set(entry, index);
+    return index;
+  }
+
+  /** Runs `write` against an empty output and returns what it wrote. */
+  private detached(write: () => void): string {
+    const outer = this.output;
+    this.output = "";
+    write();
+    const written = this.output;
+    this.output = outer;
+    return written;
   }
 
   private writePrimitive(primitive: Primitive): void {
@@ -165,12 +200,14 @@ class TreeJsonWriter {
           field("light_y", () => this.integer(effect.light_y));
         });
         return;
-      case "masked":
+      case "masked": {
+        const maskRef = this.maskRef(effect.mask);
         this.fields((field) => {
           field("kind", () => this.string("masked"));
-          field("mask", () => this.array(effect.mask, (primitive) => this.writePrimitive(primitive)));
+          field("mask_ref", () => this.integer(maskRef));
         });
         return;
+      }
       case "turbulence":
         this.fields((field) => {
           field("freq_h", () => this.integer(effect.freq_h));
