@@ -97,6 +97,47 @@ fn wild_totality_extremes_and_64_probe_genomes_at_every_mood() {
     }
 }
 
+/// Prints a tree hash and render timing for comparing signed distance field implementations.
+#[test]
+#[ignore = "comparison probe; hashes 301 genomes in all seven moods"]
+fn weld_byte_identity_and_timing() {
+    use std::{hint::black_box, time::Instant};
+
+    let mut weld = [0; GENOME_LEN];
+    weld[0] = 11;
+    weld[64] = 4;
+    weld[240] = 2;
+    for i in 0..4 {
+        weld[68 + i * 10] = (63 * i) as u8;
+        weld[69 + i * 10] = 200;
+    }
+    let render =
+        |bytes: &[u8], mood| crate::render_tree_for_bytes(bytes, crate::WILD, 1, mood).unwrap();
+    let mut hash = blake3::Hasher::new();
+    let mut count = 0;
+    for genome in (0..300).map(probe_genome).chain(std::iter::once(weld)) {
+        for mood in mood::ALL {
+            let json = crate::serialize_tree_json(&render(&genome, mood));
+            hash.update(&(json.len() as u64).to_le_bytes());
+            hash.update(json.as_bytes());
+            count += 1;
+        }
+    }
+    assert_eq!(count, 2_107);
+    println!("{count} canonical trees: {}", hash.finalize().to_hex());
+
+    black_box(render(&weld, mood::Mood::Neutral));
+    let mut ms = [0.0; 101];
+    for time in &mut ms {
+        let start = Instant::now();
+        let tree = black_box(render(black_box(&weld), mood::Mood::Neutral));
+        *time = start.elapsed().as_secs_f64() * 1e3;
+        drop(tree);
+    }
+    ms.sort_by(f64::total_cmp);
+    println!("four-pair weld, median of 101 renders: {:.3} ms", ms[50]);
+}
+
 #[test]
 fn comparison_preserves_finite_order_and_equal_signed_zeros() {
     use std::cmp::Ordering;

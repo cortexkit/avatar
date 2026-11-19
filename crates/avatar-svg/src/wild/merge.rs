@@ -9,7 +9,16 @@
 
 /// Precomputed polygon for SDF queries.
 pub struct Poly {
-    pts: Vec<(f64, f64)>,
+    edges: Vec<Edge>,
+}
+
+struct Edge {
+    x1: f64,
+    y1: f64,
+    y2: f64,
+    ex: f64,
+    ey: f64,
+    denominator: f64,
 }
 
 impl Poly {
@@ -17,7 +26,22 @@ impl Poly {
     /// the grid loop is O(grid · edges).
     pub fn new(outline: &[(f64, f64)], step: usize) -> Self {
         let pts: Vec<(f64, f64)> = outline.iter().copied().step_by(step.max(1)).collect();
-        Poly { pts }
+        let edges = pts
+            .iter()
+            .zip(pts.iter().cycle().skip(1))
+            .map(|(&(x1, y1), &(x2, y2))| {
+                let (ex, ey) = (x2 - x1, y2 - y1);
+                Edge {
+                    x1,
+                    y1,
+                    y2,
+                    ex,
+                    ey,
+                    denominator: (ex * ex + ey * ey).max(1e-12),
+                }
+            })
+            .collect();
+        Poly { edges }
     }
 
     /// Signed distance: negative inside, positive outside.
@@ -30,16 +54,20 @@ impl Poly {
     /// checker, sharing this SDF, certified the faceless result. The
     /// renderer's rule is ground truth; the SDF must speak it.
     pub fn sdf(&self, x: f64, y: f64) -> f64 {
-        let n = self.pts.len();
         let mut d2 = f64::MAX;
         let mut winding = 0i32;
-        for i in 0..n {
-            let (x1, y1) = self.pts[i];
-            let (x2, y2) = self.pts[(i + 1) % n];
+        for &Edge {
+            x1,
+            y1,
+            y2,
+            ex,
+            ey,
+            denominator,
+        } in &self.edges
+        {
             // Distance to segment.
-            let (ex, ey) = (x2 - x1, y2 - y1);
             let (px, py) = (x - x1, y - y1);
-            let t = ((px * ex + py * ey) / (ex * ex + ey * ey).max(1e-12)).clamp(0.0, 1.0);
+            let t = ((px * ex + py * ey) / denominator).clamp(0.0, 1.0);
             let (qx, qy) = (px - ex * t, py - ey * t);
             d2 = d2.min(qx * qx + qy * qy);
             // Winding accumulation (Sunday's algorithm).
