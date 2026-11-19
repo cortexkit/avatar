@@ -140,9 +140,9 @@ mod tests {
 
     // Including file names and lengths makes this pin sensitive to boundary
     // changes, not only to the concatenated SVG payloads.
-    const TREE_SVG_BOUNDARY_SIZE: usize = 1_017_856;
+    const TREE_SVG_BOUNDARY_SIZE: usize = 1_021_216;
     const TREE_SVG_BOUNDARY_HASH: &str =
-        "84503da4b59fcc6e5c14a0159a39c90e685403d167892b771105fed930da8dd3";
+        "1f4b66ee5ad6c048182a2e56fea1e2bd26383e15bf0aa4f63214d8ac111d9da2";
 
     /// Pins for the identity-derived wild corpus: neutral for each genome,
     /// plus all seven moods for one genome. Their gradient paint, masked

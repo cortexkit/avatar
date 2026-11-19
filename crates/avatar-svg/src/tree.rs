@@ -56,7 +56,8 @@ pub struct Primitive {
     pub stroke: Option<Stroke>,
     /// Per-element opacity; `None` means fully opaque.
     pub opacity: Option<Q32>,
-    /// Structural clipping geometry that consumers must honor.
+    /// Structural clipping geometry that consumers must honor. It is in the
+    /// same local coordinates as `shape`, so `transform` applies to both.
     pub clip: Option<Shape>,
     /// Optional rendering annotations that small native consumers may ignore.
     pub effects: Vec<Effect>,
