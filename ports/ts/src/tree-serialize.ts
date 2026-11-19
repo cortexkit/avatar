@@ -66,8 +66,10 @@ function serializePrimitive(
   if (primitive.label.length !== 0) {
     attributes += ` class="${xmlEscape(primitive.label)}"`;
   }
-  if (primitive.transform !== null) {
-    attributes += ` transform="${transformValue(primitive.transform.ops)}"`;
+  const transform =
+    primitive.transform === null ? "" : ` transform="${transformValue(primitive.transform.ops)}"`;
+  if (primitive.clip === null) {
+    attributes += transform;
   }
 
   let element = shapeElement(primitive.shape, attributes);
@@ -77,6 +79,8 @@ function serializePrimitive(
       `<clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shapeElement(primitive.clip, "", true)}</clipPath>\n`,
     );
     element = `<g clip-path="url(#${clipId})">${element}</g>`;
+    // The clip path is in the shape's local coordinates.
+    if (transform) element = `<g${transform}>${element}</g>`;
   }
 
   return includeEffects

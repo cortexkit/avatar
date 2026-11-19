@@ -15,6 +15,18 @@ const white: Primitive = {
   role: null,
 };
 
+test("transforms structural clip and shape together", () => {
+  const svg = serializeTree({ canvas: 10, background: null, primitives: [{
+    ...white,
+    shape: { kind: "circle", cx: 100n, cy: 100n, r: 150n },
+    clip: { kind: "rect", x: 0n, y: 0n, w: 200n, h: 200n },
+    transform: { ops: [{ kind: "translate", tx: 500n, ty: 600n }] },
+  }] });
+  expect(svg).toContain(
+    '<g transform="translate(5 6)"><g clip-path="url(#clip-primitive-0)"><circle cx="1" cy="1" r="1.5" fill="#ffffff"/></g></g>',
+  );
+});
+
 test("preserves even-odd inside both clip definitions", () => {
   const path: Shape = {
     kind: "path", segments: [{ kind: "move_to", x: 0n, y: 0n }],

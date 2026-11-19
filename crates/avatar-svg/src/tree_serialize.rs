@@ -116,11 +116,12 @@ fn serialize_primitive(
     if !primitive.label.is_empty() {
         attributes.push_str(&format!(" class=\"{}\"", xml_escape(&primitive.label)));
     }
-    if let Some(transform) = &primitive.transform {
-        attributes.push_str(&format!(
-            " transform=\"{}\"",
-            transform_value(&transform.ops)
-        ));
+    let transform = primitive
+        .transform
+        .as_ref()
+        .map(|transform| format!(" transform=\"{}\"", transform_value(&transform.ops)));
+    if let (None, Some(transform)) = (&primitive.clip, &transform) {
+        attributes.push_str(transform);
     }
 
     let mut element = shape_element(&primitive.shape, &attributes, false);
@@ -131,6 +132,10 @@ fn serialize_primitive(
             shape_element(clip, "", true)
         ));
         element = format!("<g clip-path=\"url(#{clip_id})\">{element}</g>");
+        // The clip path is in the shape's local coordinates.
+        if let Some(transform) = transform {
+            element = format!("<g{transform}>{element}</g>");
+        }
     }
 
     if include_effects {
@@ -404,7 +409,7 @@ mod tests {
     use super::serialize_tree;
     use crate::tree::{
         Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Segment, Shape, Stroke,
-        StrokeCap, StrokeJoin,
+        StrokeCap, StrokeJoin, Transform, TransformOp,
     };
 
     fn primitive(shape: Shape, paint: Paint, label: &str) -> Primitive {
@@ -419,6 +424,42 @@ mod tests {
             label: label.to_owned(),
             role: None,
         }
+    }
+
+    #[test]
+    fn generic_svg_transforms_structural_clip_and_shape_together() {
+        let clip = Shape::Rect {
+            x: 0,
+            y: 0,
+            w: 200,
+            h: 200,
+        };
+        let mut subject = primitive(
+            Shape::Circle {
+                cx: 100,
+                cy: 100,
+                r: 150,
+            },
+            Paint::Solid {
+                color: Rgb {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                },
+            },
+            "",
+        );
+        subject.transform = Some(Transform {
+            ops: vec![TransformOp::Translate { tx: 500, ty: 600 }],
+        });
+        subject.clip = Some(clip);
+        let svg = String::from_utf8(serialize_tree(&RenderTree {
+            canvas: 10,
+            background: None,
+            primitives: vec![subject],
+        }))
+        .unwrap();
+        assert!(svg.contains(r##"<g transform="translate(5 6)"><g clip-path="url(#clip-primitive-0)"><circle cx="1" cy="1" r="1.5" fill="#ffffff"/></g></g>"##), "{svg}");
     }
 
     #[test]
