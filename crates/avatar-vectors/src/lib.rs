@@ -2,11 +2,54 @@
 
 #[cfg(test)]
 pub(crate) mod test_util {
+    fn trim_xml_whitespace(text: &str) -> &str {
+        text.trim_start_matches([' ', '\t', '\n', '\r'])
+    }
+
+    fn name_len(text: &str) -> usize {
+        text.bytes()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, b':' | b'-' | b'_' | b'.'))
+            .count()
+    }
+
+    fn read_attributes<'a>(label: &str, mut text: &'a str) -> (&'a str, bool) {
+        loop {
+            let trimmed = trim_xml_whitespace(text);
+            if let Some(rest) = trimmed.strip_prefix("/>") {
+                return (rest, true);
+            }
+            if let Some(rest) = trimmed.strip_prefix('>') {
+                return (rest, false);
+            }
+            assert!(!trimmed.is_empty(), "{label}: unterminated tag");
+            assert!(
+                trimmed.len() < text.len(),
+                "{label}: expected whitespace before attribute"
+            );
+            let len = name_len(trimmed);
+            assert!(len > 0, "{label}: expected an attribute name");
+            let (name, rest) = trimmed.split_at(len);
+            let value = trim_xml_whitespace(rest)
+                .strip_prefix('=')
+                .unwrap_or_else(|| panic!("{label}: expected '=' after {name}"));
+            let value = trim_xml_whitespace(value);
+            let quote = match value.as_bytes().first() {
+                Some(b'\'' | b'"') => value.as_bytes()[0] as char,
+                _ => panic!("{label}: unquoted attribute value for {name}"),
+            };
+            let (contents, rest) = value[1..]
+                .split_once(quote)
+                .unwrap_or_else(|| panic!("{label}: unterminated attribute value for {name}"));
+            assert!(!contents.contains('<'), "{label}: unescaped '<' in {name}");
+            text = rest;
+        }
+    }
+
     /// Checks the SVG tag stack without adding an XML parser dependency to this
     /// test-only crate. The renderer emits simple XML, so tag balance and quoted
     /// attributes are sufficient smoke coverage for the committed corpus.
     pub(crate) fn assert_well_formed_svg(label: &str, svg: &str) {
-        let mut stack: Vec<String> = Vec::new();
+        let mut stack = Vec::new();
         let mut index = 0;
         let bytes = svg.as_bytes();
         while index < bytes.len() {
@@ -19,33 +62,37 @@ pub(crate) mod test_util {
                 index += end + 3;
                 continue;
             }
-            let tag_end = svg[index..].find('>').expect("unterminated tag");
-            let tag = &svg[index + 1..index + tag_end];
-            if let Some(name) = tag.strip_prefix('/') {
+            let tag = &svg[index + 1..];
+            if let Some(closing) = tag.strip_prefix('/') {
+                let (name, rest) = closing.split_once('>').expect("unterminated closing tag");
                 let expected = stack.pop().expect("closing tag without an open tag");
                 assert_eq!(name.trim(), expected, "{label}: mismatched closing tag");
+                index = svg.len() - rest.len();
             } else {
-                let name: String = tag
-                    .chars()
-                    .take_while(|character| {
-                        character.is_ascii_alphanumeric() || matches!(character, ':' | '-')
-                    })
-                    .collect();
+                let (name, attributes) = tag.split_at(name_len(tag));
                 assert!(!name.is_empty(), "{label}: empty tag name at byte {index}");
-                let attributes = &tag[name.len()..];
-                let quotes = attributes.bytes().filter(|byte| *byte == b'"').count();
-                assert_eq!(
-                    quotes % 2,
-                    0,
-                    "{label}: unbalanced attribute quotes in <{name}>"
-                );
-                if !attributes.trim_end().ends_with('/') {
+                let (rest, self_closing) = read_attributes(label, attributes);
+                if !self_closing {
                     stack.push(name);
                 }
+                index = svg.len() - rest.len();
             }
-            index += tag_end + 1;
         }
         assert!(stack.is_empty(), "{label}: unclosed tags: {stack:?}");
+    }
+
+    #[test]
+    #[should_panic(expected = "unquoted attribute value")]
+    fn svg_smoke_rejects_an_unquoted_attribute() {
+        assert_well_formed_svg(
+            "bad SVG",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox=0/>"#,
+        );
+    }
+
+    #[test]
+    fn svg_smoke_accepts_both_quote_styles_and_tag_delimiters_in_values() {
+        assert_well_formed_svg("SVG", r#"<svg data-label='>'><g class="/>" /></svg>"#);
     }
 }
 
