@@ -88,7 +88,9 @@ Effect =
                                      //   byte-parity break on a degenerate
                                      //   body; resolved values ride the tree,
                                      //   consumers never re-derive)
-  | Masked { mask: [Primitive] }     // pattern mask
+  | Masked { mask: [Primitive] }     // pattern mask; on the wire a
+                                     //   mask_ref into the tree's mask
+                                     //   table (see Canonical JSON)
   | Turbulence { seed: u8, freq_h: Q32, freq_v: Q32,
                  octaves: u8, scale: Q32 }   // iris shade displacement
 ```
@@ -135,6 +137,32 @@ losing meaning. Like the other optional primitive fields, `role` is always
 present in canonical JSON, with `null` for primitives without a role. Strict
 consumers accept that null but reject a missing key. Object keys remain
 byte-sorted, so `role` appears between `paint` and `shape`.
+
+## Canonical JSON
+
+`serialize_tree_json` (`crates/avatar-svg/src/tree_json.rs`) writes the
+transport every consumer decodes: no whitespace, object keys in byte order,
+every number an integer token (milliunits, Q32.32 and BAM16 as their raw
+integers), and every nullable field present, as `null` when empty.
+
+Masks are written once and referenced by index, because wild creatures clone
+the same body mask into many primitives and writing every copy in full made
+most of a wild tree's bytes repeated mask contents.
+
+- The tree object has a `masks` member: an array of entries, each an array of
+  primitives. It is always present, `[]` when the tree has no masks.
+- A masked effect is `{"kind":"masked","mask_ref":N}`, where `N` indexes
+  `masks`. There is no inline `mask` form.
+- The encoder walks the tree depth first and numbers each distinct mask in
+  post-order: a mask nested inside another mask's primitives gets the lower
+  index, so a reference always points to an earlier entry, never to itself or
+  forward. Two masks are one entry when their canonical JSON is byte-identical.
+- Decoders resolve each reference back into the mask's primitives, so the
+  in-memory tree still carries `Masked { mask }` (in Swift, every reference to
+  one entry shares one array). They refuse a `mask_ref` outside the table, an
+  entry that refers to itself or to a later entry (which rules out cycles), an
+  inline `mask` member, an entry nothing refers to, a missing `masks` member,
+  and a `mask_ref` that is not an integer.
 
 ## Implementation status
 

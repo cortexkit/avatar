@@ -43,7 +43,7 @@ Two decisions carry the design:
 1. The caller holds the row's bytes, type and version, plus a mood.
 2. `render_tree_for_bytes` checks the type, then the version, then the genome length that type needs. The order is a contract. An unknown type or version means "this build cannot draw it": the client draws nothing and stays quiet. A wrong length for a known type means the row is malformed: the client reports it. Checking length first would report every row of a newer, differently sized type as corrupt.
 3. Classic v2: `avatar_genome::decode` gives a `Phenotype`, and `build_render_tree` builds the tree. Wild v1: `wild::decode_genome` reads each feature from fixed region offsets (body bytes 0..64, extremities 64..160, palette and face from 160, surface sites 240..304), and `draw_full` builds the primitives.
-4. The tree leaves through one of three projections: `serialize_tree_json` (the canonical JSON every consumer decodes), `serialize_tree` (generic SVG; `serialize_tree_with_id_prefix` when several creatures share one document), or `serialize_svg` (classic only, the historical SVG layout its corpus pins).
+4. The tree leaves through one of three projections: `serialize_tree_json` (the canonical JSON every consumer decodes), `serialize_tree` (generic SVG; `serialize_tree_with_id_prefix` when several creatures share one document), or `serialize_svg` (classic only, the historical SVG layout its corpus pins). The JSON writes each distinct mask once, in a top-level `masks` table that masked effects name by index (`mask_ref`), because wild creatures clone one body mask into many primitives and the full copies made up most of a wild tree's bytes. Decoders resolve the references back into inline masks, so the in-memory tree is the same in every language (design note 006).
 
 How each consumer gets there:
 
@@ -96,7 +96,7 @@ Everything fails closed. No path falls back to a default or newest creature.
 - `DispatchError`: `UnsupportedType`, `UnsupportedVersion` (both: draw nothing, quietly), `GenomeLength` (a malformed row: report it), and `Render(RenderError)`, where `RenderError` is `UnsupportedGrowth` or `UnsupportedCanvas` for classic render inputs outside their pinned values.
 - The C boundary returns 0 for success, then one status per case: unknown type, unknown version, genome length, unknown mood, invalid argument, render error, panic. Swift maps each to its own `CoreRenderError` case, and an unrecognised status to `unknownStatus`.
 - `GenomeError` covers malformed hex (`InvalidHexLength`, `InvalidHexDigit`).
-- The Swift and TypeScript tree decoders throw on an unknown tag or role, a missing field, or a fraction where an integer belongs. The TypeScript decoder also refuses unknown fields; Swift's `Decodable` ignores them. A silently defaulted primitive would draw a wrong creature that looks right.
+- The Swift and TypeScript tree decoders throw on an unknown tag or role, a missing field, a fraction where an integer belongs, or a `mask_ref` that breaks the mask table's rules (out of range, pointing to its own or a later entry, or leaving an entry unreferenced). Both decoders also refuse unknown fields. A silently defaulted primitive would draw a wrong creature that looks right.
 
 ## Experiments
 
