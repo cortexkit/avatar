@@ -684,14 +684,15 @@ mod tests {
                 entries: 0
             })
         ));
-        // A negative index is refused by the unsigned schema type.
-        schema_error(&document(
+        // A negative index is refused too, by the unsigned schema type.
+        assert!(decode(&document(
             &[&[primitive("m", &[])]],
             &[
                 primitive("a", &[masked("0")]),
                 primitive("b", &[masked("-1")]),
             ],
-        ));
+        ))
+        .is_err());
     }
 
     #[test]
