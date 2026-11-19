@@ -142,6 +142,9 @@ public indirect enum Effect: Equatable, Decodable, Sendable {
     /// rescale's per-value rounding, and a re-flattening of the final shape
     /// can land one milliunit away — a byte-parity break, not a visual one.
     case lit(lightY: Int64)
+    /// On the wire this is a `mask_ref` into the tree's `masks` table. Every
+    /// reference to one entry decodes to the same array, so a mask shared by
+    /// many primitives is held in memory once.
     case masked(mask: [Primitive])
     case turbulence(seed: UInt8, freq_h: Q32, freq_v: Q32, octaves: UInt8, scale: Q32)
 }
@@ -191,7 +194,16 @@ public func decodeRenderTreeJson(_ bytes: [UInt8]) throws -> RenderTree {
     var parser = JsonParser(bytes: bytes)
     let document = try parser.parseDocument()
     try requireIntegerNumbers(document)
-    let tree = try JSONDecoder().decode(RenderTree.self, from: Data(bytes))
+    let masks = MaskTable()
+    let decoder = JSONDecoder()
+    decoder.userInfo[maskTableKey] = masks
+    let tree = try decoder.decode(RenderTree.self, from: Data(bytes))
+    // Every masked effect resolves to a table entry, so checking each entry and
+    // the top-level list checks every primitive once, however often its mask
+    // is shared.
+    for entry in masks.entries {
+        try validateTransforms(entry)
+    }
     try validateTransforms(tree.primitives)
     return tree
 }
@@ -201,10 +213,66 @@ private func validateTransforms(_ primitives: [Primitive]) throws {
         if let transform = primitive.transform {
             _ = try transform.checkedAffine()
         }
-        for effect in primitive.effects {
-            if case .masked(let mask) = effect {
-                try validateTransforms(mask)
-            }
+    }
+}
+
+/// The key under which `decodeRenderTreeJson` hands the per-type decoders the
+/// mask table of the tree being decoded.
+private let maskTableKey = CodingUserInfoKey(rawValue: "AvatarKit.RenderTree.masks")!
+
+/// The shared masks of one tree while it decodes. A masked effect names its
+/// mask by index into the tree's `masks` table, so a mask cloned into many
+/// primitives travels once. Entries decode in table order and may refer only
+/// to entries before them, so every reference resolves to an already-decoded
+/// mask and no reference can form a cycle.
+private final class MaskTable: @unchecked Sendable {
+    /// The entries decoded so far. While entry `i` decodes, these are exactly
+    /// the entries before it, which are the ones it may refer to.
+    private(set) var entries: [[Primitive]] = []
+    /// One flag per table entry, set when something refers to that entry.
+    private var referenced: [Bool] = []
+
+    static func of(_ decoder: Decoder) throws -> MaskTable {
+        guard let table = decoder.userInfo[maskTableKey] as? MaskTable else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "render trees decode only through decodeRenderTreeJson, which resolves mask references"))
+        }
+        return table
+    }
+
+    func decodeEntries(_ container: inout UnkeyedDecodingContainer) throws {
+        guard let count = container.count else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: container.codingPath,
+                debugDescription: "the mask table's length is unknown"))
+        }
+        referenced = Array(repeating: false, count: count)
+        while !container.isAtEnd {
+            entries.append(try container.decode([Primitive].self))
+        }
+    }
+
+    func resolve(_ maskRef: Int, decoder: Decoder) throws -> [Primitive] {
+        guard maskRef >= 0, maskRef < referenced.count else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "mask_ref \(maskRef) is outside the mask table of \(referenced.count) entries"))
+        }
+        guard maskRef < entries.count else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "mask_ref \(maskRef) must refer to an entry before mask entry \(entries.count)"))
+        }
+        referenced[maskRef] = true
+        return entries[maskRef]
+    }
+
+    func requireEveryEntryReferenced(codingPath: [CodingKey]) throws {
+        if let unused = referenced.firstIndex(of: false) {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath,
+                debugDescription: "mask entry \(unused) is never referenced"))
         }
     }
 }
@@ -302,16 +370,23 @@ extension Rgb: Decodable {
 
 extension RenderTree {
     private enum CodingKeys: String, CodingKey {
-        case background, canvas, primitives
+        case background, canvas, masks, primitives
     }
 
     public init(from decoder: Decoder) throws {
-        try rejectUnknownKeys(decoder, allowed: ["background", "canvas", "primitives"])
+        try rejectUnknownKeys(decoder, allowed: ["background", "canvas", "masks", "primitives"])
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let masks = try MaskTable.of(decoder)
+        // The table decodes before the primitives that refer to it. A missing
+        // `masks` member throws `keyNotFound` here.
+        var entries = try container.nestedUnkeyedContainer(forKey: .masks)
+        try masks.decodeEntries(&entries)
+        let primitives = try container.decode([Primitive].self, forKey: .primitives)
+        try masks.requireEveryEntryReferenced(codingPath: entries.codingPath)
         self.init(
             canvas: try container.decode(UInt32.self, forKey: .canvas),
             background: try container.decodeRequiredOptional(Rgb.self, forKey: .background),
-            primitives: try container.decode([Primitive].self, forKey: .primitives))
+            primitives: primitives)
     }
 }
 
@@ -471,7 +546,7 @@ extension Stroke {
 
 extension Effect {
     private enum CodingKeys: String, CodingKey {
-        case freq_h, freq_v, kind, light_y, mask, octaves, scale, seed
+        case freq_h, freq_v, kind, light_y, mask_ref, octaves, scale, seed
     }
 
     public init(from decoder: Decoder) throws {
@@ -482,8 +557,9 @@ extension Effect {
             try rejectUnknownKeys(decoder, allowed: ["kind", "light_y"])
             self = .lit(lightY: try container.decode(Int64.self, forKey: .light_y))
         case "masked":
-            try rejectUnknownKeys(decoder, allowed: ["kind", "mask"])
-            self = .masked(mask: try container.decode([Primitive].self, forKey: .mask))
+            try rejectUnknownKeys(decoder, allowed: ["kind", "mask_ref"])
+            let maskRef = try container.decode(Int.self, forKey: .mask_ref)
+            self = .masked(mask: try MaskTable.of(decoder).resolve(maskRef, decoder: decoder))
         case "turbulence":
             try rejectUnknownKeys(
                 decoder, allowed: ["freq_h", "freq_v", "kind", "octaves", "scale", "seed"])

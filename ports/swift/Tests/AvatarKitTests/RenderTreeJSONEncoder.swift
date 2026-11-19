@@ -12,6 +12,38 @@ func canonicalTreeJSONBytes(_ tree: RenderTree) -> [UInt8] {
 
 private struct TreeJSONWriter {
     var output = ""
+    /// Canonical JSON of each distinct mask, in table order.
+    var masks: [String] = []
+    /// The table index of each mask, keyed by its canonical JSON.
+    var maskIndices: [String: Int] = [:]
+
+    /// Runs `body` against an empty output and returns what it wrote, leaving
+    /// the output written so far untouched. The mask table is shared, so masks
+    /// met inside still receive their table indices.
+    mutating func detached(_ body: (inout TreeJSONWriter) -> Void) -> String {
+        let outer = output
+        output = ""
+        body(&self)
+        let written = output
+        output = outer
+        return written
+    }
+
+    /// Returns the table index of `mask`, adding it when no identical mask is
+    /// in the table yet. Writing the entry first gives every mask nested inside
+    /// it an index before this one, as the Rust encoder does.
+    mutating func maskRef(_ mask: [Primitive]) -> Int {
+        let entry = detached { writer in
+            writer.array(mask) { $0.write($1) }
+        }
+        if let index = maskIndices[entry] {
+            return index
+        }
+        let index = masks.count
+        masks.append(entry)
+        maskIndices[entry] = index
+        return index
+    }
 
     mutating func integer<T: BinaryInteger>(_ value: T) {
         output.append(String(value))
@@ -75,13 +107,21 @@ private struct TreeJSONWriter {
     }
 
     mutating func write(_ tree: RenderTree) {
+        // The mask table comes before the primitives in key order but is
+        // complete only once they have been walked, so they are written aside.
+        let primitives = detached { writer in
+            writer.array(tree.primitives) { $0.write($1) }
+        }
+        let entries = masks
         var first = beginObject()
         field("background", first: &first)
         optional(tree.background) { $0.write($1) }
         field("canvas", first: &first)
         integer(tree.canvas)
+        field("masks", first: &first)
+        array(entries) { $0.output.append($1) }
         field("primitives", first: &first)
-        array(tree.primitives) { $0.write($1) }
+        output.append(primitives)
         endObject()
     }
 
@@ -218,9 +258,10 @@ private struct TreeJSONWriter {
             field("light_y", first: &first); integer(lightY)
             endObject()
         case .masked(let mask):
+            let index = maskRef(mask)
             var first = beginObject()
             field("kind", first: &first); string("masked")
-            field("mask", first: &first); array(mask) { $0.write($1) }
+            field("mask_ref", first: &first); integer(index)
             endObject()
         case .turbulence(let seed, let freqH, let freqV, let octaves, let scale):
             var first = beginObject()

@@ -37,13 +37,13 @@ final class RenderConformanceTests: XCTestCase {
     }
 
     func testTreeDecoderRejectsMissingUnknownAndMalformedValues() throws {
-        let minimal = Array("{\"background\":null,\"canvas\":10000,\"primitives\":[]}".utf8)
+        let minimal = Array("{\"background\":null,\"canvas\":10000,\"masks\":[],\"primitives\":[]}".utf8)
         XCTAssertNoThrow(try decodeRenderTreeJson(minimal))
         for malformed in [
-            "{\"canvas\":10000,\"primitives\":[]}",
-            "{\"background\":null,\"canvas\":10000.0,\"primitives\":[]}",
-            "{\"background\":null,\"canvas\":4294967296,\"primitives\":[]}",
-            "{\"background\":null,\"canvas\":10000,\"extra\":0,\"primitives\":[]}",
+            "{\"canvas\":10000,\"masks\":[],\"primitives\":[]}",
+            "{\"background\":null,\"canvas\":10000.0,\"masks\":[],\"primitives\":[]}",
+            "{\"background\":null,\"canvas\":4294967296,\"masks\":[],\"primitives\":[]}",
+            "{\"background\":null,\"canvas\":10000,\"extra\":0,\"masks\":[],\"primitives\":[]}",
         ] {
             XCTAssertThrowsError(try decodeRenderTreeJson(Array(malformed.utf8)))
         }
@@ -86,7 +86,7 @@ final class RenderConformanceTests: XCTestCase {
 
     private var roleDocument: String {
         """
-        {"background":null,"canvas":1,"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}
+        {"background":null,"canvas":1,"masks":[],"primitives":[{"clip":null,"effects":[],"label":"diagnostic","opacity":null,"paint":{"kind":"none"},"role":"ground_shadow","shape":{"cx":0,"cy":0,"kind":"circle","r":1},"stroke":null,"transform":null}]}
         """
     }
 
