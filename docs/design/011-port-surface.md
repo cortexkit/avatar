@@ -356,9 +356,20 @@ thread. iOS judged that acceptable, so tree weight stays deferred.
 Confirmed on real hardware (TestFlight 231 on the operator's iPhone): the
 embedded core draws the wild reference creature byte-identical to the
 corpus in 24.2 ms, putting thirty creatures near 0.7 s of background CPU at
-cold launch. Revisit if that grows much worse. A faster wire
-encoding is not the lever: it would cut the parse but not the segment
-count that also drives rasterizing and memory.
+cold launch. Revisit if that grows much worse.
+
+Most of that cost turned out to be repeated data, not segment count. Wild
+creatures clone one body mask into many primitives, and the tree JSON wrote
+every copy in full: 77% of the bytes across the 18 committed wild trees.
+The JSON now writes each distinct mask once, in a top-level `masks` table,
+and a masked effect refers to its entry by index (design note 006). The wild
+trees shrank from 3,537,942 to 820,554 bytes, and the largest from 345 KB to
+54 KB. Measured by the iOS client (2026-11-20, release build, iPhone 17 Pro
+simulator, medians of five warm runs, its own rasterizer at 40 pt x3), decode
+plus raster per creature went from 26.30 to 3.99 ms on the largest tree and
+from 13.94 to 4.32 ms on a typical one, 3.2x to 6.6x faster, almost all of it
+in decode. Rasterizing stays below 0.6 ms, so the segment count is not the
+limit at dock sizes today.
 
 ### The obvious fix does not work, measured
 
