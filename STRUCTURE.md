@@ -9,7 +9,8 @@ crates/
   avatar-tables/     committed sine and easing tables, rounding division, table mint (--check)
   avatar-phenotype/  classic typed units, Phenotype struct, canonical phenotype JSON
   avatar-genome/     classic 1 KiB Genome, decoder, palette table, id-derived genomes at any length
-  avatar-svg/        every generator (classic at the top level, wild in src/wild/), the tree, dispatch, serializers
+  avatar-svg/        every generator (classic at the top level, wild in src/wild/), the tree, serializers
+  avatar/            the crate Rust hosts depend on: dispatch by type and version, re-exports of the tree and serializers
   avatar-ffi/        the C boundary built into the Swift package's embedded core
   avatar-export/     CLI: stored genome to PNG, SVG or tree JSON; genome manifests
   avatar-vectors/    golden corpus tests and the corpus mint
@@ -25,13 +26,12 @@ Package.swift        the Swift package, at the root so it can be consumed by git
 LICENSE              MIT
 ```
 
-`avatar-genome` builds on `avatar-phenotype` and `avatar-tables`; `avatar-svg` builds on all three, and uses `avatar-genome` only in classic dispatch. `avatar-ffi` and `avatar-export` sit on `avatar-svg`.
+`avatar-genome` builds on `avatar-phenotype` and `avatar-tables`, and so does `avatar-svg`. `avatar` builds on `avatar-svg`, `avatar-genome` (classic decoding, in dispatch) and `avatar-phenotype`. `avatar-ffi` sits on `avatar`; `avatar-export` sits on `avatar`, and on `avatar-svg` for its classic SVG.
 
-Directory names are the short crate names. The four library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar-svg` and so on), which is the name `cargo -p` and a crates.io dependency use; each library keeps its short Rust name, so code imports `avatar_svg`. `avatar-ffi`, `avatar-export` and `avatar-vectors` keep their names and are never published.
+Directory names are the short crate names. The five library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar`, `cortexkit-avatar-svg` and so on), which is the name `cargo -p` and a crates.io dependency use; each library keeps its short Rust name, so code imports `avatar` or `avatar_svg`. `avatar-ffi`, `avatar-export` and `avatar-vectors` keep their names and are never published.
 
 ## `crates/avatar-svg/src`
 
-- `dispatch.rs`: `render_tree_for_bytes` and `render_tree_for`, the type and version arms, and each type's genome length.
 - `tree.rs`: `RenderTree`, `Primitive`, `Role` and the other tree types; `tree_json.rs`: canonical tree JSON.
 - `tree_serialize.rs`: generic SVG for any tree. `serialize.rs`: classic's historical SVG layout, which branches on classic labels; never use it for another type.
 - Classic generator: `build.rs` assembles the tree; `geometry.rs` (body spline and flattening), `face.rs`, `eyes.rs`, `brows.rs`, `mouth.rs`, `lashes.rs`, `pattern.rs`, `mood.rs`; `fixed.rs` and `format.rs` hold fixed-point and number-formatting helpers; `svg.rs` holds `RenderParams`, `Mood` and `RenderError`.
@@ -41,6 +41,7 @@ Directory names are the short crate names. The four library crates' package name
 
 ## Other crates
 
+- `crates/avatar/src`: `lib.rs` re-exports everything a Rust host needs; `dispatch.rs` holds `render_tree_for_bytes` and `render_tree_for`, the type and version arms, and each type's genome length.
 - `crates/avatar-genome`: `genome.rs`, `decode.rs`, `identity.rs`, `generated/palette.rs` with `bin/mint_palette.rs`. `examples/fleet_coverage.rs` is the classic corpus coverage check the gate runs; the other examples render sample sheets.
 - `crates/avatar-vectors/src`: `lib.rs` holds the classic vector list and every boundary test; `tests/wild.rs` the wild corpus; `tree_fixture.rs` an independent strict decoder for the tree files.
 - `crates/avatar-ffi`: `src/lib.rs`, the C header in `include/`, and `README.md` on how the boundary is used.
@@ -66,9 +67,10 @@ Directory names are the short crate names. The four library crates' package name
 
 ## Where to add new code
 
-- **A new creature type:** a new module under `crates/avatar-svg/src/`, as `wild/` is. Write it once, in Rust; never in Swift or TypeScript. Keep it deterministic: basic arithmetic, `sqrt`, `round`, and `wild/math.rs` or `avatar-tables` for anything else. Register it in `dispatch.rs`, keeping the type, version, length order. Give it a corpus, rebuild the embedded core, and run the cross-platform check. A new type needs the maintainer's approval before agents can be switched to it.
-- **A new version of a type:** a new arm in `dispatch.rs`. Never change what an existing version draws once an agent uses that type; add its vectors beside the old ones.
-- **A tree feature** (a new primitive, paint, effect or role): `tree.rs`, `tree_json.rs`, `tree_serialize.rs`, and both decoders and the TypeScript serializer, each failing closed on unknown values. Then rebuild the embedded core.
+- **A new creature type:** its own crate, `crates/avatar-<stem>` (package `cortexkit-avatar-<stem>`), where the stem is the type name without `creature.`. It builds its tree with `avatar-svg`'s tree types. Write it once, in Rust; never in Swift or TypeScript. Keep it deterministic: basic arithmetic, `sqrt`, `round`, and `avatar-svg`'s `wild/math.rs` or `avatar-tables` for anything else. Register it in `avatar`'s dispatch (`crates/avatar/src/dispatch.rs`), checking type, then version, then genome length, as the existing types do. Give it a corpus, rebuild the embedded core, and run the cross-platform check. A new type needs the maintainer's approval before agents can be switched to it.
+- **A new version of a type:** a new arm in `crates/avatar/src/dispatch.rs`. Never change what an existing version draws once an agent uses that type; add its vectors beside the old ones.
+- **A tree feature** (a new primitive, paint, effect or role) that classic or wild trees use: `tree.rs`, `tree_json.rs`, `tree_serialize.rs`, and both decoders and the TypeScript serializer, each failing closed on unknown values. Then rebuild the embedded core.
+- **A tree feature used only by types that apps receive as finished images:** Rust only. Add it to `tree.rs`, `tree_json.rs`, `tree_serialize.rs` and the fixture reader `crates/avatar-vectors/src/tree_fixture.rs`, with fixtures in `vectors/tree-features/`. Leave the Swift and TypeScript decoders as they are, so they keep refusing any tree that uses it.
 - **A numeric table:** `crates/avatar-tables/src/bin/mint.rs`, then regenerate in a worktree with `cargo run -p cortexkit-avatar-tables --bin mint`. Swift mirrors only `SIN_QUARTER`, for composing transforms; generator tables stay Rust-only.
 - **A classic golden vector:** add it to the list in `crates/avatar-vectors/src/lib.rs`, then `UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`.
 - **A wild golden vector:** add a row to `vectors/wild/corpus.tsv`, whose three tab-separated columns are the id the genome derives from, the comma-separated moods to pin, and the wild version to render at. Then run `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`, which leaves classic untouched. Version 1 trees are named `<id>__<mood>.json`; later versions add the version, as in `<id>__v2__<mood>.json`.

@@ -51,15 +51,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
-name = "cortexkit-avatar-genome"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "cortexkit-avatar-phenotype",
- "cortexkit-avatar-tables",
-]
-
-[[package]]
 name = "cortexkit-avatar-phenotype"
 version = "0.1.0"
 dependencies = [
@@ -70,7 +61,6 @@ dependencies = [
 name = "cortexkit-avatar-svg"
 version = "0.1.0"
 dependencies = [
- "cortexkit-avatar-genome",
  "cortexkit-avatar-phenotype",
  "cortexkit-avatar-tables",
 ]

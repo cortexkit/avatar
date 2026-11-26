@@ -170,7 +170,6 @@ name = "cortexkit-avatar-svg"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "cortexkit-avatar-genome",
  "cortexkit-avatar-phenotype",
  "cortexkit-avatar-tables",
  "serde_json",

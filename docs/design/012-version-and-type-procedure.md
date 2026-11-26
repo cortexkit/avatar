@@ -36,7 +36,7 @@ off the body. Something a user would call a defect rather than a style.
 
 ## Bumping a version
 
-1. **Add an arm; do not edit one.** In `crates/avatar-svg/src/dispatch.rs`
+1. **Add an arm; do not edit one.** In `crates/avatar/src/dispatch.rs`
    the version match gets a new arm. The old arm stays, forever, because
    rows still name it. Deleting it silently changes the faces of every
    row that has not upgraded — the precise failure this note exists to

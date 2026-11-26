@@ -12,7 +12,7 @@ Two decisions carry the design:
 ## Terms
 
 - **Genome:** the stored bytes. `creature.classic` uses 1,024 bytes (2,048 hex characters); `creature.wild` uses 16,384 bytes (32,768 hex characters). A wild genome derived from an id begins with the classic genome derived from the same id (`derive_genome_bytes` in `crates/avatar-genome/src/identity.rs`).
-- **Type:** which representation draws a genome. Registered types are `creature.classic` and `creature.wild` (`crates/avatar-svg/src/dispatch.rs`). A new look is a new type.
+- **Type:** which representation draws a genome. Registered types are `creature.classic` and `creature.wild` (`crates/avatar/src/dispatch.rs`). A new look is a new type.
 - **Version:** one generation of a type's generator. It exists to fix generation bugs. Every row renders at the version it stores, so versions are added and never edited (`docs/design/012-version-and-type-procedure.md`). Today: classic 2, wild 2. Wild version 1 still draws every row that stores it; version 2 exists because version 1 draws mood lids and squints beside eyes that the creature's eye aspect or the mood has scaled (`wild::Generation` in `crates/avatar-svg/src/wild/mod.rs`). A type no agent uses yet may still change in place, because no agent has a creature of that type whose look it would change.
 - **Mood:** one of seven render-time moods: neutral, working, happy, waiting, blocked, sad, sleepy. A mood changes face geometry, never identity or colour, so a render cache must key on it.
 - **Phenotype:** classic only. Typed fixed-unit parameters decoded from a classic genome (`crates/avatar-phenotype`), with a canonical JSON form. Wild decodes its genome straight into its own `Creature` struct.
@@ -26,7 +26,8 @@ Two decisions carry the design:
 | Tables | `crates/avatar-tables` | Committed lookup tables (quarter-wave sine `SIN_QUARTER`, five `EASE_*` tables), `sin_q30`/`cos_q30`, the rounding division `div_round_half_away`, and the `mint` binary that regenerates or checks the tables. |
 | Phenotype | `crates/avatar-phenotype` | Classic's typed units (`Milli`, `Q32`, `Bam16`, `Rgb`), the `Phenotype` struct and its canonical JSON. |
 | Genome | `crates/avatar-genome` | The classic 1 KiB `Genome`, its decoder to `Phenotype`, the palette table, and identity derivation from an id at any length. |
-| Generators and tree | `crates/avatar-svg` | The classic generator (`build.rs`, `geometry.rs`, `face.rs`, `eyes.rs`, `brows.rs`, `mouth.rs`, `lashes.rs`, `pattern.rs`, `mood.rs`), the wild generator (`src/wild/`), the tree, dispatch, canonical tree JSON and both SVG serializers. |
+| Generators and tree | `crates/avatar-svg` | The classic generator (`build.rs`, `geometry.rs`, `face.rs`, `eyes.rs`, `brows.rs`, `mouth.rs`, `lashes.rs`, `pattern.rs`, `mood.rs`), the wild generator (`src/wild/`), the tree, canonical tree JSON and both SVG serializers. |
+| Dispatch | `crates/avatar` | The one crate a Rust host depends on. `dispatch.rs` routes a stored row's type and version to the generator that draws it, and the crate root re-exports the tree types and serializers. |
 | C boundary | `crates/avatar-ffi` | One call, `avatar_render_tree_json`, returning canonical tree JSON with a distinct status per failure; panics are contained. |
 | Swift | `ports/swift`, `Package.swift` | AvatarKit: calls the embedded core, decodes the tree, owns a cache, composes transforms. Ships the committed `AvatarCore.xcframework`. |
 | TypeScript | `ports/ts` | A fail-closed tree decoder and the generic SVG serializer. No generator. |
@@ -37,7 +38,7 @@ Two decisions carry the design:
 
 `STRUCTURE.md` has the directory map and where to add new code.
 
-The four library crates have prefixed package names, the names they are published under: `cortexkit-avatar-tables`, `cortexkit-avatar-phenotype`, `cortexkit-avatar-genome` and `cortexkit-avatar-svg`. Each keeps its short library name: code imports `avatar_tables`, `avatar_phenotype`, `avatar_genome` and `avatar_svg`. Cargo commands that select a package use the prefixed name (`cargo test -p cortexkit-avatar-svg`). `avatar-ffi`, `avatar-export` and `avatar-vectors` are never published.
+The five library crates have prefixed package names, the names they are published under: `cortexkit-avatar-tables`, `cortexkit-avatar-phenotype`, `cortexkit-avatar-genome`, `cortexkit-avatar-svg` and `cortexkit-avatar`. Each keeps its short library name: code imports `avatar_tables`, `avatar_phenotype`, `avatar_genome`, `avatar_svg` and `avatar`. Cargo commands that select a package use the prefixed name (`cargo test -p cortexkit-avatar-svg`). `avatar-ffi`, `avatar-export` and `avatar-vectors` are never published.
 
 ## Rendering a stored avatar
 
@@ -49,7 +50,7 @@ The four library crates have prefixed package names, the names they are publishe
 How each consumer gets there:
 
 - **Apple-platform apps:** AvatarKit's `renderTreeViaCore(genomeBytes:type:version:mood:)` calls the embedded core, then decodes the JSON with `decodeRenderTreeJson` (`RenderTree.swift`), which first checks the integer-only number grammar with the strict parser in `RenderTreeJSON.swift`. Each core status maps to its own `CoreRenderError`. `RenderTreeCache` is owned by the host app, keyed by bytes, type, version and mood, and can be emptied under memory pressure. `TreeAffine.swift` composes decoded transforms with the pinned sine table and a fixed-point multiply; it builds no geometry.
-- **Rust hosts:** depend on the `cortexkit-avatar-svg` package (its library is imported as `avatar_svg`), from crates.io or by git at a pinned commit, and call `render_tree_for_bytes` and `serialize_tree`.
+- **Rust hosts:** depend only on the `cortexkit-avatar` package (its library is imported as `avatar`), from crates.io or by git at a pinned commit, and call `render_tree_for_bytes` and `serialize_tree`. It re-exports the tree types, `Mood` and the serializers, so rendering needs no other avatar crate.
 - **TypeScript:** `decodeRenderTreeJson` and `serializeTree` in `ports/ts/src`.
 - **Images:** `avatar-export --genome-file <path> --type <type> --version <n> --out <file>`. The `--out` extension picks the format: `.png` or none, `.svg`, or `.json`; any other extension is refused. Live agents always render their stored genome. `--mint-genomes` writes a manifest of id-derived genomes for a type. A wild genome does not fit on a Windows command line, so portable callers use `--genome-file` (`-` reads standard input) rather than `--genome <hex>`.
 

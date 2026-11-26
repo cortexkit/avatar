@@ -67,12 +67,13 @@ that divergence impossible instead of merely unlikely to be caught.
 
 ## Crates and ports
 
-The four library crates are published under `cortexkit-` package names.
+The five library crates are published under `cortexkit-` package names.
 Each keeps a short library name, which is what code imports.
 
 | Package | Import as | What it is for |
 | --- | --- | --- |
-| `cortexkit-avatar-svg` | `avatar_svg` | Every generator, the render tree, dispatch by type and version, the canonical tree JSON and the SVG serializers. The crate most hosts need. |
+| `cortexkit-avatar` | `avatar` | Renders a stored avatar: dispatch by type and version, plus the tree types and serializers re-exported. The one crate a Rust host depends on. |
+| `cortexkit-avatar-svg` | `avatar_svg` | Every generator, the render tree, the canonical tree JSON and the SVG serializers. |
 | `cortexkit-avatar-genome` | `avatar_genome` | The classic 1 KiB genome and its decoder, the palette table, and genomes derived from an identifier at any length. |
 | `cortexkit-avatar-phenotype` | `avatar_phenotype` | The typed fixed-point units and the `Phenotype` struct a classic genome decodes to, with its canonical JSON. |
 | `cortexkit-avatar-tables` | `avatar_tables` | Committed sine and easing tables and the one rounding division, which keep classic arithmetic identical everywhere. |
@@ -130,19 +131,20 @@ decisions left in it.
 
 ```toml
 [dependencies]
-cortexkit-avatar-svg = "0.1"
+cortexkit-avatar = "0.1"
 # or, before a crates.io release, straight from this repository:
-# cortexkit-avatar-svg = { git = "https://github.com/cortexkit/avatar", rev = "<commit>" }
+# cortexkit-avatar = { git = "https://github.com/cortexkit/avatar", rev = "<commit>" }
 ```
 
-The package is `cortexkit-avatar-svg`; the library it provides is
-`avatar_svg`.
+The package is `cortexkit-avatar`; the library it provides is `avatar`.
+It is the only avatar crate a Rust host needs to render: it re-exports
+the tree types, `Mood` and the serializers.
 
 ```rust
-use avatar_svg::{render_tree_for_bytes, serialize_tree, serialize_tree_json, DispatchError, Mood};
+use avatar::{render_tree_for_bytes, serialize_tree, serialize_tree_json, DispatchError, Mood};
 
 /// `genome`, `avatar_type` and `version` are what is stored with the agent,
-/// for example 16,384 bytes, `avatar_svg::WILD` and 2. Never substitute the
+/// for example 16,384 bytes, `avatar::WILD` and 2. Never substitute the
 /// library's newest version for the stored one.
 fn draw(genome: &[u8], avatar_type: &str, version: u32, mood: Mood)
     -> Result<(Vec<u8>, String), DispatchError>
@@ -249,7 +251,7 @@ const svg = serializeTree(tree); // the same bytes as Rust's serialize_tree
 | `creature.classic` | 1,024 bytes | 2 | The TOG-derived creature. Integer and fixed-point arithmetic throughout. |
 | `creature.wild` | 16,384 bytes | 1, 2 | The current design. Version 2 fixes mood lids and squints that version 1 draws beside eyes the creature's eye aspect has narrowed; version 1 still draws every record that stores it. |
 
-The dispatch arms in `crates/avatar-svg/src/dispatch.rs` are the
+The dispatch arms in `crates/avatar/src/dispatch.rs` are the
 authority. A record renders at the version it stores, never at the
 library's newest, so an agent's face changes only when someone decides it
 should:

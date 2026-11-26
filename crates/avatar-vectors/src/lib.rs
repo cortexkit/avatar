@@ -119,10 +119,10 @@ mod tests {
     use serde::Deserialize;
 
     // Revision of the classic conformance fixtures, not generation behavior.
-    // CLASSIC_VERSION in avatar_svg::dispatch identifies the algorithm used to
-    // render stored genomes. Adding fixture cases must not change that version
-    // or the appearance rendered for existing identities. This counter changes
-    // only when the classic corpus is re-minted.
+    // CLASSIC_VERSION in crates/avatar/src/dispatch.rs identifies the
+    // algorithm used to render stored genomes. Adding fixture cases must not
+    // change that version or the appearance rendered for existing identities.
+    // This counter changes only when the classic corpus is re-minted.
     const CORPUS_REVISION: u16 = 5;
     const GENOME_VERSION: u16 = 1;
     const GENOME_BYTES: usize = 1_024;
