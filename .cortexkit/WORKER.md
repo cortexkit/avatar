@@ -12,7 +12,7 @@ Standing rules for every worker in this repository. A brief can tighten them but
 ## Test what you changed, nothing more
 
 Run only the checks for what you changed:
-- the tests for the files and behaviour you changed, by name or filter (`cargo test -p <package> <filter>`, `bun test <file>`); the four library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar-svg`), while `avatar-ffi`, `avatar-export` and `avatar-vectors` do not;
+- the tests for the files and behaviour you changed, by name or filter (`cargo test -p <package> <filter>`, `bun test <file>`); the library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar`, `cortexkit-avatar-svg`), while `avatar-ffi`, `avatar-export` and `avatar-vectors` do not;
 - formatting and lint for what you touched (`cargo fmt --check`, `cargo clippy -p <package> --all-targets -- -D warnings`, and `bunx tsc --noEmit` if you touched `ports/ts`);
 - for a bug fix, one test shown once to fail without the fix.
 
