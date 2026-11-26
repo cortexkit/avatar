@@ -109,6 +109,12 @@ pub enum Shape {
         closed: bool,
         fill_rule: FillRule,
     },
+    /// A non-empty list of closed contours sharing one winding rule. Each
+    /// starts with a move and continues with at least one line or cubic.
+    CompoundPath {
+        subpaths: Vec<Vec<Segment>>,
+        fill_rule: FillRule,
+    },
     Circle {
         cx: i64,
         cy: i64,
@@ -133,14 +139,155 @@ pub enum Shape {
 pub struct GradientStop {
     pub offset_q32: Q32,
     pub color: Rgb,
+    /// Opaque stops are `None`; explicit opacities are in [0, 1).
+    pub opacity_q32: Option<Q32>,
+}
+
+impl GradientStop {
+    /// Clamp and quantize opacity, omitting a stop opacity that rounds to one.
+    pub fn with_opacity(offset_q32: Q32, color: Rgb, opacity: f64) -> Self {
+        let opacity = Q32((opacity.clamp(0.0, 1.0) * Q32::ONE.0 as f64).round() as i64);
+        Self {
+            offset_q32,
+            color,
+            opacity_q32: (opacity != Q32::ONE).then_some(opacity),
+        }
+    }
+
+    pub(crate) fn checked_opacity(&self) -> Option<Q32> {
+        if let Some(opacity) = self.opacity_q32 {
+            assert!(
+                (0..Q32::ONE.0).contains(&opacity.0),
+                "gradient stop opacity must be in [0, 1)"
+            );
+        }
+        self.opacity_q32
+    }
 }
 
 /// Fill paint for a primitive.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Paint {
-    Solid { color: Rgb },
-    RadialGradient { stops: Vec<GradientStop> },
+    Solid {
+        color: Rgb,
+    },
+    RadialGradient {
+        stops: Vec<GradientStop>,
+    },
+    /// A radial gradient in the primitive's local, pre-transform coordinates.
+    RadialGradientAt {
+        cx: i64,
+        cy: i64,
+        r: i64,
+        focal: Option<(i64, i64)>,
+        stops: Vec<GradientStop>,
+    },
     None,
+}
+
+impl Paint {
+    /// Move an on-circle or exterior focus to the nearest strictly interior
+    /// integer point, breaking ties by x then y.
+    ///
+    /// Panics unless the radius is positive and all inputs are within ±2³¹.
+    pub fn radial_gradient_at(
+        cx: i64,
+        cy: i64,
+        r: i64,
+        focal: Option<(i64, i64)>,
+        stops: Vec<GradientStop>,
+    ) -> Self {
+        assert!(r > 0, "radial gradient radius must be positive");
+        let in_range = |coord: i64| coord.unsigned_abs() <= 1 << 31;
+        assert!(
+            in_range(cx)
+                && in_range(cy)
+                && in_range(r)
+                && focal.is_none_or(|(fx, fy)| in_range(fx) && in_range(fy)),
+            "radial gradient constructor coordinates must be within ±2³¹"
+        );
+        let focal = focal.map(|(fx, fy)| {
+            if focus_inside(cx, cy, r, fx, fy) {
+                return (fx, fy);
+            }
+            let dx = i128::from(fx) - i128::from(cx);
+            let dy = i128::from(fy) - i128::from(cy);
+            let (x, y) = nearest_interior_focus(dx, dy, i128::from(r));
+            (cx + x as i64, cy + y as i64)
+        });
+        Self::RadialGradientAt {
+            cx,
+            cy,
+            r,
+            focal,
+            stops,
+        }
+    }
+}
+
+pub(crate) fn assert_radial_gradient_at(cx: i64, cy: i64, r: i64, focal: Option<(i64, i64)>) {
+    assert!(r > 0, "radial gradient radius must be positive");
+    assert!(
+        focal.is_none_or(|(fx, fy)| focus_inside(cx, cy, r, fx, fy)),
+        "radial gradient focus must be strictly inside the circle"
+    );
+}
+
+fn focus_inside(cx: i64, cy: i64, r: i64, fx: i64, fy: i64) -> bool {
+    let dx = (i128::from(fx) - i128::from(cx)).abs();
+    let dy = (i128::from(fy) - i128::from(cy)).abs();
+    let r = i128::from(r);
+    dx < r && dy < r && dx * dx + dy * dy < r * r
+}
+
+pub(crate) fn assert_compound_path(subpaths: &[Vec<Segment>]) {
+    assert!(!subpaths.is_empty(), "compound path must have a subpath");
+    for segments in subpaths {
+        assert!(
+            matches!(segments.as_slice(), [Segment::MoveTo { .. }, rest @ ..]
+                if !rest.is_empty() && rest.iter().all(|s| matches!(s, Segment::LineTo { .. } | Segment::CubicTo { .. }))),
+            "compound subpath must start with its only move and have a line or cubic"
+        );
+    }
+}
+
+fn nearest_interior_focus(dx: i128, dy: i128, r: i128) -> (i128, i128) {
+    // Reflect into the target's quadrant: crossing an axis cannot improve
+    // distance, and neither can going farther along an axis than the target.
+    let (tx, ty) = (dx.abs(), dy.abs());
+    let limit = r * r - 1; // Integer squared lengths must be strictly below r².
+    let y_at = |x: i128| ty.min((limit - x * x).isqrt());
+    let square = |n| n * n;
+    let candidate = |x, y| {
+        (
+            square(tx - x) + square(ty - y),
+            x * dx.signum(),
+            y * dy.signum(),
+        )
+    };
+
+    let max_x = tx.min(r - 1);
+    // Seed the search near the continuous projection; pruning does not
+    // depend on this estimate being exact.
+    let seed = (tx * r / (tx * tx + ty * ty).isqrt()).min(max_x);
+    let mut best = candidate(seed, y_at(seed));
+    let mut intervals = vec![(0, max_x)];
+    while let Some((lo, hi)) = intervals.pop() {
+        // The feasible points over [lo, hi] lie in [lo, hi] × [0, y_at(lo)].
+        // Distance to that rectangle is a lower bound; ties still need a look.
+        let y = y_at(lo);
+        if square(tx - hi) + square(ty - y) > best.0 {
+            continue;
+        }
+        if lo == hi {
+            best = best.min(candidate(lo, y));
+        } else {
+            let mid = (lo + hi) / 2;
+            intervals.push((mid + 1, hi));
+            intervals.push((lo, mid));
+        }
+    }
+    (best.1, best.2)
 }
 
 /// Stroke endpoint treatment.
@@ -285,3 +432,7 @@ fn compose_affine(lhs: Affine, rhs: Affine) -> Affine {
         ty: lhs.ty + q32_mul(rhs.tx, lhs.b.0) + q32_mul(rhs.ty, lhs.d.0),
     }
 }
+
+#[cfg(test)]
+#[path = "tree_feature_tests.rs"]
+mod tree_features;

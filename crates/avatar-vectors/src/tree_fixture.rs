@@ -100,12 +100,12 @@ impl MaskTable {
 
     fn primitive(&mut self, primitive: FixturePrimitive) -> Result<Primitive, FixtureError> {
         Ok(Primitive {
-            shape: primitive.shape.into(),
+            shape: primitive.shape.0,
             transform: primitive.transform.map(Into::into),
-            paint: primitive.paint.into(),
+            paint: primitive.paint.0,
             stroke: primitive.stroke.map(Into::into),
             opacity: primitive.opacity.map(Q32),
-            clip: primitive.clip.map(Into::into),
+            clip: primitive.clip.map(|shape| shape.0),
             effects: primitive
                 .effects
                 .into_iter()
@@ -159,12 +159,12 @@ impl MaskTable {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FixturePrimitive {
-    shape: FixtureShape,
+    shape: DecodedShape,
     transform: Option<FixtureTransform>,
-    paint: FixturePaint,
+    paint: DecodedPaint,
     stroke: Option<FixtureStroke>,
     opacity: Option<i64>,
-    clip: Option<FixtureShape>,
+    clip: Option<DecodedShape>,
     effects: Vec<FixtureEffect>,
     label: String,
     role: Option<FixtureRole>,
@@ -250,6 +250,10 @@ enum FixtureShape {
         closed: bool,
         fill_rule: FixtureFillRule,
     },
+    CompoundPath {
+        subpaths: Vec<Vec<FixtureSegment>>,
+        fill_rule: FixtureFillRule,
+    },
     Circle {
         cx: i64,
         cy: i64,
@@ -269,22 +273,50 @@ enum FixtureShape {
     },
 }
 
-impl From<FixtureShape> for Shape {
-    fn from(shape: FixtureShape) -> Self {
-        match shape {
+#[derive(Deserialize)]
+#[serde(try_from = "FixtureShape")]
+struct DecodedShape(Shape);
+
+impl TryFrom<FixtureShape> for DecodedShape {
+    type Error = &'static str;
+
+    fn try_from(shape: FixtureShape) -> Result<Self, Self::Error> {
+        Ok(Self(match shape {
             FixtureShape::Path {
                 segments,
                 closed,
                 fill_rule,
-            } => Self::Path {
+            } => Shape::Path {
                 segments: segments.into_iter().map(Into::into).collect(),
                 closed,
                 fill_rule: fill_rule.into(),
             },
-            FixtureShape::Circle { cx, cy, r } => Self::Circle { cx, cy, r },
-            FixtureShape::Ellipse { cx, cy, rx, ry } => Self::Ellipse { cx, cy, rx, ry },
-            FixtureShape::Rect { x, y, w, h } => Self::Rect { x, y, w, h },
-        }
+            FixtureShape::CompoundPath {
+                subpaths,
+                fill_rule,
+            } => {
+                if subpaths.is_empty() {
+                    return Err("compound path must have a subpath");
+                }
+                for segments in &subpaths {
+                    if !matches!(segments.as_slice(), [FixtureSegment::Move { .. }, rest @ ..]
+                        if !rest.is_empty() && rest.iter().all(|s| matches!(s, FixtureSegment::Line { .. } | FixtureSegment::Cubic { .. })))
+                    {
+                        return Err("compound subpath must start with its only move and have a line or cubic");
+                    }
+                }
+                Shape::CompoundPath {
+                    subpaths: subpaths
+                        .into_iter()
+                        .map(|segments| segments.into_iter().map(Into::into).collect())
+                        .collect(),
+                    fill_rule: fill_rule.into(),
+                }
+            }
+            FixtureShape::Circle { cx, cy, r } => Shape::Circle { cx, cy, r },
+            FixtureShape::Ellipse { cx, cy, rx, ry } => Shape::Ellipse { cx, cy, rx, ry },
+            FixtureShape::Rect { x, y, w, h } => Shape::Rect { x, y, w, h },
+        }))
     }
 }
 
@@ -311,6 +343,8 @@ impl From<FixtureRgb> for Rgb {
 struct FixtureGradientStop {
     offset_q32: i64,
     color: FixtureRgb,
+    #[serde(default, deserialize_with = "stop_opacity")]
+    opacity_q32: Option<i64>,
 }
 
 impl From<FixtureGradientStop> for GradientStop {
@@ -318,29 +352,99 @@ impl From<FixtureGradientStop> for GradientStop {
         Self {
             offset_q32: Q32(stop.offset_q32),
             color: stop.color.into(),
+            opacity_q32: stop.opacity_q32.map(Q32),
         }
+    }
+}
+
+// `default` handles absent keys. Present keys must hold integers, not null.
+fn present_integer<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    i64::deserialize(d).map(Some)
+}
+
+fn stop_opacity<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    let opacity = i64::deserialize(d)?;
+    if (0..Q32::ONE.0).contains(&opacity) {
+        Ok(Some(opacity))
+    } else {
+        Err(serde::de::Error::custom(
+            "gradient stop opacity must be in [0, 1)",
+        ))
     }
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum FixturePaint {
-    Solid { color: FixtureRgb },
-    RadialGradient { stops: Vec<FixtureGradientStop> },
+    Solid {
+        color: FixtureRgb,
+    },
+    RadialGradient {
+        stops: Vec<FixtureGradientStop>,
+    },
+    RadialGradientAt {
+        cx: i64,
+        cy: i64,
+        r: i64,
+        #[serde(default, deserialize_with = "present_integer")]
+        fx: Option<i64>,
+        #[serde(default, deserialize_with = "present_integer")]
+        fy: Option<i64>,
+        stops: Vec<FixtureGradientStop>,
+    },
     None,
 }
 
-impl From<FixturePaint> for Paint {
-    fn from(paint: FixturePaint) -> Self {
-        match paint {
-            FixturePaint::Solid { color } => Self::Solid {
+#[derive(Deserialize)]
+#[serde(try_from = "FixturePaint")]
+struct DecodedPaint(Paint);
+
+impl TryFrom<FixturePaint> for DecodedPaint {
+    type Error = &'static str;
+
+    fn try_from(paint: FixturePaint) -> Result<Self, Self::Error> {
+        Ok(Self(match paint {
+            FixturePaint::Solid { color } => Paint::Solid {
                 color: color.into(),
             },
-            FixturePaint::RadialGradient { stops } => Self::RadialGradient {
+            FixturePaint::RadialGradient { stops } => Paint::RadialGradient {
                 stops: stops.into_iter().map(Into::into).collect(),
             },
-            FixturePaint::None => Self::None,
-        }
+            FixturePaint::RadialGradientAt {
+                cx,
+                cy,
+                r,
+                fx,
+                fy,
+                stops,
+            } => {
+                if r <= 0 {
+                    return Err("radial gradient radius must be positive");
+                }
+                let focal = match (fx, fy) {
+                    (None, None) => None,
+                    (Some(fx), Some(fy)) => {
+                        let dx = (i128::from(fx) - i128::from(cx)).abs();
+                        let dy = (i128::from(fy) - i128::from(cy)).abs();
+                        let r = i128::from(r);
+                        // Reject large differences before squaring them.
+                        if dx >= r || dy >= r || dx * dx + dy * dy >= r * r {
+                            return Err("radial gradient focus must be strictly inside the circle");
+                        }
+                        Some((fx, fy))
+                    }
+                    _ => return Err("radial gradient fx and fy must be supplied together"),
+                };
+                Paint::RadialGradientAt {
+                    cx,
+                    cy,
+                    r,
+                    focal,
+                    stops: stops.into_iter().map(Into::into).collect(),
+                }
+            }
+            FixturePaint::None => Paint::None,
+        }))
     }
 }
 
@@ -488,12 +592,12 @@ mod inline_masks {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct InlinePrimitive {
-        shape: FixtureShape,
+        shape: DecodedShape,
         transform: Option<FixtureTransform>,
-        paint: FixturePaint,
+        paint: DecodedPaint,
         stroke: Option<FixtureStroke>,
         opacity: Option<i64>,
-        clip: Option<FixtureShape>,
+        clip: Option<DecodedShape>,
         effects: Vec<InlineEffect>,
         label: String,
         role: Option<FixtureRole>,
@@ -502,12 +606,12 @@ mod inline_masks {
     impl From<InlinePrimitive> for Primitive {
         fn from(primitive: InlinePrimitive) -> Self {
             Self {
-                shape: primitive.shape.into(),
+                shape: primitive.shape.0,
                 transform: primitive.transform.map(Into::into),
-                paint: primitive.paint.into(),
+                paint: primitive.paint.0,
                 stroke: primitive.stroke.map(Into::into),
                 opacity: primitive.opacity.map(Q32),
-                clip: primitive.clip.map(Into::into),
+                clip: primitive.clip.map(|shape| shape.0),
                 effects: primitive.effects.into_iter().map(Into::into).collect(),
                 label: primitive.label,
                 role: primitive.role.map(Into::into),
@@ -557,6 +661,9 @@ mod inline_masks {
         }
     }
 }
+
+#[path = "tree_feature_fixtures.rs"]
+mod tree_features;
 
 mod tests {
     use std::{fs, path::Path};

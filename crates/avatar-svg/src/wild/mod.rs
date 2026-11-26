@@ -512,10 +512,12 @@ pub fn draw_full(
                 GradientStop {
                     offset_q32: Q32((0.62 * (1_u64 << 32) as f64).round() as i64),
                     color: render::css_rgb("#000000"),
+                    opacity_q32: None,
                 },
                 GradientStop {
                     offset_q32: Q32::ONE,
                     color: render::css_rgb("white"),
+                    opacity_q32: None,
                 },
             ],
         };

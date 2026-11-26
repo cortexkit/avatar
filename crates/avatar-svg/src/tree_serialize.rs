@@ -7,8 +7,8 @@
 use avatar_phenotype::{Rgb, Q32};
 
 use crate::tree::{
-    Effect, FillRule, Paint, Primitive, RenderTree, Segment, Shape, StrokeCap, StrokeJoin,
-    TransformOp,
+    assert_compound_path, assert_radial_gradient_at, Effect, FillRule, GradientStop, Paint,
+    Primitive, RenderTree, Segment, Shape, StrokeCap, StrokeJoin, TransformOp,
 };
 
 /// Serializes every primitive in a render tree without interpreting its label.
@@ -220,21 +220,62 @@ fn paint_value(paint: &Paint, gradient_id: &str, defs: &mut String) -> String {
         Paint::Solid { color } => hex(color.r, color.g, color.b),
         Paint::RadialGradient { stops } => {
             defs.push_str(&format!("<radialGradient id=\"{gradient_id}\">"));
-            for stop in stops {
-                defs.push_str(&format!(
-                    "<stop offset=\"{}\" stop-color=\"{}\"/>",
-                    q32(stop.offset_q32),
-                    hex(stop.color.r, stop.color.g, stop.color.b),
-                ));
-            }
-            defs.push_str("</radialGradient>\n");
+            finish_gradient(defs, stops);
+            format!("url(#{gradient_id})")
+        }
+        Paint::RadialGradientAt {
+            cx,
+            cy,
+            r,
+            focal,
+            stops,
+        } => {
+            positioned_gradient(defs, gradient_id, *cx, *cy, *r, *focal, stops);
             format!("url(#{gradient_id})")
         }
         Paint::None => "none".to_owned(),
     }
 }
 
-fn shape_element(shape: &Shape, attributes: &str, in_clip: bool) -> String {
+pub(crate) fn positioned_gradient(
+    defs: &mut String,
+    id: &str,
+    cx: i64,
+    cy: i64,
+    r: i64,
+    focal: Option<(i64, i64)>,
+    stops: &[GradientStop],
+) {
+    assert_radial_gradient_at(cx, cy, r, focal);
+    defs.push_str(&format!(
+        "<radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{}\" cy=\"{}\" r=\"{}\"",
+        milli(cx),
+        milli(cy),
+        milli(r),
+    ));
+    if let Some((fx, fy)) = focal {
+        defs.push_str(&format!(" fx=\"{}\" fy=\"{}\"", milli(fx), milli(fy)));
+    }
+    defs.push_str(" spreadMethod=\"pad\">");
+    finish_gradient(defs, stops);
+}
+
+fn finish_gradient(defs: &mut String, stops: &[GradientStop]) {
+    for stop in stops {
+        defs.push_str(&format!(
+            "<stop offset=\"{}\" stop-color=\"{}\"",
+            q32(stop.offset_q32),
+            hex(stop.color.r, stop.color.g, stop.color.b),
+        ));
+        if let Some(opacity) = stop.checked_opacity() {
+            defs.push_str(&format!(" stop-opacity=\"{}\"", q32(opacity)));
+        }
+        defs.push_str("/>");
+    }
+    defs.push_str("</radialGradient>\n");
+}
+
+pub(crate) fn shape_element(shape: &Shape, attributes: &str, in_clip: bool) -> String {
     let suffix = if attributes.is_empty() {
         String::new()
     } else {
@@ -255,6 +296,25 @@ fn shape_element(shape: &Shape, attributes: &str, in_clip: bool) -> String {
                 "<path d=\"{}\" {rule}{suffix}/>",
                 path_data(segments, *closed)
             )
+        }
+        Shape::CompoundPath {
+            subpaths,
+            fill_rule,
+        } => {
+            assert_compound_path(subpaths);
+            let mut data = String::new();
+            for segments in subpaths {
+                if !data.is_empty() {
+                    data.push(' ');
+                }
+                append_path_data(&mut data, segments, true);
+            }
+            let rule = if in_clip { "clip-rule" } else { "fill-rule" };
+            let value = match fill_rule {
+                FillRule::NonZero => "nonzero",
+                FillRule::EvenOdd => "evenodd",
+            };
+            format!("<path d=\"{data}\" {rule}=\"{value}\"{suffix}/>")
         }
         Shape::Circle { cx, cy, r } => format!(
             "<circle cx=\"{}\" cy=\"{}\" r=\"{}\"{suffix}/>",
@@ -281,6 +341,11 @@ fn shape_element(shape: &Shape, attributes: &str, in_clip: bool) -> String {
 
 fn path_data(segments: &[Segment], closed: bool) -> String {
     let mut output = String::new();
+    append_path_data(&mut output, segments, closed);
+    output
+}
+
+fn append_path_data(output: &mut String, segments: &[Segment], closed: bool) {
     for segment in segments {
         match *segment {
             Segment::MoveTo { x, y } => output.push_str(&format!("M{} {}", milli(x), milli(y))),
@@ -306,7 +371,6 @@ fn path_data(segments: &[Segment], closed: bool) -> String {
     if closed {
         output.push_str(" Z");
     }
-    output
 }
 
 fn transform_value(operations: &[TransformOp]) -> String {
@@ -570,10 +634,12 @@ mod tests {
                     GradientStop {
                         offset_q32: Q32(0),
                         color: white,
+                        opacity_q32: None,
                     },
                     GradientStop {
                         offset_q32: Q32::ONE,
                         color: black,
+                        opacity_q32: None,
                     },
                 ],
             },

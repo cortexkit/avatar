@@ -91,10 +91,12 @@ fn build_tree(
                     GradientStop {
                         offset_q32: Q32(3_822_520_893),
                         color: phenotype.palette.primary,
+                        opacity_q32: None,
                     },
                     GradientStop {
                         offset_q32: Q32::ONE,
                         color: phenotype.palette.primary_darkish,
+                        opacity_q32: None,
                     },
                 ],
             },

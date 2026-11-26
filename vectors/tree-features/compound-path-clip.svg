@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+<defs>
+<clipPath id="mask-group-0-0" clipPathUnits="userSpaceOnUse"><path d="M1 1 L9 1 L9 9 L1 9 Z M4 4 L6 4 L6 6 L4 6 Z" clip-rule="evenodd"/></clipPath>
+</defs>
+<g clip-path="url(#mask-group-0-0)"><rect x="1" y="1" width="8" height="8" fill="#0060e0"/>
+</g></svg>

@@ -389,6 +389,7 @@ mod tests {
             "phenotype".to_owned(),
             "svg".to_owned(),
             "tree".to_owned(),
+            "tree-features".to_owned(),
             "tree-svg".to_owned(),
             "wild".to_owned(),
         ]);

@@ -667,6 +667,7 @@ fn paint_value(paint: &Paint) -> String {
     match paint {
         Paint::Solid { color } => hex(*color),
         Paint::RadialGradient { .. } => "url(#av-gradox)".to_owned(),
+        Paint::RadialGradientAt { .. } => unreachable!("not a classic paint"),
         Paint::None => "none".to_owned(),
     }
 }

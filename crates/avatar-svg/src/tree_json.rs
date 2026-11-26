@@ -20,8 +20,9 @@ use std::{
 use avatar_phenotype::{Rgb, Q32};
 
 use crate::tree::{
-    Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Role, Segment, Shape, Stroke,
-    StrokeCap, StrokeJoin, Transform, TransformOp,
+    assert_compound_path, assert_radial_gradient_at, Effect, FillRule, GradientStop, Paint,
+    Primitive, RenderTree, Role, Segment, Shape, Stroke, StrokeCap, StrokeJoin, Transform,
+    TransformOp,
 };
 
 /// Serializes a render tree as whitespace-free JSON with byte-sorted object keys.
@@ -208,6 +209,21 @@ fn write_shape(writer: &mut Writer, shape: &Shape) {
             object.field("kind", |writer| writer.string("path"));
             object.field("segments", |writer| writer.array(segments, write_segment));
         }),
+        Shape::CompoundPath {
+            subpaths,
+            fill_rule,
+        } => {
+            assert_compound_path(subpaths);
+            writer.object(|object| {
+                object.field("fill_rule", |writer| write_fill_rule(writer, *fill_rule));
+                object.field("kind", |writer| writer.string("compound_path"));
+                object.field("subpaths", |writer| {
+                    writer.array(subpaths, |writer, segments| {
+                        writer.array(segments, write_segment)
+                    });
+                });
+            });
+        }
         Shape::Circle { cx, cy, r } => writer.object(|object| {
             object.field("cx", |writer| writer.integer(*cx));
             object.field("cy", |writer| writer.integer(*cy));
@@ -270,10 +286,13 @@ fn write_fill_rule(writer: &mut Writer, fill_rule: FillRule) {
 }
 
 fn write_gradient_stop(writer: &mut Writer, stop: &GradientStop) {
-    let GradientStop { offset_q32, color } = stop;
+    let opacity = stop.checked_opacity();
     writer.object(|object| {
-        object.field("color", |writer| write_rgb(writer, color));
-        object.field("offset_q32", |writer| write_q32(writer, offset_q32));
+        object.field("color", |writer| write_rgb(writer, &stop.color));
+        object.field("offset_q32", |writer| write_q32(writer, &stop.offset_q32));
+        if let Some(opacity) = opacity {
+            object.field("opacity_q32", |writer| write_q32(writer, &opacity));
+        }
     });
 }
 
@@ -287,6 +306,26 @@ fn write_paint(writer: &mut Writer, paint: &Paint) {
             object.field("kind", |writer| writer.string("radial_gradient"));
             object.field("stops", |writer| writer.array(stops, write_gradient_stop));
         }),
+        Paint::RadialGradientAt {
+            cx,
+            cy,
+            r,
+            focal,
+            stops,
+        } => {
+            assert_radial_gradient_at(*cx, *cy, *r, *focal);
+            writer.object(|object| {
+                object.field("cx", |writer| writer.integer(*cx));
+                object.field("cy", |writer| writer.integer(*cy));
+                if let Some((fx, fy)) = focal {
+                    object.field("fx", |writer| writer.integer(*fx));
+                    object.field("fy", |writer| writer.integer(*fy));
+                }
+                object.field("kind", |writer| writer.string("radial_gradient_at"));
+                object.field("r", |writer| writer.integer(*r));
+                object.field("stops", |writer| writer.array(stops, write_gradient_stop));
+            });
+        }
         Paint::None => writer.object(|object| {
             object.field("kind", |writer| writer.string("none"));
         }),
@@ -460,6 +499,7 @@ mod tests {
                 stops: vec![GradientStop {
                     offset_q32: Q32(-4_294_967_296),
                     color: color(1, 2, 3),
+                    opacity_q32: None,
                 }],
             },
             "path \"quoted\"\n雪",

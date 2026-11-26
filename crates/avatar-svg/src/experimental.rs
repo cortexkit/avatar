@@ -264,12 +264,36 @@ fn preview_definitions(primitives: &[Primitive]) -> String {
             ));
             for stop in stops {
                 output.push_str(&format!(
-                    "      <stop offset=\"{}\" stop-color=\"{}\"/>\n",
+                    "      <stop offset=\"{}\" stop-color=\"{}\"",
                     format_q32_decimal(stop.offset_q32.0),
                     hex(stop.color)
                 ));
+                if let Some(opacity) = stop.checked_opacity() {
+                    output.push_str(&format!(
+                        " stop-opacity=\"{}\"",
+                        format_q32_decimal(opacity.0)
+                    ));
+                }
+                output.push_str("/>\n");
             }
             output.push_str("    </radialGradient>\n");
+        } else if let Paint::RadialGradientAt {
+            cx,
+            cy,
+            r,
+            focal,
+            stops,
+        } = &primitive.paint
+        {
+            crate::tree_serialize::positioned_gradient(
+                &mut output,
+                &format!("av-experimental-gradient-{index}"),
+                *cx,
+                *cy,
+                *r,
+                *focal,
+                stops,
+            );
         }
         if let Some(clip) = &primitive.clip {
             output.push_str(&format!(
@@ -336,6 +360,9 @@ fn preview_shape_with_attributes(shape: &Shape, attributes: &str) -> String {
             preview_path(shape)
         ),
         Shape::Path { .. } => format!("<path d=\"{}\"{attributes}/>", preview_path(shape)),
+        Shape::CompoundPath { .. } => {
+            crate::tree_serialize::shape_element(shape, attributes.trim_start(), false)
+        }
         Shape::Circle { cx, cy, r } => format!(
             "<circle cx=\"{}\" cy=\"{}\" r=\"{}\"{attributes}/>",
             format_milli(*cx),
@@ -360,7 +387,11 @@ fn preview_shape_with_attributes(shape: &Shape, attributes: &str) -> String {
 }
 
 fn preview_shape(shape: &Shape) -> String {
-    preview_shape_with_attributes(shape, "")
+    if matches!(shape, Shape::CompoundPath { .. }) {
+        crate::tree_serialize::shape_element(shape, "", true)
+    } else {
+        preview_shape_with_attributes(shape, "")
+    }
 }
 
 fn preview_path(shape: &Shape) -> String {
@@ -430,7 +461,9 @@ fn preview_transform(ops: &[TransformOp]) -> String {
 fn preview_paint(paint: &Paint, index: usize) -> String {
     match paint {
         Paint::Solid { color } => hex(*color),
-        Paint::RadialGradient { .. } => format!("url(#av-experimental-gradient-{index})"),
+        Paint::RadialGradient { .. } | Paint::RadialGradientAt { .. } => {
+            format!("url(#av-experimental-gradient-{index})")
+        }
         Paint::None => "none".to_owned(),
     }
 }
