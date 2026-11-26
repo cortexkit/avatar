@@ -271,8 +271,8 @@ what exists. It is a decision about where the NEXT type lands.
 
 ## Settled: sampling cannot prove equivalence (2026-08-29)
 
-The project owner's objection retires the fork, and on a stronger axis than
-cost:
+The project owner's objection, quoted below, retires the fork, and on a
+stronger axis than cost:
 
 > The problem with output comparison is that when the genome gets big
 > and some features are rarer, sampling may not surface the differences.

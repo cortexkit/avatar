@@ -154,8 +154,8 @@ and part may. The partition is **by region**:
   same identity.
   **Unregistered projects**: fall back to path-derived identity, with
   the fallback recorded; when registration happens, an
-  **identity-migration era event** repoints the derivation — an audited
-  repoint, never a silent re-roll. The registry reports whether an id is
+  **identity-migration era event** repoints the derivation — a repoint
+  recorded as its own event, never a silent re-roll. The registry reports whether an id is
   a minted registration or a path-derived fallback, so the transition
   from one to the other is the migration-event trigger, with no
   heuristics needed.
