@@ -196,11 +196,12 @@ web_lane() {
   # repository is public. Pasted logs and generated files carry them in.
   run "no home paths tracked" python3 scripts/check-home-paths.py
   # The cross-platform script needs containers, so it runs by hand, but its
-  # comparison must still be proven able to fail on every push: a comparison
+  # comparisons must still be proven able to fail on every push: a comparison
   # that passed on empty or short inventories would report three platforms
-  # identical without comparing anything.
+  # identical without comparing anything. The image comparison must also
+  # measure a difference it finds, down to one channel off by one.
   run "cross-platform comparison" bash -c \
-    'cd scripts/wild-port && python3 -m unittest -q test_compare'
+    'cd scripts/wild-port && python3 -m unittest -q test_compare test_compare_images'
   # This script's own scheduling, run against stub tools: stage order, lanes,
   # failure reporting and the tracked-file guard. Its stubs only answer the
   # exact tool invocations listed in its COMMANDS table, so a changed flag

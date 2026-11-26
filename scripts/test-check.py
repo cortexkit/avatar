@@ -46,7 +46,7 @@ COMMANDS = [
     ("wild invariants", "playground", "cargo", "run --locked -q --bin grid -- --check 300"),
     ("renderer consts", ".", "python3", "scripts/const-drift.py"),
     ("no home paths tracked", ".", "python3", "scripts/check-home-paths.py"),
-    ("cross-platform comparison", "scripts/wild-port", "python3", "-m unittest -q test_compare"),
+    ("cross-platform comparison", "scripts/wild-port", "python3", "-m unittest -q test_compare test_compare_images"),
     ("gate scheduler", ".", "python3", "scripts/test-check.py"),
     ("lab matches canonical", ".", "drift", ""),
     ("ts typecheck", "ports/ts", "bunx", "tsc --noEmit"),
