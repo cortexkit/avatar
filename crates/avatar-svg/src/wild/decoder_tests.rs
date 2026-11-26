@@ -65,7 +65,13 @@ fn ignored_bytes_and_inactive_slots_do_not_change_the_tree() {
         crate::serialize_tree_json(&RenderTree {
             canvas: 240,
             background: None,
-            primitives: draw_full(&decode_genome(bytes), mood::Mood::Neutral, 120.0, 120.0),
+            primitives: draw_full(
+                &decode_genome(bytes),
+                mood::Mood::Neutral,
+                120.0,
+                120.0,
+                Generation::LATEST,
+            ),
         })
     };
     let expected = json(&bytes);

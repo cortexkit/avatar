@@ -1008,9 +1008,14 @@ function creatureSVG(k, moodName, size) {
     const asp = k.eyeAspect ?? 1;
     const ax = asp >= 1 ? 1/asp : 1, ay = asp >= 1 ? 1 : asp;
     const esx = ax * spec.es, esy = ay * spec.es;
-    if (Math.abs(esx - 1) > 0.005 || Math.abs(esy - 1) > 0.005)
-      eyesSvg = `<g transform='translate(${p.fx} ${f.y}) scale(${esx.toFixed(3)} ${esy.toFixed(3)}) translate(${-p.fx} ${-f.y})'>${eyesSvg}</g>`;
-    s += eyesSvg;
+    // One face-axis transform for the eyes and, as in Rust's latest
+    // generation, for the lids and squints built at the unscaled eye
+    // centres, so an overlay lands on the eye that was drawn.
+    const eyeScaled = Math.abs(esx - 1) > 0.005 || Math.abs(esy - 1) > 0.005;
+    const onEyes = svg => svg && eyeScaled
+      ? `<g transform='translate(${p.fx} ${f.y}) scale(${esx.toFixed(3)} ${esy.toFixed(3)}) translate(${-p.fx} ${-f.y})'>${svg}</g>`
+      : svg;
+    s += onEyes(eyesSvg);
     // Archetype-aware mood expression (mirrors Rust): lids/squints are
     // disc-eye concepts — suppressed on closed-arc eyes, only sleepy-scale
     // lids on half-lid, per-disc radii on uneven.
@@ -1021,8 +1026,8 @@ function creatureSVG(k, moodName, size) {
       const er = k.eyes == 3 ? (side < 0 ? f.r*1.25 : f.r*0.62)
                              : f.r * wonkFactor(k.eyes, k.eyeWonk ?? 0, side > 0);
       const ey = k.eyes == 3 && side > 0 ? f.y + f.r*0.15 : f.y;
-      if (doSquint) s += squintOverlay(x, ey, er, spec.sq, colors.body, colors.outline);
-      if (doLid) s += lidOverlay(x, ey, er, spec.lid, spec.ang*side, colors.body, colors.outline);
+      if (doSquint) s += onEyes(squintOverlay(x, ey, er, spec.sq, colors.body, colors.outline));
+      if (doLid) s += onEyes(lidOverlay(x, ey, er, spec.lid, spec.ang*side, colors.body, colors.outline));
       // Mood brows win; otherwise the creature's RESTING brow shows.
       const brows = spec.brows === 0 ? (k.brow ?? 0) : spec.brows;
       s += drawBrow(brows, x, f.y, f.r, side, colors.ink);

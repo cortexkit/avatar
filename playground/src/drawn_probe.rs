@@ -1,4 +1,4 @@
-use avatar_svg::wild::{draw_full, shape as wild, Creature};
+use avatar_svg::wild::{draw_full, shape as wild, Creature, Generation};
 use avatar_svg::{Mood, Segment, Shape};
 
 fn numbers(values: impl IntoIterator<Item = f64>) -> String {
@@ -24,7 +24,7 @@ fn point(shape: &Shape) -> [f64; 2] {
 /// Inspect drawn face and adjunct primitives instead of trusting placement
 /// coordinates alone: a correct search can still precede the wrong drawing.
 pub fn fields(c: &Creature) -> String {
-    let tree = draw_full(c, Mood::Neutral, 120.0, 120.0);
+    let tree = draw_full(c, Mood::Neutral, 120.0, 120.0, Generation::LATEST);
     let body = tree.iter().find(|p| p.label == "wild-body").unwrap();
     let Shape::Path { segments, .. } = &body.shape else {
         panic!("body must be a path")
@@ -84,7 +84,7 @@ pub fn fields(c: &Creature) -> String {
             (numbers(anchor), format!("{sx:.6},{sy:.6}"))
         },
     );
-    let sleepy = draw_full(c, Mood::Sleepy, 120.0, 120.0);
+    let sleepy = draw_full(c, Mood::Sleepy, 120.0, 120.0, Generation::LATEST);
     let zz: Vec<_> = sleepy.iter().filter(|p| p.label == "wild-mood-z").collect();
     let zz_geometry = zz.iter().flat_map(|p| {
         let Shape::Path { segments, .. } = &p.shape else {

@@ -18,12 +18,44 @@ pub use genome::{probe_genome, GENOME_LEN};
 
 #[cfg(test)]
 mod decoder_tests;
+#[cfg(test)]
+mod generation_tests;
 
-pub(crate) fn render_tree(bytes: &[u8; GENOME_LEN], mood: crate::Mood) -> RenderTree {
+/// Which shipped generation of the wild generator draws a creature.
+///
+/// A stored `creature.wild` row names its version, and it must render at that
+/// version forever: a fix that changed what an existing version draws would
+/// silently change an agent's face. So each fix is a new variant here, and
+/// every older variant keeps drawing exactly what it drew when it shipped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Generation {
+    /// `creature.wild` version 1. Its mood lids and squints are drawn at the
+    /// unscaled eye centres, while the eyes themselves are scaled about the
+    /// face axis by the creature's eye aspect and the mood's eye scale. On a
+    /// creature whose eyes are scaled, the lid or squint therefore sits beside
+    /// the eye. Kept unchanged because rows stored at version 1 must keep the
+    /// creature their agent already has.
+    V1,
+    /// `creature.wild` version 2. Identical to version 1 except that the lid
+    /// and squint overlays get the same face-axis transform as the eyes, so
+    /// they land on the eye that was actually drawn.
+    V2,
+}
+
+impl Generation {
+    /// The generation new rows are minted at and the playground reviews.
+    pub const LATEST: Generation = Generation::V2;
+}
+
+pub(crate) fn render_tree(
+    bytes: &[u8; GENOME_LEN],
+    mood: crate::Mood,
+    generation: Generation,
+) -> RenderTree {
     RenderTree {
         canvas: 240,
         background: None,
-        primitives: draw_full(&decode_genome(bytes), mood, 120.0, 120.0),
+        primitives: draw_full(&decode_genome(bytes), mood, 120.0, 120.0, generation),
     }
 }
 /// Everything one genome decodes to on the full pipeline.
@@ -343,7 +375,13 @@ pub fn place_face(outline: &[(f64, f64)], mouth_w: f64, mouth_d: f64) -> Option<
     best.or(best_eyes_only).map(|(_, p)| p)
 }
 
-pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitive> {
+pub fn draw_full(
+    c: &Creature,
+    m: crate::Mood,
+    cx: f64,
+    cy: f64,
+    generation: Generation,
+) -> Vec<Primitive> {
     let colors = palette::resolve(c.recipe, c.hue);
     let dom = c.dom;
     let spec = mood::spec(m);
@@ -611,15 +649,15 @@ pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitiv
         };
         let sx = ax * spec.eye_scale;
         let sy = ay * spec.eye_scale;
-        if (sx - 1.0).abs() > 0.005 || (sy - 1.0).abs() > 0.005 {
-            render::prepend_transform(
-                &mut eyes,
-                &[
-                    render::translate(p.fx, f.y),
-                    render::scale(sx, sy),
-                    render::translate(-p.fx, -f.y),
-                ],
-            );
+        let eye_transform = ((sx - 1.0).abs() > 0.005 || (sy - 1.0).abs() > 0.005).then(|| {
+            [
+                render::translate(p.fx, f.y),
+                render::scale(sx, sy),
+                render::translate(-p.fx, -f.y),
+            ]
+        });
+        if let Some(operations) = &eye_transform {
+            render::prepend_transform(&mut eyes, operations);
         }
         append_mask(&mut eyes, &body_mask);
         primitives.extend(eyes);
@@ -639,6 +677,13 @@ pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitiv
             face::EyeKind::HalfLid => (false, spec.lid > 0.45),
             _ => (true, true),
         };
+        // Lids and squints are built at the unscaled eye centres, so they
+        // need the eyes' face-axis transform to land on the drawn eye.
+        // Version 1 shipped without it and must keep drawing that way.
+        let overlay_transform = match generation {
+            Generation::V1 => None,
+            Generation::V2 => eye_transform.as_ref(),
+        };
         for (x, side) in [(f.lx, -1.0), (f.rx, 1.0)] {
             // Overlays land on the radius the archetype actually DREW,
             // including the wonk shrink; an overlay sized for the full
@@ -654,6 +699,9 @@ pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitiv
             if do_squint {
                 let mut overlays =
                     mood::squint_overlay(x, ey, er, spec.squint, &colors.body, &colors.outline);
+                if let Some(operations) = overlay_transform {
+                    render::prepend_transform(&mut overlays, operations);
+                }
                 append_mask(&mut overlays, &body_mask);
                 primitives.extend(overlays);
             }
@@ -667,6 +715,9 @@ pub fn draw_full(c: &Creature, m: crate::Mood, cx: f64, cy: f64) -> Vec<Primitiv
                     &colors.body,
                     &colors.outline,
                 );
+                if let Some(operations) = overlay_transform {
+                    render::prepend_transform(&mut overlays, operations);
+                }
                 append_mask(&mut overlays, &body_mask);
                 primitives.extend(overlays);
             }

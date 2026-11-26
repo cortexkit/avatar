@@ -111,7 +111,11 @@ pub fn render_tree_for_bytes(
             }),
         },
         WILD => match version {
-            1 => render_wild_v1(genome_bytes, mood),
+            // Keep every shipped arm when adding a newer one. Stored rows
+            // render at their named generation, so version 1 keeps drawing
+            // its off-eye mood lids for the rows that still store it.
+            1 => render_wild(genome_bytes, mood, crate::wild::Generation::V1),
+            2 => render_wild(genome_bytes, mood, crate::wild::Generation::V2),
             requested => Err(DispatchError::UnsupportedVersion {
                 avatar_type: avatar_type.to_owned(),
                 requested,
@@ -123,14 +127,18 @@ pub fn render_tree_for_bytes(
     }
 }
 
-fn render_wild_v1(genome_bytes: &[u8], mood: Mood) -> Result<RenderTree, DispatchError> {
+fn render_wild(
+    genome_bytes: &[u8],
+    mood: Mood,
+    generation: crate::wild::Generation,
+) -> Result<RenderTree, DispatchError> {
     let bytes = genome_bytes
         .try_into()
         .map_err(|_| DispatchError::GenomeLength {
             expected: crate::wild::GENOME_LEN,
             actual: genome_bytes.len(),
         })?;
-    Ok(crate::wild::render_tree(bytes, mood))
+    Ok(crate::wild::render_tree(bytes, mood, generation))
 }
 
 fn render_classic_v2(genome_bytes: &[u8], mood: Mood) -> Result<RenderTree, DispatchError> {
@@ -235,14 +243,17 @@ mod tests {
 
     #[test]
     fn wild_dispatch_renders_every_mood_on_its_own_canvas() {
+        use crate::wild::Generation;
         let bytes = crate::wild::probe_genome(0);
-        for mood in crate::wild::mood::ALL {
-            let tree = render_tree_for_bytes(&bytes, WILD, 1, mood).unwrap();
-            assert_eq!(tree.canvas, 240);
-            assert_eq!(tree.extent(), 24_000);
-            assert_eq!(tree.background, None);
-            assert!(!tree.primitives.is_empty());
-            assert_eq!(tree, crate::wild::render_tree(&bytes, mood));
+        for (version, generation) in [(1, Generation::V1), (2, Generation::V2)] {
+            for mood in crate::wild::mood::ALL {
+                let tree = render_tree_for_bytes(&bytes, WILD, version, mood).unwrap();
+                assert_eq!(tree.canvas, 240);
+                assert_eq!(tree.extent(), 24_000);
+                assert_eq!(tree.background, None);
+                assert!(!tree.primitives.is_empty());
+                assert_eq!(tree, crate::wild::render_tree(&bytes, mood, generation));
+            }
         }
     }
 
@@ -256,7 +267,7 @@ mod tests {
                     requested: "creature.unknown".into()
                 })
             );
-            for version in [0, 2, u32::MAX] {
+            for version in [0, 3, u32::MAX] {
                 assert_eq!(
                     render_tree_for_bytes(&bytes, WILD, version, Mood::Neutral),
                     Err(DispatchError::UnsupportedVersion {
@@ -266,13 +277,15 @@ mod tests {
                 );
             }
             if length != crate::wild::GENOME_LEN {
-                assert_eq!(
-                    render_tree_for_bytes(&bytes, WILD, 1, Mood::Neutral),
-                    Err(DispatchError::GenomeLength {
-                        expected: crate::wild::GENOME_LEN,
-                        actual: length
-                    })
-                );
+                for version in [1, 2] {
+                    assert_eq!(
+                        render_tree_for_bytes(&bytes, WILD, version, Mood::Neutral),
+                        Err(DispatchError::GenomeLength {
+                            expected: crate::wild::GENOME_LEN,
+                            actual: length
+                        })
+                    );
+                }
             }
         }
     }

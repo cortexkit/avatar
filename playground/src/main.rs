@@ -8,7 +8,7 @@
 use ava_playground::fit;
 use avatar_svg::wild::{
     belly_patch, belly_top_for, decode_full_counted, decode_genome, draw_full, merge, mood,
-    mouth_y_for, outline_for, place_face, probe_genome, render, shape as wild,
+    mouth_y_for, outline_for, place_face, probe_genome, render, shape as wild, Generation,
 };
 use avatar_svg::{Primitive, RenderTree};
 
@@ -98,7 +98,7 @@ fn write_domspread(start: u64, n: usize) {
             // directly comparable rather than merely similar.
             let s = cell / 240.0;
             svg.push_str(&tree_fragment(
-                draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                draw_full(&c, mood::Mood::Neutral, 120.0, 120.0, Generation::LATEST),
                 &[
                     render::translate(x0 + cell / 2.0 - 120.0 * s, yc + cell / 2.0 - 120.0 * s),
                     render::scale(s, s),
@@ -196,7 +196,13 @@ fn run_bench(start_seed: u64, count: usize) {
         let tree = RenderTree {
             canvas: 240,
             background: None,
-            primitives: draw_full(&creature, mood::Mood::Neutral, 120.0, 120.0),
+            primitives: draw_full(
+                &creature,
+                mood::Mood::Neutral,
+                120.0,
+                120.0,
+                Generation::LATEST,
+            ),
         };
         timings.push(start.elapsed().as_secs_f64() * 1000.0);
         primitives_total += tree.primitives.len();
@@ -235,7 +241,7 @@ fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
             let tree = RenderTree {
                 canvas: 240,
                 background: None,
-                primitives: draw_full(&creature, mood, 120.0, 120.0),
+                primitives: draw_full(&creature, mood, 120.0, 120.0, Generation::LATEST),
             };
             let json = avatar_svg::serialize_tree_json(&tree);
             let path = out_dir.join(format!("wild_{seed}__{}.json", mood::name(mood)));
@@ -410,7 +416,7 @@ fn main() {
             // on its primitives so the serialized tree remains flat.
             let s = cell / 240.0;
             svg.push_str(&tree_fragment(
-                draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                draw_full(&c, mood::Mood::Neutral, 120.0, 120.0, Generation::LATEST),
                 &[
                     render::translate(x0 + cell / 2.0 - 120.0 * s, y0 + cell / 2.0 - 120.0 * s),
                     render::scale(s, s),
@@ -516,7 +522,7 @@ fn main() {
                 // draw_full works in a 240-unit cell; scale that tree to `size`.
                 let k = size / 240.0;
                 svg.push_str(&tree_fragment(
-                    draw_full(&c, mood::Mood::Neutral, 120.0, 120.0),
+                    draw_full(&c, mood::Mood::Neutral, 120.0, 120.0, Generation::LATEST),
                     &[
                         render::translate(x0 + size / 2.0 - 120.0 * k, y + size / 2.0 - 120.0 * k),
                         render::scale(k, k),
@@ -567,7 +573,7 @@ fn main() {
                 ));
                 let s = cell / 240.0;
                 svg.push_str(&tree_fragment(
-                    draw_full(&c, *m, 120.0, 120.0),
+                    draw_full(&c, *m, 120.0, 120.0, Generation::LATEST),
                     &[
                         render::translate(x0 + cell / 2.0 - 120.0 * s, y0 + cell / 2.0 - 120.0 * s),
                         render::scale(s, s),
@@ -636,7 +642,13 @@ fn main() {
             let v = if creature.voronoi { "+v" } else { "" };
             cell_bg(&mut svg, cx, cy, &format!("#{seed} {tag}{v}"));
             svg.push_str(&tree_fragment(
-                draw_full(&creature, mood::Mood::Neutral, 120.0, 120.0),
+                draw_full(
+                    &creature,
+                    mood::Mood::Neutral,
+                    120.0,
+                    120.0,
+                    Generation::LATEST,
+                ),
                 &[render::translate(cx - 120.0, cy - 120.0)],
             ));
         }
@@ -658,7 +670,7 @@ fn main() {
             let cy = PAD + r as f64 * (CELL + PAD) + CELL / 2.0 + 28.0;
             cell_bg(&mut svg2, cx, cy, &format!("#{seed} {}", mood::name(m)));
             svg2.push_str(&tree_fragment(
-                draw_full(&creature, m, 120.0, 120.0),
+                draw_full(&creature, m, 120.0, 120.0, Generation::LATEST),
                 &[render::translate(cx - 120.0, cy - 120.0)],
             ));
         }
@@ -679,7 +691,13 @@ fn main() {
             "<rect x='{x0:.1}' y='4' width='36' height='36' rx='6' fill='#efe9e4'/>",
         ));
         svg3.push_str(&tree_fragment(
-            draw_full(&creature, mood::Mood::Neutral, 120.0, 120.0),
+            draw_full(
+                &creature,
+                mood::Mood::Neutral,
+                120.0,
+                120.0,
+                Generation::LATEST,
+            ),
             &[
                 render::translate(x0 + 18.0 - 120.0 * k, 22.0 - 120.0 * k),
                 render::scale(k, k),
