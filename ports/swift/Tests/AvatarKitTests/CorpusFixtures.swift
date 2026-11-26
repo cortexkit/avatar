@@ -31,7 +31,8 @@ struct ManifestVector {
 /// Their names must match `WILD_TREE_FIXTURES` in
 /// `crates/avatar-vectors/src/lib.rs`, which mints these files; the
 /// inventory assertion fails on a mismatch rather than silently skipping
-/// a fixture.
+/// a fixture. Version 1 names are `<id>__<mood>.json`; trees from a later
+/// generation carry it as `<id>__v<version>__<mood>.json`.
 let wildTreeFixtureNames: Set<String> = [
     "wild-port-0005__neutral.json",
     "wild-port-0005__working.json",
@@ -51,6 +52,13 @@ let wildTreeFixtureNames: Set<String> = [
     "wild-port-0001__neutral.json",
     "wild-port-0002__neutral.json",
     "wild-port-0007__neutral.json",
+    "wild-port-0022__v2__neutral.json",
+    "wild-port-0022__v2__working.json",
+    "wild-port-0022__v2__happy.json",
+    "wild-port-0022__v2__waiting.json",
+    "wild-port-0022__v2__blocked.json",
+    "wild-port-0022__v2__sad.json",
+    "wild-port-0022__v2__sleepy.json",
 ]
 
 func loadManifest() throws -> (root: URL, vectors: [ManifestVector]) {

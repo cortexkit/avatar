@@ -1,13 +1,14 @@
-# project_id	moods (neutral for all; seven for the first row)
-wild-port-0005	neutral,working,happy,waiting,blocked,sad,sleepy
-wild-port-0031	neutral
-wild-port-0009	neutral
-wild-port-0022	neutral
-wild-port-0077	neutral
-wild-port-0043	neutral
-wild-port-0016	neutral
-wild-port-0021	neutral
-wild-port-0000	neutral
-wild-port-0001	neutral
-wild-port-0002	neutral
-wild-port-0007	neutral
+# project_id	moods	version (version 1: neutral for all, seven moods for the first row; version 2: seven moods for one creature with narrowed disc eyes, where the lid fix shows)
+wild-port-0005	neutral,working,happy,waiting,blocked,sad,sleepy	1
+wild-port-0031	neutral	1
+wild-port-0009	neutral	1
+wild-port-0022	neutral	1
+wild-port-0077	neutral	1
+wild-port-0043	neutral	1
+wild-port-0016	neutral	1
+wild-port-0021	neutral	1
+wild-port-0000	neutral	1
+wild-port-0001	neutral	1
+wild-port-0002	neutral	1
+wild-port-0007	neutral	1
+wild-port-0022	neutral,working,happy,waiting,blocked,sad,sleepy	2

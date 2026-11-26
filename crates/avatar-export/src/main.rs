@@ -10,8 +10,8 @@
 //! this tool keeps no cache.
 //!
 //! Usage:
-//!   avatar-export --genome <hex> --type creature.wild --version 1 --out ava.png
-//!   avatar-export --genome-file ava.hex --type creature.wild --version 1 --out ava.png
+//!   avatar-export --genome <hex> --type creature.wild --version 2 --out ava.png
+//!   avatar-export --genome-file ava.hex --type creature.wild --version 2 --out ava.png
 //!     --genome-file reads the same hex from a file ("-" reads standard
 //!     input). A wild genome is 32,768 hex characters, which does not fit on
 //!     a Windows command line (CreateProcess allows 32,767 characters including
@@ -79,11 +79,13 @@ fn classic_svg(genome: &Genome, mood: Mood) -> Result<Vec<u8>, String> {
 /// returns its bytes. Every export of a stored genome goes through this, so a
 /// malformed row is refused the same way whatever is being written.
 fn stored_genome_bytes(hex: &str, type_name: &str, version: u32) -> Result<Vec<u8>, String> {
-    let (_, len, supported_version) =
+    let (_, len, versions) =
         mintable(type_name).ok_or_else(|| format!("unknown avatar type {type_name:?}"))?;
-    if version != supported_version {
+    if !versions.contains(&version) {
+        let supported: Vec<String> = versions.iter().map(u32::to_string).collect();
         return Err(format!(
-            "unsupported version {version} for {type_name:?}; supported: {supported_version}"
+            "unsupported version {version} for {type_name:?}; supported: {}",
+            supported.join(", ")
         ));
     }
     let hex = hex.trim();
@@ -224,13 +226,28 @@ fn read_ids(arg: &str) -> Result<Vec<String>, String> {
 /// required length), so a seat's longer genome extends its classic one
 /// rather than re-rolling it. That is what lets a type be a different
 /// REPRESENTATION of the same creature rather than a different creature.
-const MINTABLE: &[(&str, usize, u32)] = &[
-    (AVATAR_TYPE, 1_024, AVATAR_VERSION),
-    ("creature.wild", 16_384, 1),
+///
+/// The last field lists every generation version this tool renders for the
+/// type, oldest first. A stored row renders at the version it names, so a
+/// type keeps its older versions here; new rows are minted at the last one,
+/// the current generation.
+const MINTABLE: &[(&str, usize, &[u32])] = &[
+    (AVATAR_TYPE, 1_024, &[AVATAR_VERSION]),
+    // Version 2 puts mood lids and squints on aspect-scaled eyes; version 1
+    // drew them beside the eye and stays for rows that still store it.
+    ("creature.wild", 16_384, &[1, 2]),
 ];
 
-fn mintable(type_name: &str) -> Option<(&'static str, usize, u32)> {
+fn mintable(type_name: &str) -> Option<(&'static str, usize, &'static [u32])> {
     MINTABLE.iter().copied().find(|(t, _, _)| *t == type_name)
+}
+
+/// The current generation of a type: what new rows are minted at, and what a
+/// stored-genome export renders when no version is given.
+fn current_version(versions: &[u32]) -> u32 {
+    *versions
+        .last()
+        .expect("every mintable type renders at least one version")
 }
 
 /// One JSON object per agent, each carrying its own type and version.
@@ -241,7 +258,8 @@ fn mintable(type_name: &str) -> Option<(&'static str, usize, u32)> {
 /// genome is uninterpretable without knowing which layout minted it, so
 /// the two must travel together.
 fn mint_manifest(ids: &[String], type_name: &str) -> String {
-    let (type_name, len, version) = mintable(type_name).expect("caller validated the type");
+    let (type_name, len, versions) = mintable(type_name).expect("caller validated the type");
+    let version = current_version(versions);
     let mut out = String::from("[\n");
     for (i, id) in ids.iter().enumerate() {
         let bytes = derive_genome_bytes(
@@ -392,7 +410,8 @@ fn main() {
         (None, None) => None,
     };
     if let Some(hex) = genome_hex {
-        let default_version = mintable(type_name).map_or(AVATAR_VERSION, |(_, _, version)| version);
+        let default_version = mintable(type_name)
+            .map_or(AVATAR_VERSION, |(_, _, versions)| current_version(versions));
         let version = match options.version {
             Some(value) => value.parse::<u32>().unwrap_or_else(|_| {
                 eprintln!("--version: expected an unsigned integer, got {value:?}");
@@ -452,7 +471,7 @@ fn main() {
     }
 
     input_error(
-        "usage: avatar-export (--genome <hex> | --genome-file <path|->) [--type creature.classic|creature.wild] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; version 2 for classic, 1 for wild\n       avatar-export --mint-genomes <id,id,...|@file> [--type creature.classic|creature.wild] [--out <file>]"
+        "usage: avatar-export (--genome <hex> | --genome-file <path|->) [--type creature.classic|creature.wild] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; the newest version of the type (2 for classic, 2 for wild)\n       avatar-export --mint-genomes <id,id,...|@file> [--type creature.classic|creature.wild] [--out <file>]"
     );
 }
 
@@ -482,6 +501,7 @@ mod tests {
     use super::*;
 
     const WILD_HEX: &str = include_str!("../../../vectors/wild/wild-port-0005.hex");
+    const WILD_V2_HEX: &str = include_str!("../../../vectors/wild/wild-port-0022.hex");
 
     #[test]
     fn wild_corpus_svg_is_passed_to_rasterizer() {
@@ -553,8 +573,8 @@ mod tests {
         let unicode_hex = "é".repeat(16_384);
         for (hex, type_name, version, error) in [
             (WILD_HEX, "creature.unknown", 1, "unknown avatar type"),
-            (WILD_HEX, "creature.wild", 2, "unsupported version"),
-            ("", "creature.wild", 2, "unsupported version"),
+            (WILD_HEX, "creature.wild", 3, "unsupported version"),
+            ("", "creature.wild", 3, "unsupported version"),
             (WILD_HEX, AVATAR_TYPE, 1, "unsupported version"),
             (WILD_HEX, AVATAR_TYPE, 2, "hex"),
             ("00", "creature.wild", 1, "expected 32768 hex characters"),
@@ -603,6 +623,26 @@ mod tests {
             let json = tree_json_from_hex(WILD_HEX, "creature.wild", 1, mood).unwrap();
             let golden = root.join(format!("vectors/tree/wild-port-0005__{name}.json"));
             assert_eq!(json, std::fs::read(golden).unwrap(), "tree JSON for {name}");
+
+            // Version 2 has its own golden trees, for a creature whose
+            // narrowed eyes make the two generations draw differently.
+            let svg = export_from_hex(WILD_V2_HEX, "creature.wild", 2, mood, 64, |svg, _| {
+                Ok(svg.to_vec())
+            })
+            .unwrap();
+            let golden = root.join(format!("vectors/tree-svg/wild-port-0022__v2__{name}.svg"));
+            assert_eq!(
+                svg,
+                std::fs::read(golden).unwrap(),
+                "version 2 SVG for {name}"
+            );
+            let json = tree_json_from_hex(WILD_V2_HEX, "creature.wild", 2, mood).unwrap();
+            let golden = root.join(format!("vectors/tree/wild-port-0022__v2__{name}.json"));
+            assert_eq!(
+                json,
+                std::fs::read(golden).unwrap(),
+                "version 2 tree JSON for {name}"
+            );
         }
     }
 
@@ -630,7 +670,8 @@ mod tests {
         // the two types with nothing reporting it.
         let wild = mint_manifest(&ids, "creature.wild");
         assert!(wild.contains("\"avatar_type\":\"creature.wild\""));
-        assert!(wild.contains("\"avatar_version\":1"));
+        // New rows carry the current wild generation, not the first one.
+        assert!(wild.contains("\"avatar_version\":2"));
         let classic_hex = first
             .split("\"avatar_genome\":\"")
             .nth(1)

@@ -13,6 +13,16 @@ test("render-tree corpus is non-empty", () => {
   expect(treeFiles.length).toBeGreaterThan(0);
 });
 
+test("wild corpus carries version 2 trees beside version 1", () => {
+  // A later wild generation names its trees <id>__v<version>__<mood>.json.
+  // Requiring them by name means a lost file fails here instead of
+  // silently dropping out of the per-file decoding tests below.
+  for (const mood of ["neutral", "working", "happy", "waiting", "blocked", "sad", "sleepy"]) {
+    expect(treeFiles).toContain(`wild-port-0022__v2__${mood}.json`);
+    expect(treeFiles).toContain(`wild-port-0005__${mood}.json`);
+  }
+});
+
 function assertBytesEqual(name: string, actual: Uint8Array, expected: Uint8Array): void {
   const commonLength = Math.min(actual.length, expected.length);
   let offset = 0;

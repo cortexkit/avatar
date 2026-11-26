@@ -70,5 +70,24 @@ final class RenderTreeCacheTests: XCTestCase {
         }
         XCTAssertEqual(cache.count, 1)
     }
+
+    func testCacheKeysWildTreesOnTheirVersion() throws {
+        // Rows render at the version they store, so a cached version 1 tree
+        // must never answer a version 2 request. Byte 177 at 255 narrows
+        // the eyes as far as they go, so the sleepy lids differ by version.
+        let cache = RenderTreeCache(capacity: 3)
+        var wildGenome = [UInt8](repeating: 0, count: 16_384)
+        wildGenome[177] = 255
+        let version1 = try renderTreeViaCore(
+            genomeBytes: wildGenome, type: "creature.wild", version: 1, mood: .sleepy)
+        let version2 = try renderTreeViaCore(
+            genomeBytes: wildGenome, type: "creature.wild", version: 2, mood: .sleepy)
+        XCTAssertNotEqual(version1, version2)
+        XCTAssertEqual(try cache.renderTree(
+            genomeBytes: wildGenome, type: "creature.wild", version: 1, mood: .sleepy), version1)
+        XCTAssertEqual(try cache.renderTree(
+            genomeBytes: wildGenome, type: "creature.wild", version: 2, mood: .sleepy), version2)
+        XCTAssertEqual(cache.count, 2)
+    }
 }
 #endif

@@ -14,19 +14,27 @@ import sys
 from pathlib import Path
 
 
+def tree_name(project_id, version, mood):
+    """Version 1 trees keep their shipped names; later versions add __vN__."""
+    return (f"{project_id}__{mood}.json" if version == 1
+            else f"{project_id}__v{version}__{mood}.json")
+
+
 def expected_names(root):
     manifest = json.loads((root / "vectors/wild/manifest.json").read_text())
-    assert (manifest["type"], manifest["version"], manifest["genome_bytes"]) == (
-        "creature.wild", 1, 16384
-    )
+    assert (manifest["type"], manifest["genome_bytes"]) == ("creature.wild", 16384)
+    assert "version" not in manifest, "the manifest records each row's version, not one for all"
     rows = [line.split("\t") for line in
             (root / "vectors/wild/corpus.tsv").read_text().splitlines()
             if line and not line.startswith("#")]
-    assert [(row["project_id"], row["moods"]) for row in manifest["vectors"]] == [
-        (name, moods.split(",")) for name, moods in rows
+    assert all(len(row) == 3 for row in rows), "corpus rows are project_id, moods, version"
+    rows = [(name, int(version), moods.split(",")) for name, moods, version in rows]
+    assert [(row["project_id"], row["version"], row["moods"]) for row in manifest["vectors"]] == [
+        (name, version, moods) for name, version, moods in rows
     ], "shipped manifest differs from the frozen corpus list"
-    names = [f"{name}__{mood}.json" for name, moods in rows for mood in moods.split(",")]
-    assert len(rows) == 12 and len(names) == len(set(names)) == 18, "short/duplicate corpus"
+    assert sorted({version for _, version, _ in rows}) == [1, 2], "corpus versions"
+    names = [tree_name(name, version, mood) for name, version, moods in rows for mood in moods]
+    assert len(rows) == 13 and len(names) == len(set(names)) == 25, "short/duplicate corpus"
     return set(names)
 
 

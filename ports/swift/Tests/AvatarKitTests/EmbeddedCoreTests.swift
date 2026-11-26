@@ -45,9 +45,9 @@ final class EmbeddedCoreTests: XCTestCase {
             from: Data(contentsOf: root.appendingPathComponent("wild/manifest.json")))
         XCTAssertEqual(manifest.genomeBytes, 16_384)
         XCTAssertEqual(manifest.type, "creature.wild")
-        XCTAssertEqual(manifest.version, 1)
 
         var names: Set<String> = []
+        var versions: Set<UInt32> = []
         var count = 0
         for vector in manifest.vectors {
             let bytes = try readGenomeBytes(
@@ -55,20 +55,28 @@ final class EmbeddedCoreTests: XCTestCase {
                 expectedCount: manifest.genomeBytes)
             for moodName in vector.moods {
                 let mood = try XCTUnwrap(Mood(rawValue: moodName), "unknown mood: \(moodName)")
-                let name = "\(vector.projectId)__\(moodName).json"
+                // Version 1 trees keep their shipped names; later generations
+                // carry their version in the name.
+                let name = vector.version == 1
+                    ? "\(vector.projectId)__\(moodName).json"
+                    : "\(vector.projectId)__v\(vector.version)__\(moodName).json"
                 let fixture = try decodeRenderTreeJson(
                     [UInt8](Data(contentsOf: root.appendingPathComponent("tree/\(name)"))))
+                // Each tree renders at the version its row names, as a stored
+                // avatar does.
                 let core = try renderTreeViaCore(
-                    genomeBytes: bytes, type: manifest.type, version: manifest.version, mood: mood)
+                    genomeBytes: bytes, type: manifest.type, version: vector.version, mood: mood)
                 XCTAssertEqual(core, fixture, name)
                 names.insert(name)
                 count += 1
             }
+            versions.insert(vector.version)
         }
         // The independent fixture inventory catches omitted or duplicated manifest pairs.
         XCTAssertEqual(names, wildTreeFixtureNames)
         XCTAssertEqual(count, wildTreeFixtureNames.count)
-        print("Embedded core compared \(count) wild fixture pairs across \(manifest.vectors.count) genomes")
+        XCTAssertEqual(versions, [1, 2])
+        print("Embedded core compared \(count) wild fixture pairs across \(manifest.vectors.count) corpus rows")
     }
 
     func testRefusedInputsSurfaceDistinctCoreErrors() throws {
@@ -140,12 +148,13 @@ private func readGenomeBytes(_ url: URL, expectedCount: Int) throws -> [UInt8] {
 private struct WildManifest: Decodable {
     let genomeBytes: Int
     let type: String
-    let version: UInt32
     let vectors: [WildVector]
 }
 
 private struct WildVector: Decodable {
     let projectId: String
+    /// The `creature.wild` generation this row's trees are rendered at.
+    let version: UInt32
     let moods: [String]
 }
 #endif

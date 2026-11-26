@@ -1,21 +1,25 @@
 use super::*;
 use avatar_genome::derive_genome_bytes;
-use avatar_svg::{render_tree_for_bytes, wild::decode_genome};
+use avatar_svg::{render_tree_for_bytes, wild::decode_genome, Primitive, RenderTree, TransformOp};
 use serde::Serialize;
 
 const GENOME_LEN: usize = 16_384;
-// These identity/mood pairs have saved trees and population sheets made by the
-// original playground renderer using standard-library maths. Reuse that list
-// so every new golden has an original tree available for visual comparison.
+// The version 1 identity/mood pairs have saved trees and population sheets
+// made by the original playground renderer using standard-library maths.
+// Reuse that list so every new golden has an original tree available for
+// visual comparison. The version 2 row reuses one of those genomes.
 const FROZEN_CORPUS: &str = include_str!("../../../../vectors/wild/corpus.tsv");
 
+/// The wild reference corpus. Each vector records the `creature.wild`
+/// generation its trees are rendered at, because the corpus pins trees from
+/// more than one version and a single top-level version would misdescribe
+/// some of them.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct WildManifest {
     genome_bytes: usize,
     #[serde(rename = "type")]
     creature_type: String,
-    version: u16,
     producer_sha: String,
     vectors: Vec<WildVector>,
 }
@@ -24,7 +28,20 @@ struct WildManifest {
 #[serde(deny_unknown_fields)]
 struct WildVector {
     project_id: String,
+    version: u32,
     moods: Vec<String>,
+}
+
+impl WildVector {
+    /// Version 1 trees keep the names they shipped with. Later versions add
+    /// a version infix, so one genome's trees from two generations can sit
+    /// side by side in `vectors/tree`.
+    fn tree_name(&self, mood: &str) -> String {
+        match self.version {
+            1 => format!("{}__{mood}.json", self.project_id),
+            version => format!("{}__v{version}__{mood}.json", self.project_id),
+        }
+    }
 }
 
 #[test]
@@ -39,12 +56,7 @@ fn wild_manifest_matches_frozen_corpus() {
     let expected_names = manifest
         .vectors
         .iter()
-        .flat_map(|vector| {
-            vector
-                .moods
-                .iter()
-                .map(|mood| format!("{}__{mood}.json", vector.project_id))
-        })
+        .flat_map(|vector| vector.moods.iter().map(|mood| vector.tree_name(mood)))
         .collect::<BTreeSet<_>>();
     let pinned_names = WILD_TREE_FIXTURES
         .iter()
@@ -96,7 +108,8 @@ fn every_wild_tree_has_exactly_one_ground_shadow_role() {
     for vector in read_manifest().vectors {
         let genome = read_genome(&vector.project_id);
         for &mood in ALL_MOODS {
-            let tree = render_tree_for_bytes(&genome, "creature.wild", 1, mood).unwrap();
+            let tree =
+                render_tree_for_bytes(&genome, "creature.wild", vector.version, mood).unwrap();
             assert_shadow(&tree, &vector.project_id);
             count += 1;
         }
@@ -104,8 +117,11 @@ fn every_wild_tree_has_exactly_one_ground_shadow_role() {
     for &(name, _, _) in WILD_TREE_FIXTURES {
         assert_shadow(&read_tree_fixture(name), name);
     }
-    assert_eq!(count, 84);
-    println!("verified ground_shadow on {count} generated trees and 18 saved trees");
+    assert_eq!(count, 91);
+    println!(
+        "verified ground_shadow on {count} generated trees and {} saved trees",
+        WILD_TREE_FIXTURES.len()
+    );
 }
 
 #[test]
@@ -118,7 +134,7 @@ fn wild_trees_match_shipped_renderer() {
     for vector in read_manifest().vectors {
         let genome = read_genome(&vector.project_id);
         for &mood in ALL_MOODS {
-            let tree = render_tree_for_bytes(&genome, "creature.wild", 1, mood)
+            let tree = render_tree_for_bytes(&genome, "creature.wild", vector.version, mood)
                 .expect("render committed wild genome");
             assert_eq!(tree.canvas, 240);
             assert!(tree.background.is_none());
@@ -128,24 +144,125 @@ fn wild_trees_match_shipped_renderer() {
             if !vector.moods.iter().any(|name| name == mood_name(mood)) {
                 continue;
             }
+            let name = vector.tree_name(mood_name(mood));
             assert_current(
-                &tree_path(&vector.project_id, mood),
+                &corpus_root().join("tree").join(&name),
                 serialize_tree_json(&tree).as_bytes(),
             );
-            assert_current(
-                &tree_svg_fixture_path(&format!("{}__{}.json", vector.project_id, mood_name(mood))),
-                &serialize_tree(&tree),
-            );
+            assert_current(&tree_svg_fixture_path(&name), &serialize_tree(&tree));
             golden_pairs += 1;
         }
     }
     assert_eq!(
         (rendered_pairs, golden_pairs),
-        (84, 18),
-        "the frozen corpus requires twelve genomes in seven moods and eighteen golden pairs"
+        (91, 25),
+        "the frozen corpus requires twelve genomes at version 1 and one at version 2, each in seven moods, and twenty-five golden pairs"
     );
     println!(
         "rendered {rendered_pairs} wild corpus/mood pairs; compared {golden_pairs} golden pairs"
+    );
+}
+
+/// Version 2 changes only where mood lids and squints are drawn. Every other
+/// primitive must match version 1 exactly, and each overlay must be version
+/// 1's overlay with the eyes' face-axis transform put in front of its own.
+#[test]
+fn wild_v2_differs_from_v1_only_in_lid_and_squint_placement() {
+    fn is_overlay(primitive: &Primitive) -> bool {
+        primitive.label.starts_with("wild-mood-lid-")
+            || primitive.label.starts_with("wild-mood-squint-")
+    }
+    fn operations(primitive: &Primitive) -> &[TransformOp] {
+        primitive
+            .transform
+            .as_ref()
+            .map_or(&[], |transform| &transform.ops)
+    }
+    fn split(tree: &RenderTree) -> (Vec<&Primitive>, Vec<&Primitive>) {
+        tree.primitives
+            .iter()
+            .partition(|primitive| !is_overlay(primitive))
+    }
+
+    let genomes = read_manifest()
+        .vectors
+        .into_iter()
+        .map(|vector| vector.project_id)
+        .collect::<BTreeSet<_>>();
+    let (mut pairs, mut differing) = (0, 0);
+    for project_id in &genomes {
+        let genome = read_genome(project_id);
+        for &mood in ALL_MOODS {
+            let label = format!("{project_id} {}", mood_name(mood));
+            let render =
+                |version| render_tree_for_bytes(&genome, "creature.wild", version, mood).unwrap();
+            let (v1, v2) = (render(1), render(2));
+            pairs += 1;
+            if v1 != v2 {
+                differing += 1;
+            }
+            if mood == Mood::Neutral {
+                // A neutral face has no lids or squints, so nothing may differ.
+                assert_eq!(v1, v2, "{label}");
+                continue;
+            }
+
+            let (v1_rest, v1_overlays) = split(&v1);
+            let (v2_rest, v2_overlays) = split(&v2);
+            assert_eq!(
+                v1_rest, v2_rest,
+                "{label}: a primitive other than a lid or squint changed"
+            );
+            assert_eq!(v1_overlays.len(), v2_overlays.len(), "{label}");
+            let moved = v1_overlays
+                .iter()
+                .zip(&v2_overlays)
+                .filter(|(old, new)| old != new)
+                .count();
+            // The eyes are scaled as a pair, so either every overlay follows
+            // them or, with unscaled eyes, none needs to move.
+            assert!(
+                moved == 0 || moved == v2_overlays.len(),
+                "{label}: only {moved} of {} overlays moved",
+                v2_overlays.len()
+            );
+            if moved == 0 {
+                continue;
+            }
+            let eyes: Vec<_> = v2_rest
+                .iter()
+                .filter(|primitive| primitive.label.starts_with("wild-eye-"))
+                .collect();
+            assert!(
+                !eyes.is_empty(),
+                "{label}: overlays moved on a face with no eyes"
+            );
+            for (old, new) in v1_overlays.iter().zip(&v2_overlays) {
+                let (old_ops, new_ops) = (operations(old), operations(new));
+                assert_eq!(new_ops.len(), old_ops.len() + 3, "{label}: {}", new.label);
+                let (prefix, rest) = new_ops.split_at(3);
+                assert_eq!(rest, old_ops, "{label}: {}", new.label);
+                for eye in &eyes {
+                    assert!(
+                        operations(eye).starts_with(prefix),
+                        "{label}: {} is not transformed like {}",
+                        new.label,
+                        eye.label
+                    );
+                }
+                let mut expected = (*old).clone();
+                expected.transform = new.transform.clone();
+                assert_eq!(&expected, *new, "{label}: {}", new.label);
+            }
+        }
+    }
+    assert_eq!(pairs, 84);
+    assert!(
+        differing > 0,
+        "no corpus pair exercised the version 2 change"
+    );
+    println!(
+        "version 2 differs from version 1 in {differing} of {pairs} corpus genome and mood pairs"
     );
 }
 
@@ -227,13 +344,13 @@ pub(super) fn mint_corpus() {
     for vector in frozen_vectors() {
         let genome = derive(&vector.project_id);
         write_corpus_file(&genome_path(&vector.project_id), hex(&genome).as_bytes());
-        for mood in vector.moods {
-            let mood = parse_mood(&mood);
-            let tree = render_tree_for_bytes(&genome, "creature.wild", 1, mood)
+        for mood in &vector.moods {
+            let name = vector.tree_name(mood);
+            let mood = parse_mood(mood);
+            let tree = render_tree_for_bytes(&genome, "creature.wild", vector.version, mood)
                 .expect("render wild genome while minting");
             let json = serialize_tree_json(&tree);
-            write_corpus_file(&tree_path(&vector.project_id, mood), json.as_bytes());
-            let name = format!("{}__{}.json", vector.project_id, mood_name(mood));
+            write_corpus_file(&root.join("tree").join(&name), json.as_bytes());
             write_corpus_file(&tree_svg_fixture_path(&name), &serialize_tree(&tree));
             println!(
                 "    ({name:?}, {}, {:?}),",
@@ -267,9 +384,15 @@ fn frozen_vectors() -> Vec<WildVector> {
         .lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .map(|line| {
-            let (project_id, moods) = line.split_once('\t').expect("frozen corpus row has moods");
+            let fields: Vec<&str> = line.split('\t').collect();
+            let [project_id, moods, version] = fields[..] else {
+                panic!("frozen corpus row is not project_id, moods and version: {line:?}")
+            };
             WildVector {
                 project_id: project_id.to_owned(),
+                version: version
+                    .parse()
+                    .unwrap_or_else(|_| panic!("frozen corpus row has no version: {line:?}")),
                 moods: moods.split(',').map(str::to_owned).collect(),
             }
         })
@@ -280,7 +403,6 @@ fn manifest_bytes(producer_sha: &str) -> Vec<u8> {
     serde_json::to_vec(&WildManifest {
         genome_bytes: GENOME_LEN,
         creature_type: "creature.wild".to_owned(),
-        version: 1,
         producer_sha: producer_sha.to_owned(),
         vectors: frozen_vectors(),
     })

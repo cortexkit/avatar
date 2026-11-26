@@ -4,6 +4,8 @@ use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const WILD_HEX: &str = include_str!("../../../vectors/wild/wild-port-0005.hex");
+/// A corpus genome with narrowed disc eyes, pinned at wild version 2.
+const WILD_V2_HEX: &str = include_str!("../../../vectors/wild/wild-port-0022.hex");
 
 struct ExportDir(PathBuf);
 
@@ -131,6 +133,41 @@ fn the_out_extension_selects_svg_or_tree_json() {
 }
 
 #[test]
+fn both_wild_versions_render_their_own_golden_trees() {
+    // Stored rows render at the version they name, so the CLI must keep
+    // drawing version 1 after new rows move to version 2. This genome's
+    // narrowed eyes make the two versions' sleepy lids differ.
+    let genome = GenomeFile::new(WILD_V2_HEX.trim());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut trees = Vec::new();
+    for (version, golden) in [
+        ("2", Some("vectors/tree/wild-port-0022__v2__sleepy.json")),
+        ("1", None),
+    ] {
+        let dir = ExportDir::new();
+        let output = dir.run(&[
+            "--genome-file",
+            &genome.path,
+            "--type",
+            "creature.wild",
+            "--version",
+            version,
+            "--mood",
+            "sleepy",
+            "--out",
+            "wild.json",
+        ]);
+        assert!(output.status.success(), "{output:?}");
+        let tree = std::fs::read(dir.0.join("wild.json")).unwrap();
+        if let Some(golden) = golden {
+            assert_eq!(tree, std::fs::read(root.join(golden)).unwrap(), "{golden}");
+        }
+        trees.push(tree);
+    }
+    assert_ne!(trees[0], trees[1], "versions 1 and 2 drew the same lids");
+}
+
+#[test]
 fn an_unsupported_out_extension_is_refused_without_writing_a_file() {
     let genome = GenomeFile::new(WILD_HEX.trim());
     let dir = ExportDir::new();
@@ -205,7 +242,7 @@ fn invalid_wild_metadata_or_hex_writes_no_file() {
             "1",
             "unknown avatar type",
         ),
-        (WILD_HEX.trim(), "creature.wild", "2", "unsupported version"),
+        (WILD_HEX.trim(), "creature.wild", "3", "unsupported version"),
         (WILD_HEX.trim(), "creature.wild", "no", "--version"),
         ("00", "creature.wild", "1", "hex characters"),
         (bad_hex.as_str(), "creature.wild", "1", "invalid hex"),

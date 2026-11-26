@@ -24,8 +24,12 @@ fn main() {
         .lines()
         .filter(|s| !s.is_empty() && !s.starts_with('#'))
     {
-        let (id, moods) = line.split_once('\t').expect("project_id TAB moods");
+        let fields: Vec<&str> = line.split('\t').collect();
+        let [id, moods, version] = fields[..] else {
+            panic!("project_id TAB moods TAB version: {line:?}")
+        };
         assert!(id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'));
+        let version: u32 = version.parse().expect("version is a number");
         // The avatar-vectors tests prove each committed genome re-derives
         // from its project id, so the file is the frozen genome.
         let hex = fs::read_to_string(root.join(format!("vectors/wild/{id}.hex"))).unwrap();
@@ -45,15 +49,20 @@ fn main() {
                 "sleepy" => Mood::Sleepy,
                 _ => panic!("unknown mood: {name}"),
             };
-            let filename = format!("{id}__{name}.json");
+            // Version 1 trees keep their shipped names; later versions add
+            // a version infix, matching the committed goldens.
+            let filename = match version {
+                1 => format!("{id}__{name}.json"),
+                _ => format!("{id}__v{version}__{name}.json"),
+            };
             assert!(names.insert(filename.clone()), "duplicate pair");
-            let tree = render_tree_for_bytes(&bytes, "creature.wild", 1, mood).unwrap();
+            let tree = render_tree_for_bytes(&bytes, "creature.wild", version, mood).unwrap();
             assert_eq!(tree.canvas, 240);
             assert!(tree.background.is_none());
             fs::write(out.join(filename), serialize_tree_json(&tree)).unwrap();
         }
         rows += 1;
     }
-    assert_eq!((rows, names.len()), (12, 18), "frozen corpus is incomplete");
-    println!("minted {} trees from {rows} frozen genomes", names.len());
+    assert_eq!((rows, names.len()), (13, 25), "frozen corpus is incomplete");
+    println!("minted {} trees from {rows} frozen corpus rows", names.len());
 }
