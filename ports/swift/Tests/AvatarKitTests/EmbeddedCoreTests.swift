@@ -132,7 +132,7 @@ final class EmbeddedCoreTests: XCTestCase {
     }
 }
 
-private func readGenomeBytes(_ url: URL, expectedCount: Int) throws -> [UInt8] {
+func readGenomeBytes(_ url: URL, expectedCount: Int) throws -> [UInt8] {
     let hex = Array(try String(contentsOf: url, encoding: .utf8)
         .trimmingCharacters(in: .whitespacesAndNewlines).utf8)
     guard hex.count == expectedCount * 2 else {

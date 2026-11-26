@@ -1,7 +1,8 @@
 # Embedded AvatarCore
 
 `avatar-ffi` is a static-library C boundary around the `avatar` crate's
-versioned `render_tree_for` dispatch and canonical `serialize_tree_json`. It
+versioned `render_tree_for` dispatch and canonical `serialize_tree_json`, and
+around `render_image`, which draws the same tree as a finished RGBA image. It
 does not implement generation or select a default creature for unsupported
 requests.
 
@@ -43,10 +44,27 @@ type, unsupported version, wrong genome length, unknown mood, invalid argument,
 render failure, and contained panic. Unknown statuses and missing success
 payloads also fail closed; decoder errors are propagated unchanged.
 
+An app that displays finished images asks for one instead of a tree:
+
+```swift
+let image = try renderImageViaCore(
+    genomeBytes: genomeBytes, type: "creature.wild", version: 2, mood: .happy,
+    sizePx: 256, options: AvatarImageOptions(groundShadow: .drop, alpha: .straight))
+// image.sizePx, image.alpha and image.pixels: sizePx × sizePx RGBA8 pixels,
+// rows top first.
+```
+
+The options default to keeping the ground shadow and premultiplied alpha. A
+size outside 1 to 2,048 pixels throws `invalidArgument`, after the type,
+version and genome length are checked. The wrapper copies the pixels into the
+returned `AvatarImage` and frees the core's allocation before returning; a
+null or wrongly sized success payload throws `invalidResponse`.
+
 `include/AvatarCore.h` specifies the C pointer/ownership contract and stable
 status numbers. No caller memory is retained. Each successful call returns an
-independent allocation, freed **once** by `avatar_string_free` rather than a
-foreign allocator. There is no mutable global state or thread affinity.
+independent allocation, freed **once** by `avatar_string_free` (trees) or
+`avatar_image_free` with the returned length (images) rather than a foreign
+allocator. There is no mutable global state or thread affinity.
 
 ## Verification
 
@@ -54,5 +72,9 @@ foreign allocator. There is no mutable global state or thread affinity.
 runs the Swift suite on macOS. `EmbeddedCoreTests` compares every committed
 classic and wild tree against the embedded core using complete
 `RenderTree` equality, exercises error mapping, and makes concurrent calls.
+`EmbeddedCoreImageTests` compares the core's image for every cell of the
+golden image matrix in `vectors/image/` with its PNG, byte for byte, and
+`AvatarImagePublicAPITests` calls the image API without `@testable`, as an app
+does.
 The Linux Swift package decodes committed trees without importing AvatarCore;
 the binary dependency is platform-conditional.
