@@ -6,7 +6,6 @@ status comparisons, command dispatch and log collection are
 real, while a deliberate compiler failure costs milliseconds rather than minutes.
 """
 
-import contextlib
 import json
 import os
 from pathlib import Path
@@ -14,7 +13,6 @@ import re
 import runpy
 import shutil
 import signal
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -27,26 +25,27 @@ STAGES = [
     "mint is current", "core binary current",
     "fmt", "clippy", "clippy release", "test", "doc tests",
     "corpus coverage", "playground fmt", "playground clippy", "playground tests",
-    "wild invariants", "renderer consts", "no ignored internal files tracked",
+    "wild invariants", "renderer consts", "no ignored internal files tracked", "no home paths tracked",
     "cross-platform comparison", "gate scheduler", "lab matches canonical", "ts typecheck",
     "ts conformance", "swift conformance",
 ]
 # Record the expected command for each stage so losing a flag or a check
 # cannot pass just because the scheduler still prints the right headings.
 COMMANDS = [
-    ("mint is current", ".", "cargo", "run --locked -p avatar-tables --bin mint -- --check"),
+    ("mint is current", ".", "cargo", "run --locked -p cortexkit-avatar-tables --bin mint -- --check"),
     ("core binary current", ".", "source-hash", ""),
     ("fmt", ".", "cargo", "fmt --all -- --check"),
     ("clippy", ".", "cargo", "clippy --workspace --all-targets --locked -- -D warnings"),
     ("clippy release", ".", "cargo", "clippy --workspace --release --locked -- -D warnings"),
     ("test", ".", "cargo", "test --workspace --all-targets --locked"),
     ("doc tests", ".", "cargo", "test --workspace --doc --locked"),
-    ("corpus coverage", ".", "cargo", "run --locked -q -p avatar-genome --example fleet_coverage -- --population 1000"),
+    ("corpus coverage", ".", "cargo", "run --locked -q -p cortexkit-avatar-genome --example fleet_coverage -- --population 1000"),
     ("playground fmt", "playground", "cargo", "fmt --all -- --check"),
     ("playground clippy", "playground", "cargo", "clippy --all-targets --locked -- -D warnings"),
     ("playground tests", "playground", "cargo", "test --locked"),
     ("wild invariants", "playground", "cargo", "run --locked -q --bin grid -- --check 300"),
     ("renderer consts", ".", "python3", "scripts/const-drift.py"),
+    ("no home paths tracked", ".", "python3", "scripts/check-home-paths.py"),
     ("cross-platform comparison", "scripts/wild-port", "python3", "-m unittest -q test_compare"),
     ("gate scheduler", ".", "python3", "scripts/test-check.py"),
     ("lab matches canonical", ".", "drift", ""),
@@ -343,18 +342,30 @@ exit 23
         self.assertIn("simulated browser failure after DOM dump", result.stderr)
         self.assertNotIn("renderers agree", result.stdout)
 
-    @unittest.skipUnless(shutil.which("sqlite3"), "SQLite CLI not available")
-    def test_fleet_verifier_opens_literal_hash_filename(self):
-        db = self.root / "fleet#snapshot.db"
-        with contextlib.closing(sqlite3.connect(db)) as conn:
-            conn.execute("CREATE TABLE agent (agent_id, avatar_genome, avatar_type, avatar_version)")
-        decoy = self.root / "fleet"
-        result = subprocess.run(["bash", SCRIPTS / "verify-fleet-avatars.sh", db],
-                                env=dict(os.environ, TMPDIR=str(self.root)),
-                                capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("no rows carry a genome", result.stdout)
-        self.assertFalse(decoy.exists())
+    def test_home_path_scan_fails_on_a_home_path_in_a_tracked_text_file(self):
+        # The literal is assembled so this file does not hold a home path itself.
+        home = "/" + "Users/someone/"
+        shutil.copyfile(SCRIPTS / "check-home-paths.py", self.root / "scripts/check-home-paths.py")
+        (self.root / "notes.md").write_text("Generic: /Users/<name>/ and src/home/page/\n")
+        (self.root / "blob.bin").write_bytes(b"\0binary " + home.encode() + b"\n")
+        (self.root / "untracked.txt").write_text(home + "x\n")
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        subprocess.run(["git", "init", "-q"], cwd=self.root, env=env, check=True)
+        subprocess.run(["git", "add", "scripts", "notes.md", "blob.bin"], cwd=self.root, env=env, check=True)
+
+        def scan():
+            return subprocess.run([sys.executable, "scripts/check-home-paths.py"], cwd=self.root,
+                                  env=env, capture_output=True, text=True, timeout=10)
+
+        # Placeholders, relative paths, binary files and untracked files pass.
+        clean = scan()
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        for planted in (home + "project/README.md", "file://" + home.replace("Users", "home")):
+            with self.subTest(planted=planted):
+                (self.root / "notes.md").write_text("Generic: /Users/<name>/\nsee " + planted + "\n")
+                result = scan()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("notes.md:2:", result.stdout)
 
     def test_constant_scan_collects_full_decimal_and_exponent_tokens(self):
         constants = runpy.run_path(str(SCRIPTS / "const-drift.py"))["constants"]

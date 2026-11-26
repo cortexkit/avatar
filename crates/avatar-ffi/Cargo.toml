@@ -2,9 +2,15 @@
 name = "avatar-ffi"
 version = "0.1.0"
 edition.workspace = true
+# Built only into the Swift package's committed static library, never
+# published to crates.io.
+publish = false
+license.workspace = true
+repository.workspace = true
+description = "C boundary that renders an avatar's canonical render-tree JSON, built into the Swift package's embedded core."
 
 [lib]
 crate-type = ["staticlib"]
 
 [dependencies]
-avatar-svg = { path = "../avatar-svg" }
+avatar-svg = { path = "../avatar-svg", package = "cortexkit-avatar-svg" }

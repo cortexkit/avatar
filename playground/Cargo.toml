@@ -13,7 +13,7 @@ name = "grid"
 path = "src/main.rs"
 
 [dependencies]
-avatar-svg = { path = "../crates/avatar-svg" }
+avatar-svg = { path = "../crates/avatar-svg", package = "cortexkit-avatar-svg" }
 
 [workspace]
 

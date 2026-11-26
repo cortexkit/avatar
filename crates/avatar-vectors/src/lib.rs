@@ -695,7 +695,7 @@ mod tests {
                 moods: NEUTRAL,
             },
             // Coverage vectors, chosen by measurement rather than taste.
-            // `cargo run -p avatar-genome --example fleet_coverage` decoded
+            // `cargo run -p cortexkit-avatar-genome --example fleet_coverage` decoded
             // the fleet's 30 stored genomes against this corpus and found
             // nine decode-selector values live agents reach that no vector
             // exercised: body point counts 5, 7, 9 and 10, lash counts 1,

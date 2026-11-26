@@ -1,4 +1,4 @@
-//! Deterministic PNG export for agent avatars, including GitHub App images.
+//! Deterministic image export for stored avatars.
 //!
 //! Image exports take a stored genome with its type and generation version,
 //! so they depict the current creature even after its genome has been re-rolled.
@@ -10,8 +10,8 @@
 //! this tool keeps no cache.
 //!
 //! Usage:
-//!   avatar-export --genome <hex> --type creature.wild --version 2 --out ava.png
-//!   avatar-export --genome-file ava.hex --type creature.wild --version 2 --out ava.png
+//!   avatar-export --genome <hex> --type creature.wild --version 2 --out avatar.png
+//!   avatar-export --genome-file genome.hex --type creature.wild --version 2 --out avatar.png
 //!     --genome-file reads the same hex from a file ("-" reads standard
 //!     input). A wild genome is 32,768 hex characters, which does not fit on
 //!     a Windows command line (CreateProcess allows 32,767 characters including
@@ -208,12 +208,12 @@ fn read_ids(arg: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Mints the genome deposit manifest for a batch of agents.
+/// A genome manifest holds the initial genomes minted for a batch of agents.
 ///
-/// The operator ruled that the genome is STORED on the agent row and served,
-/// so derivation runs once per agent at creation or backfill rather than per
-/// render. This is the backfill half: one auditable artifact for a batch,
-/// deposited through prefrontal's gated set-avatar op.
+/// The genome is STORED on the agent's record and served from there, so
+/// derivation runs once per agent, when the agent is created or backfilled,
+/// rather than on every render. A manifest is one auditable artifact for such
+/// a batch, which the host that owns the records imports into its store.
 ///
 /// Every record carries `avatar_type`, because a genome is positional and
 /// uninterpretable without knowing which LAYOUT minted it. A row holding
@@ -288,7 +288,7 @@ fn mint_manifest(ids: &[String], type_name: &str) -> String {
 /// Pixel size for the raster, defaulting only when the flag is ABSENT.
 ///
 /// This read `.parse().ok().unwrap_or(400)`, so `--size 51w` silently
-/// minted 400px images: a ceremony would produce a whole fleet at the
+/// minted 400px images: a batch export would produce every image at the
 /// wrong size with nothing reporting it. A default for a missing flag is
 /// a default; a default for an unreadable one is a swallowed error, and
 /// `--mood` on the next line had always failed closed.
@@ -647,11 +647,12 @@ mod tests {
     }
 
     #[test]
-    fn minted_manifest_holds_the_properties_the_fleet_deposits_on() {
-        // These are the exact claims made to the registry when handing over
-        // the backfill: reproducible, one genome per agent, and every genome
-        // the declared layout size so the op's length gate passes. A change
-        // that broke any of them would deposit wrong data into 30 rows.
+    fn minted_manifest_holds_the_properties_a_host_imports_on() {
+        // These are the properties a host relies on when it imports a
+        // manifest into its store: reproducible, one genome per agent, and
+        // every genome the declared layout size, so a store that checks the
+        // length accepts it. A change that broke any of them would write
+        // wrong data into every imported row.
         let ids: Vec<String> = ["agent_aaa", "agent_bbb", "agent_00000003"]
             .iter()
             .map(|s| (*s).to_owned())
@@ -697,8 +698,8 @@ mod tests {
             assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
         }
         assert_ne!(genomes[0], genomes[1], "distinct ids, distinct genomes");
-        // Short ids are real registry ids, not truncation: the derivation
-        // hashes an opaque string, so length must not matter.
+        // A short id is as valid as a long one: the derivation hashes an
+        // opaque string, so length must not matter.
         assert_eq!(genomes[2].len(), 2048);
 
         assert!(first.contains("\"avatar_type\":\"creature.classic\""));

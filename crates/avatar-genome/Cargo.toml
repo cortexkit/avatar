@@ -1,17 +1,28 @@
 [package]
-name = "avatar-genome"
+name = "cortexkit-avatar-genome"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The classic avatar genome, its decoder to a phenotype, and genomes derived from an identifier."
+
+# Published as cortexkit-avatar-genome. The library keeps its short Rust
+# name, so code imports it as `avatar_genome` under either package name.
+[lib]
+name = "avatar_genome"
 
 [dependencies]
-avatar-phenotype = { path = "../avatar-phenotype" }
-avatar-tables = { path = "../avatar-tables" }
+avatar-phenotype = { version = "0.1.0", path = "../avatar-phenotype", package = "cortexkit-avatar-phenotype" }
+avatar-tables = { version = "0.1.0", path = "../avatar-tables", package = "cortexkit-avatar-tables" }
 blake3 = "1.5"
 
 [dev-dependencies]
-# Dev-only: lets the sample-render example exercise the full DNA -> SVG
-# pipeline. The library dependency direction stays genome-free in avatar-svg.
-avatar-svg = { path = "../avatar-svg" }
-# Dev-only: the fleet_coverage example reads deposit manifests. The library
-# itself stays serde-free — genomes are bytes, not documents.
+# Dev-only: lets the sample-render examples exercise the full DNA -> SVG
+# pipeline. It has no version on purpose: avatar-svg depends on this crate,
+# so a versioned dev-dependency back on avatar-svg could never be published
+# first. Cargo drops a path-only dev-dependency when it packages the crate.
+avatar-svg = { path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+# Dev-only: the fleet_coverage example reads genome manifests minted by
+# avatar-export. The library itself stays serde-free — genomes are bytes,
+# not documents.
 serde_json = "1"

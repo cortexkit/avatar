@@ -46,6 +46,21 @@ export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
 export CARGO_PROFILE_RELEASE_PANIC=unwind
 export IPHONEOS_DEPLOYMENT_TARGET=13.0
 export MACOSX_DEPLOYMENT_TARGET=11.0
+# Keep build-machine paths out of the shipped archives. rustc embeds the
+# source path of every panic location and of generic code it instantiates,
+# and those paths start with the cargo home (dependency sources), the
+# rustup home (the standard library) or this checkout. Each is rewritten to
+# a fixed name, so the archives hold no user's home directory and two
+# machines building the same source produce the same bytes. When several
+# prefixes match, rustc applies the last one given, so the more specific
+# toolchain homes follow the checkout in case one lives inside it.
+# CARGO_ENCODED_RUSTFLAGS separates flags with 0x1f, so a path containing a
+# space survives, and it overrides any RUSTFLAGS the caller's shell sets.
+cargo_home=${CARGO_HOME:-$HOME/.cargo}
+rustup_home=${RUSTUP_HOME:-$(rustup show home)}
+unset RUSTFLAGS
+sep=$'\x1f'
+export CARGO_ENCODED_RUSTFLAGS="--remap-path-prefix=$root=/avatar$sep--remap-path-prefix=$cargo_home=/cargo$sep--remap-path-prefix=$rustup_home=/rustup"
 args=()
 for target in "${targets[@]}"; do
     cargo build --locked --release -p avatar-ffi --target "$target" \

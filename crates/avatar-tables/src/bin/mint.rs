@@ -33,7 +33,7 @@ fn main() {
             if committed != source {
                 eprintln!(
                     "{} differs from what the mint produces; regenerate it with \
-                     `cargo run -p avatar-tables --bin mint` and commit the result",
+                     `cargo run -p cortexkit-avatar-tables --bin mint` and commit the result",
                     output.display()
                 );
                 std::process::exit(1);

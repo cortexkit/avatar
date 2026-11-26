@@ -4,7 +4,7 @@ const IDENTITY_DOMAIN: &[u8] = b"cortexkit-avatar/identity-core/v2";
 
 /// The durable source used to derive a seat's initial genome.
 ///
-/// Live-fleet measurement found every candidate name source user-editable,
+/// Measurement on a working registry found every candidate name source user-editable,
 /// non-unique, or session-derived. Hashing a name would make a rename re-roll
 /// a creature and let a collision merge creatures, so names remain presentation
 /// only. Identity is the registry's one opaque, stable value; adding a name to
@@ -17,8 +17,8 @@ pub enum SeatIdentity {
 
 /// Derives a complete initial genome from a seat identity.
 ///
-/// Domain separation keeps this XOF stream distinct from every other fleet
-/// hash. Path fallback adds its own prefix so a mutable path can never produce
+/// Domain separation keeps this XOF stream distinct from every other blake3
+/// hash a host derives. Path fallback adds its own prefix so a mutable path can never produce
 /// the same initial DNA as a registered project identifier with equal bytes.
 pub fn derive_genome(identity: &SeatIdentity) -> Genome {
     let mut hasher = blake3::Hasher::new();

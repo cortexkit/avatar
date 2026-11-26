@@ -24,7 +24,7 @@ export CARGO_INCREMENTAL=0
 # directory per run left a full debug build behind on every run.
 CARGO_TARGET_DIR="$root/target/wild-cross-platform"
 export CARGO_TARGET_DIR
-cargo build --locked -j 4 -p avatar-svg --lib
+cargo build --locked -j 4 -p cortexkit-avatar-svg --lib
 rustc --edition=2021 scripts/wild-port/mint.rs \
     --extern "avatar_svg=$CARGO_TARGET_DIR/debug/libavatar_svg.rlib" \
     -L "dependency=$CARGO_TARGET_DIR/debug/deps" -o "$CARGO_TARGET_DIR/wild-mint"
@@ -41,7 +41,7 @@ for arch in arm64 amd64; do
             echo "Container architecture: $(uname -m)"
             case "$1:$(uname -m)" in arm64:aarch64|amd64:x86_64) ;; *) exit 1 ;; esac
             rustc --version --verbose
-            cargo build --manifest-path /src/Cargo.toml --locked -j 4 -p avatar-svg --lib
+            cargo build --manifest-path /src/Cargo.toml --locked -j 4 -p cortexkit-avatar-svg --lib
             rustc --edition=2021 /src/scripts/wild-port/mint.rs \
                 --extern avatar_svg=/tmp/wild-target/debug/libavatar_svg.rlib \
                 -L dependency=/tmp/wild-target/debug/deps -o /tmp/wild-mint

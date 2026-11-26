@@ -12,6 +12,8 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/cortexkit/avatar"
 
 # Debug builds, and so tests, compile with optimisation. The wild generator's
 # tests walk signed-distance grids and marching squares over many seeds, and

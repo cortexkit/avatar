@@ -56,7 +56,7 @@ CARGO_STAGES=(
   "fmt" "clippy" "clippy release" "test" "doc tests"
   "corpus coverage" "playground fmt" "playground clippy" "playground tests"
   "wild invariants" "renderer consts" "no ignored internal files tracked"
-  "cross-platform comparison" "gate scheduler"
+  "no home paths tracked" "cross-platform comparison" "gate scheduler"
 )
 # STAGES is also the order logs are printed in. The first PREAMBLE entries
 # run one after another before the parallel lanes start.
@@ -147,7 +147,7 @@ tree_before=$(tree_fingerprint) || exit 1
 # compares them without writing, because build-server jobs cannot change
 # tracked files.
 if [[ $WHERE != remote ]]; then
-  run "mint is current" cargo run --locked -p avatar-tables --bin mint -- --check
+  run "mint is current" cargo run --locked -p cortexkit-avatar-tables --bin mint -- --check
 fi
 # Host tests do not exercise the embedded iPhone slices. Verify all shipped
 # slices against their build hashes and require the source stamp to match.
@@ -169,7 +169,7 @@ rust_lane() {
   # have the same distribution as blake3-derived fleet genomes, so a synthetic
   # population re-asks the question here without needing registry data — and
   # fails when a decode change opens a branch no vector exercises.
-  run "corpus coverage" cargo run --locked -q -p avatar-genome \
+  run "corpus coverage" cargo run --locked -q -p cortexkit-avatar-genome \
     --example fleet_coverage -- --population 1000
 
 }
@@ -192,6 +192,10 @@ web_lane() {
   # rule existed stays tracked silently, so check what git actually tracks.
   run "no ignored internal files tracked" bash -c \
     'tracked=$(git ls-files -ci --exclude-standard -- .cortexkit); [ -z "$tracked" ] || { echo "$tracked"; exit 1; }'
+  # An absolute home path (/Users/<name>/ or /home/<name>/) in a tracked
+  # text file names the machine and person it was written on, and the
+  # repository is public. Pasted logs and generated files carry them in.
+  run "no home paths tracked" python3 scripts/check-home-paths.py
   # The cross-platform script needs containers, so it runs by hand, but its
   # comparison must still be proven able to fail on every push: a comparison
   # that passed on empty or short inventories would report three platforms

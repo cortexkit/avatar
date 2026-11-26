@@ -30,8 +30,8 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "avatar-export"
 version = "0.1.0"
 dependencies = [
- "avatar-genome",
- "avatar-svg",
+ "cortexkit-avatar-genome",
+ "cortexkit-avatar-svg",
  "resvg",
  "serde_json",
 ]
@@ -40,53 +40,17 @@ dependencies = [
 name = "avatar-ffi"
 version = "0.1.0"
 dependencies = [
- "avatar-svg",
-]
-
-[[package]]
-name = "avatar-genome"
-version = "0.1.0"
-dependencies = [
- "avatar-phenotype",
- "avatar-svg",
- "avatar-tables",
- "blake3",
- "serde_json",
-]
-
-[[package]]
-name = "avatar-phenotype"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "avatar-svg"
-version = "0.1.0"
-dependencies = [
- "avatar-genome",
- "avatar-phenotype",
- "avatar-tables",
- "blake3",
- "serde_json",
-]
-
-[[package]]
-name = "avatar-tables"
-version = "0.1.0"
-dependencies = [
- "blake3",
+ "cortexkit-avatar-svg",
 ]
 
 [[package]]
 name = "avatar-vectors"
 version = "0.1.0"
 dependencies = [
- "avatar-genome",
- "avatar-phenotype",
- "avatar-svg",
  "blake3",
+ "cortexkit-avatar-genome",
+ "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-svg",
  "serde",
  "serde_json",
 ]
@@ -170,6 +134,42 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77745e017f5edba1a9c1d854f6f3a52dac8a12dd5af5d2f54aecf61e43d80d30"
 dependencies = [
  "libm",
+]
+
+[[package]]
+name = "cortexkit-avatar-genome"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
+]
+
+[[package]]
+name = "cortexkit-avatar-phenotype"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "cortexkit-avatar-svg"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-genome",
+ "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-tables",
+ "serde_json",
+]
+
+[[package]]
+name = "cortexkit-avatar-tables"
+version = "0.1.0"
+dependencies = [
+ "blake3",
 ]
 
 [[package]]

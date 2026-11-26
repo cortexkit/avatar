@@ -3,11 +3,13 @@ name = "avatar-export"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license.workspace = true
+repository.workspace = true
 description = "Export stored avatar genomes to PNG, SVG, or render-tree JSON."
 
 [dependencies]
-avatar-genome = { path = "../avatar-genome" }
-avatar-svg = { path = "../avatar-svg" }
+avatar-genome = { path = "../avatar-genome", package = "cortexkit-avatar-genome" }
+avatar-svg = { path = "../avatar-svg", package = "cortexkit-avatar-svg" }
 resvg = "0.44"
 serde_json = "1"
 

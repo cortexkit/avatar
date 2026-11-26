@@ -12,39 +12,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 name = "ava-playground"
 version = "0.0.0"
 dependencies = [
- "avatar-svg",
-]
-
-[[package]]
-name = "avatar-genome"
-version = "0.1.0"
-dependencies = [
- "avatar-phenotype",
- "avatar-tables",
- "blake3",
-]
-
-[[package]]
-name = "avatar-phenotype"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "avatar-svg"
-version = "0.1.0"
-dependencies = [
- "avatar-genome",
- "avatar-phenotype",
- "avatar-tables",
-]
-
-[[package]]
-name = "avatar-tables"
-version = "0.1.0"
-dependencies = [
- "blake3",
+ "cortexkit-avatar-svg",
 ]
 
 [[package]]
@@ -81,6 +49,38 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "cortexkit-avatar-genome"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-tables",
+]
+
+[[package]]
+name = "cortexkit-avatar-phenotype"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "cortexkit-avatar-svg"
+version = "0.1.0"
+dependencies = [
+ "cortexkit-avatar-genome",
+ "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-tables",
+]
+
+[[package]]
+name = "cortexkit-avatar-tables"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+]
 
 [[package]]
 name = "cpufeatures"

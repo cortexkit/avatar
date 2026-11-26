@@ -13,7 +13,7 @@
 //! already speaks for every face in the fleet.
 //!
 //! Usage:
-//!   cargo run -p avatar-genome --example fleet_coverage -- <manifest.json>
+//!   cargo run -p cortexkit-avatar-genome --example fleet_coverage -- <manifest.json>
 //!
 //! The manifest is the deposit file minted by `avatar-export
 //! --mint-genomes` (records carrying `agent_id` and `genome`).

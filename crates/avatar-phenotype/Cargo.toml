@@ -1,7 +1,15 @@
 [package]
-name = "avatar-phenotype"
+name = "cortexkit-avatar-phenotype"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed fixed-point units and the phenotype struct decoded from a classic avatar genome."
+
+# Published as cortexkit-avatar-phenotype. The library keeps its short Rust
+# name, so code imports it as `avatar_phenotype` under either package name.
+[lib]
+name = "avatar_phenotype"
 
 [dependencies]
 serde_json = "1"
