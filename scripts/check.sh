@@ -55,7 +55,7 @@ FAILED=()
 CARGO_STAGES=(
   "fmt" "clippy" "clippy release" "test" "doc tests"
   "corpus coverage" "playground fmt" "playground clippy" "playground tests"
-  "wild invariants" "renderer consts" "no ignored internal files tracked"
+  "wild invariants" "renderer consts" "cortexkit layout"
   "no home paths tracked" "cross-platform comparison" "gate scheduler"
 )
 # STAGES is also the order logs are printed in. The first PREAMBLE entries
@@ -188,10 +188,9 @@ web_lane() {
   # runtime comparison to ensure it also runs on browserless machines.
   run "renderer consts"   python3 scripts/const-drift.py
   # .cortexkit/ holds internal notes and worker briefs that must never reach
-  # git. The ignore rule only stops new files; a file committed before the
-  # rule existed stays tracked silently, so check what git actually tracks.
-  run "no ignored internal files tracked" bash -c \
-    'tracked=$(git ls-files -ci --exclude-standard -- .cortexkit); [ -z "$tracked" ] || { echo "$tracked"; exit 1; }'
+  # git; only a short list of shared paths may be tracked there. The script
+  # explains why it lists every tracked path, not just ignored ones.
+  run "cortexkit layout" bash scripts/check-cortexkit-layout.sh
   # An absolute home path (/Users/<name>/ or /home/<name>/) in a tracked
   # text file names the machine and person it was written on, and the
   # repository is public. Pasted logs and generated files carry them in.

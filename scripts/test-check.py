@@ -25,7 +25,7 @@ STAGES = [
     "mint is current", "core binary current",
     "fmt", "clippy", "clippy release", "test", "doc tests",
     "corpus coverage", "playground fmt", "playground clippy", "playground tests",
-    "wild invariants", "renderer consts", "no ignored internal files tracked", "no home paths tracked",
+    "wild invariants", "renderer consts", "cortexkit layout", "no home paths tracked",
     "cross-platform comparison", "gate scheduler", "lab matches canonical", "ts typecheck",
     "ts conformance", "swift conformance",
 ]
@@ -146,6 +146,9 @@ class GateTests(unittest.TestCase):
         for directory in ("scripts/wild-port", "playground", "ports/ts", "ports/swift", "tools", ".scratch"):
             (self.root / directory).mkdir(parents=True, exist_ok=True)
         shutil.copyfile(GATE, self.root / "scripts/check.sh")
+        # The layout check only runs git, so the real script runs against the
+        # disposable repository instead of a stub.
+        shutil.copyfile(SCRIPTS / "check-cortexkit-layout.sh", self.root / "scripts/check-cortexkit-layout.sh")
         make_framework_fixture(self.root)
         (self.root / ".gitignore").write_text("/.scratch/\n")
         (self.root / ".scratch/stub.py").write_text(STUB)
