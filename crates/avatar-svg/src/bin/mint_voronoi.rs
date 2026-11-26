@@ -7,18 +7,12 @@
 //! program exists only to make that committed data reproducible when the
 //! vendored table is intentionally refreshed.
 
-use std::{
-    env,
-    fmt::Write as _,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{env, fmt::Write as _, fs, path::PathBuf};
 
 fn main() {
-    let source = env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(default_source_path);
+    let Some(source) = env::args_os().nth(1).map(PathBuf::from) else {
+        usage()
+    };
     let output = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/generated/voronoi.rs");
     let text = fs::read_to_string(&source)
         .unwrap_or_else(|error| panic!("read {}: {error}", source.display()));
@@ -37,12 +31,16 @@ fn main() {
     );
 }
 
-fn default_source_path() -> PathBuf {
-    let home = env::var_os("HOME").expect("HOME is required to locate the TOG source");
-    Path::new(&home).join(
-        "Work/Projects/Ssbd/tog-monorepo/packages/playground/src/components/SsbdSvg/\
-         voronoiPatterns.ts",
-    )
+/// The source lives in the TOG repository, which is not part of this one, so
+/// its location is always given rather than assumed.
+fn usage() -> ! {
+    eprintln!(
+        "usage: mint_voronoi <path to TOG's \
+         packages/playground/src/components/SsbdSvg/voronoiPatterns.ts>\n\
+         Reads the voronoiPatterns array from that file and rewrites \
+         src/generated/voronoi.rs."
+    );
+    std::process::exit(2);
 }
 
 /// Extracts every single-quoted path string from the `voronoiPatterns` array.

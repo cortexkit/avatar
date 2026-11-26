@@ -15,8 +15,9 @@
 //! Usage:
 //!   cargo run -p cortexkit-avatar-genome --example fleet_coverage -- <manifest.json>
 //!
-//! The manifest is the deposit file minted by `avatar-export
-//! --mint-genomes` (records carrying `agent_id` and `genome`).
+//! The manifest is a genome manifest minted by `avatar-export
+//! --mint-genomes` (records carrying `agent_id` and `avatar_genome`), or
+//! any array of records in that shape exported from a store.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -199,7 +200,7 @@ fn main() {
     let path = match args.get(1) {
         Some(p) if !p.starts_with("--") => p.clone(),
         _ => {
-            eprintln!("usage: fleet_coverage <deposit-manifest.json> [--mint-cover]");
+            eprintln!("usage: fleet_coverage <genome-manifest.json> [--mint-cover]");
             eprintln!("       fleet_coverage --population [N]");
             std::process::exit(2);
         }
@@ -224,8 +225,8 @@ fn main() {
 
     let mut fleet = Vec::new();
     for rec in records {
-        // The deposit manifest names its fields after the registry columns
-        // it feeds, so the genome arrives as `avatar_genome`.
+        // A genome manifest names its fields after the stored columns, so
+        // the genome arrives as `avatar_genome`.
         let hex = rec
             .get("avatar_genome")
             .and_then(|v| v.as_str())

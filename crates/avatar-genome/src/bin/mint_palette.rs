@@ -4,12 +4,7 @@
 //! specification. This program exists only to make that committed data
 //! reproducible when the palette table is intentionally updated.
 
-use std::{
-    env,
-    fmt::Write as _,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{env, fmt::Write as _, fs, path::PathBuf};
 
 const PALETTE_SLOTS: usize = 2_048;
 const COLORS_PER_SLOT: usize = 6;
@@ -17,10 +12,9 @@ const HEX_DIGITS_PER_COLOR: usize = 6;
 const HEX_DIGITS_PER_SLOT: usize = COLORS_PER_SLOT * HEX_DIGITS_PER_COLOR;
 
 fn main() {
-    let source = env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(default_source_path);
+    let Some(source) = env::args_os().nth(1).map(PathBuf::from) else {
+        usage()
+    };
     let output = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/generated/palette.rs");
     let config = fs::read_to_string(&source)
         .unwrap_or_else(|error| panic!("read {}: {error}", source.display()));
@@ -36,9 +30,15 @@ fn main() {
     println!("wrote {} from {}", output.display(), source.display());
 }
 
-fn default_source_path() -> PathBuf {
-    let home = env::var_os("HOME").expect("HOME is required to locate the TOG source config");
-    Path::new(&home).join("Work/Projects/Ssbd/tog-monorepo/packages/contracts/svgConfig.json")
+/// The source lives in the TOG repository, which is not part of this one, so
+/// its location is always given rather than assumed.
+fn usage() -> ! {
+    eprintln!(
+        "usage: mint_palette <path to TOG's packages/contracts/svgConfig.json>\n\
+         Reads the palette from that file's \"colors\" string and rewrites \
+         src/generated/palette.rs."
+    );
+    std::process::exit(2);
 }
 
 fn extract_colors(config: &str) -> Result<&str, &'static str> {

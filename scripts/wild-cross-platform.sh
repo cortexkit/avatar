@@ -6,7 +6,8 @@ root=$PWD
 [[ $(uname -s) == Darwin ]] || { echo "The reference mint must run natively on macOS" >&2; exit 1; }
 command -v docker >/dev/null
 command -v python3 >/dev/null
-logs="$root/.cortexkit/internal-docs/s8-final"
+# Evidence goes under the git-ignored .cortexkit/, one directory per run.
+logs="$root/.cortexkit/internal-docs/cross-platform"
 mkdir -p "$logs"
 run=$(mktemp -d "$logs/cross-platform.XXXXXX")
 exec > >(tee "$run/output.log") 2>&1

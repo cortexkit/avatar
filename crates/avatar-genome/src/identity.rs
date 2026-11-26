@@ -17,8 +17,8 @@ pub enum SeatIdentity {
 
 /// Derives a complete initial genome from a seat identity.
 ///
-/// Domain separation keeps this XOF stream distinct from every other blake3
-/// hash a host derives. Path fallback adds its own prefix so a mutable path can never produce
+/// Domain separation keeps this extendable-output (XOF) stream distinct from
+/// every other blake3 hash a host derives. Path fallback adds its own prefix so a mutable path can never produce
 /// the same initial DNA as a registered project identifier with equal bytes.
 pub fn derive_genome(identity: &SeatIdentity) -> Genome {
     let mut hasher = blake3::Hasher::new();
