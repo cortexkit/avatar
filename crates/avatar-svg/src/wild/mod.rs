@@ -43,7 +43,8 @@ pub enum Generation {
 }
 
 impl Generation {
-    /// The generation new rows are minted at and the playground reviews.
+    /// The generation new rows are minted at, and the one the design-review
+    /// tools under `playground/` draw.
     pub const LATEST: Generation = Generation::V2;
 }
 
