@@ -140,14 +140,16 @@ mod tests {
 
     // Including file names and lengths makes this pin sensitive to boundary
     // changes, not only to the concatenated SVG payloads.
-    const TREE_SVG_BOUNDARY_SIZE: usize = 1_021_216;
+    const TREE_SVG_BOUNDARY_SIZE: usize = 1_100_868;
     const TREE_SVG_BOUNDARY_HASH: &str =
-        "1f4b66ee5ad6c048182a2e56fea1e2bd26383e15bf0aa4f63214d8ac111d9da2";
+        "e32c18f79931b3f69c6f0c81d9ab7f87533059a2924fd5c03450f4f7da134c9b";
 
-    /// Pins for the identity-derived wild corpus: neutral for each genome,
-    /// plus all seven moods for one genome. Their gradient paint, masked
-    /// gradients and path fill rules must survive decoding in Swift and
-    /// TypeScript, even though classic trees do not exercise those primitives.
+    /// Pins for the identity-derived wild corpus: at version 1, neutral for
+    /// each genome plus all seven moods for one genome; at version 2, all
+    /// seven moods for one genome whose narrowed eyes show where the two
+    /// generations differ. Their gradient paint, masked gradients and path
+    /// fill rules must survive decoding in Swift and TypeScript, even though
+    /// classic trees do not exercise those primitives.
     const WILD_TREE_FIXTURES: &[(&str, usize, &str)] = &[
         (
             "wild-port-0005__neutral.json",
@@ -238,6 +240,41 @@ mod tests {
             "wild-port-0007__neutral.json",
             20735,
             "c60d1ed53c9b91f498089945f41dffa196265fb8146087dba6e58bbe2b69d42b",
+        ),
+        (
+            "wild-port-0022__v2__neutral.json",
+            27747,
+            "9066c16923da417cc8ba18f11b5a23bf73596d653cd95879fe5ba31607350b8b",
+        ),
+        (
+            "wild-port-0022__v2__working.json",
+            32098,
+            "95438955af0faf3c7e1519bc35dc4da11c8ab67715221985e2f3a28c9d9073f0",
+        ),
+        (
+            "wild-port-0022__v2__happy.json",
+            30182,
+            "b4c6428e187a7e777d77e61da95bad4a951f9c5e8e788aab79ac6fe336a049d2",
+        ),
+        (
+            "wild-port-0022__v2__waiting.json",
+            27057,
+            "ebfc748483777b695e740ee0da75b04b45269a3087a53d2769e17d52dbed450f",
+        ),
+        (
+            "wild-port-0022__v2__blocked.json",
+            29203,
+            "020e8719681a4ca96f8fa77811ad4c0ea76ae99f07fb9533dd97093950815093",
+        ),
+        (
+            "wild-port-0022__v2__sad.json",
+            29252,
+            "a2421a6af7898918d028864b2269566cd4ae6165d997ce23810740fdeccadf35",
+        ),
+        (
+            "wild-port-0022__v2__sleepy.json",
+            29995,
+            "223072c1cd5a043bf60bf2a08d9758f7bba1ce60bde72ece9733e905eb55dd9d",
         ),
     ];
 
