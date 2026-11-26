@@ -1,0 +1,22 @@
+[package]
+name = "cortexkit-avatar-raster"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rasterize avatar render trees and their SVG into sRGB RGBA8 images."
+
+# Published as cortexkit-avatar-raster. The library keeps its short Rust
+# name, so code imports it as `avatar_raster` under either package name.
+[lib]
+name = "avatar_raster"
+
+[dependencies]
+avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+# Render trees carry neither text nor embedded raster images, so resvg is
+# built without both. That keeps the font stack and the GIF, WebP and JPEG
+# decoders out of every binary that links this crate.
+resvg = { version = "0.44", default-features = false }
+
+[dev-dependencies]
+avatar-genome = { version = "0.1.0", path = "../avatar-genome", package = "cortexkit-avatar-genome" }
