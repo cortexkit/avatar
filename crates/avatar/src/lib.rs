@@ -50,4 +50,4 @@ pub use avatar_svg::{
     Affine, Effect, FillRule, GradientStop, GradientUnits, Paint, Primitive, RenderTree, Role,
     Segment, Shape, Stroke, StrokeCap, StrokeJoin, Subpath, Transform, TransformOp,
 };
-pub use avatar_svg::{Mood, RenderError, Rgb, Q32};
+pub use avatar_svg::{Bam16, Mood, RenderError, Rgb, Q32};
