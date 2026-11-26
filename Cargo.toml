@@ -4,6 +4,7 @@ members = [
     "crates/avatar-ffi",
     "crates/avatar-genome",
     "crates/avatar-phenotype",
+    "crates/avatar-raster",
     "crates/avatar-svg",
     "crates/avatar-tables",
     "crates/avatar-vectors",
