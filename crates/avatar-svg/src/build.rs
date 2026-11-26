@@ -138,6 +138,7 @@ fn build_tree(
     Ok(RenderTree {
         canvas: params.canvas,
         background: Some(phenotype.palette.back),
+        pixel_grid: None,
         primitives,
     })
 }

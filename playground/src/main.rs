@@ -32,6 +32,7 @@ fn tree_fragment(mut primitives: Vec<Primitive>, operations: &[avatar_svg::Trans
             // needs a canvas that bounds every sheet mask region.
             canvas: 5_000,
             background: None,
+            pixel_grid: None,
             primitives,
         },
         &format!("wild-tree-{tree_index}"),
@@ -196,6 +197,7 @@ fn run_bench(start_seed: u64, count: usize) {
         let tree = RenderTree {
             canvas: 240,
             background: None,
+            pixel_grid: None,
             primitives: draw_full(
                 &creature,
                 mood::Mood::Neutral,
@@ -241,6 +243,7 @@ fn run_fixtures(start_seed: u64, count: usize, out_dir: &std::path::Path) {
             let tree = RenderTree {
                 canvas: 240,
                 background: None,
+                pixel_grid: None,
                 primitives: draw_full(&creature, mood, 120.0, 120.0, Generation::LATEST),
             };
             let json = avatar_svg::serialize_tree_json(&tree);

@@ -65,6 +65,7 @@ fn ignored_bytes_and_inactive_slots_do_not_change_the_tree() {
         crate::serialize_tree_json(&RenderTree {
             canvas: 240,
             background: None,
+            pixel_grid: None,
             primitives: draw_full(
                 &decode_genome(bytes),
                 mood::Mood::Neutral,

@@ -22,6 +22,10 @@ pub struct RenderTree {
     pub canvas: u32,
     /// Optional background drawn behind every primitive.
     pub background: Option<Rgb>,
+    /// Number of square cells across the canvas, if drawn on a pixel grid.
+    /// When present this is positive. Rasterizers place the grid centrally,
+    /// use whole device pixels per cell, and do not antialias cell edges.
+    pub pixel_grid: Option<u32>,
     /// Independently drawable geometry in painter's order.
     pub primitives: Vec<Primitive>,
 }
@@ -101,6 +105,14 @@ pub enum Segment {
     },
 }
 
+/// One contour of a compound path. Fill treats open contours as closed, but
+/// the stroke connects the final point to the first only when `closed` is set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Subpath {
+    pub segments: Vec<Segment>,
+    pub closed: bool,
+}
+
 /// Drawable geometry in pre-transform canonical milliunits.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Shape {
@@ -109,10 +121,10 @@ pub enum Shape {
         closed: bool,
         fill_rule: FillRule,
     },
-    /// A non-empty list of closed contours sharing one winding rule. Each
+    /// A non-empty list of contours sharing one winding rule. Each
     /// starts with a move and continues with at least one line or cubic.
     CompoundPath {
-        subpaths: Vec<Vec<Segment>>,
+        subpaths: Vec<Subpath>,
         fill_rule: FillRule,
     },
     Circle {
@@ -165,6 +177,15 @@ impl GradientStop {
     }
 }
 
+/// Coordinate space of a positioned radial gradient.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GradientUnits {
+    /// Local, pre-transform coordinates in the same milliunits as the shape.
+    UserSpace,
+    /// Raw Q32 fractions, scaled by the shape's bounding box on each axis.
+    ObjectBoundingBox,
+}
+
 /// Fill paint for a primitive.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Paint {
@@ -174,8 +195,9 @@ pub enum Paint {
     RadialGradient {
         stops: Vec<GradientStop>,
     },
-    /// A radial gradient in the primitive's local, pre-transform coordinates.
+    /// A radial gradient with coordinates expressed in the selected units.
     RadialGradientAt {
+        units: GradientUnits,
         cx: i64,
         cy: i64,
         r: i64,
@@ -206,20 +228,43 @@ impl Paint {
                 && focal.is_none_or(|(fx, fy)| in_range(fx) && in_range(fy)),
             "radial gradient constructor coordinates must be within ±2³¹"
         );
-        let focal = focal.map(|(fx, fy)| {
-            if focus_inside(cx, cy, r, fx, fy) {
-                return (fx, fy);
-            }
-            let dx = i128::from(fx) - i128::from(cx);
-            let dy = i128::from(fy) - i128::from(cy);
-            let (x, y) = nearest_interior_focus(dx, dy, i128::from(r));
-            (cx + x as i64, cy + y as i64)
-        });
         Self::RadialGradientAt {
+            units: GradientUnits::UserSpace,
             cx,
             cy,
             r,
-            focal,
+            focal: place_focus(cx, cy, r, focal),
+            stops,
+        }
+    }
+
+    /// Construct a gradient in the shape's bounding box. An exterior or
+    /// on-circle focus is moved to the nearest interior Q32 point in that
+    /// space, breaking ties by x then y before bounding-box scaling.
+    ///
+    /// Panics unless the radius is positive and all fractions are in [-1, 1].
+    pub fn radial_gradient_in_box(
+        cx: Q32,
+        cy: Q32,
+        r: Q32,
+        focal: Option<(Q32, Q32)>,
+        stops: Vec<GradientStop>,
+    ) -> Self {
+        assert!(r.0 > 0, "radial gradient radius must be positive");
+        let in_range = |coord: Q32| coord.0.unsigned_abs() <= Q32::ONE.0 as u64;
+        assert!(
+            in_range(cx)
+                && in_range(cy)
+                && in_range(r)
+                && focal.is_none_or(|(fx, fy)| in_range(fx) && in_range(fy)),
+            "bounding-box radial gradient constructor fractions must be within ±1"
+        );
+        Self::RadialGradientAt {
+            units: GradientUnits::ObjectBoundingBox,
+            cx: cx.0,
+            cy: cy.0,
+            r: r.0,
+            focal: place_focus(cx.0, cy.0, r.0, focal.map(|(fx, fy)| (fx.0, fy.0))),
             stops,
         }
     }
@@ -240,15 +285,31 @@ fn focus_inside(cx: i64, cy: i64, r: i64, fx: i64, fy: i64) -> bool {
     dx < r && dy < r && dx * dx + dy * dy < r * r
 }
 
-pub(crate) fn assert_compound_path(subpaths: &[Vec<Segment>]) {
+fn place_focus(cx: i64, cy: i64, r: i64, focal: Option<(i64, i64)>) -> Option<(i64, i64)> {
+    focal.map(|(fx, fy)| {
+        if focus_inside(cx, cy, r, fx, fy) {
+            return (fx, fy);
+        }
+        let dx = i128::from(fx) - i128::from(cx);
+        let dy = i128::from(fy) - i128::from(cy);
+        let (x, y) = nearest_interior_focus(dx, dy, i128::from(r));
+        (cx + x as i64, cy + y as i64)
+    })
+}
+
+pub(crate) fn assert_compound_path(subpaths: &[Subpath]) {
     assert!(!subpaths.is_empty(), "compound path must have a subpath");
-    for segments in subpaths {
+    for subpath in subpaths {
         assert!(
-            matches!(segments.as_slice(), [Segment::MoveTo { .. }, rest @ ..]
+            matches!(subpath.segments.as_slice(), [Segment::MoveTo { .. }, rest @ ..]
                 if !rest.is_empty() && rest.iter().all(|s| matches!(s, Segment::LineTo { .. } | Segment::CubicTo { .. }))),
             "compound subpath must start with its only move and have a line or cubic"
         );
     }
+}
+
+pub(crate) fn assert_pixel_grid(cells: u32) {
+    assert!(cells > 0, "pixel grid must have at least one cell");
 }
 
 fn nearest_interior_focus(dx: i128, dy: i128, r: i128) -> (i128, i128) {

@@ -1,8 +1,8 @@
 use std::fmt;
 
 use avatar_svg::{
-    Bam16, Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Rgb, Role, Segment, Shape,
-    Stroke, StrokeCap, StrokeJoin, Transform, TransformOp, Q32,
+    Bam16, Effect, FillRule, GradientStop, GradientUnits, Paint, Primitive, RenderTree, Rgb, Role,
+    Segment, Shape, Stroke, StrokeCap, StrokeJoin, Subpath, Transform, TransformOp, Q32,
 };
 use serde::Deserialize;
 
@@ -52,7 +52,19 @@ struct FixtureTree {
     canvas: u32,
     background: Option<FixtureRgb>,
     masks: Vec<Vec<FixturePrimitive>>,
+    #[serde(default, deserialize_with = "pixel_grid")]
+    pixel_grid: Option<u32>,
     primitives: Vec<FixturePrimitive>,
+}
+
+fn pixel_grid<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+    let cells = u32::deserialize(d)?;
+    if cells == 0 {
+        return Err(serde::de::Error::custom(
+            "pixel grid must have at least one cell",
+        ));
+    }
+    Ok(Some(cells))
 }
 
 /// Resolves `mask_ref` indices back into the inline masks the in-memory tree
@@ -84,6 +96,7 @@ impl MaskTable {
         Ok(RenderTree {
             canvas: tree.canvas,
             background: tree.background.map(Into::into),
+            pixel_grid: tree.pixel_grid,
             primitives,
         })
     }
@@ -243,6 +256,37 @@ impl From<FixtureSegment> for Segment {
 }
 
 #[derive(Deserialize)]
+#[serde(remote = "Self", deny_unknown_fields)]
+struct FixtureSubpath {
+    closed: bool,
+    segments: Vec<FixtureSegment>,
+}
+
+impl<'de> Deserialize<'de> for FixtureSubpath {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Object;
+
+        impl<'de> serde::de::Visitor<'de> for Object {
+            type Value = FixtureSubpath;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a subpath object with closed and segments keys")
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                map: M,
+            ) -> Result<Self::Value, M::Error> {
+                FixtureSubpath::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+            }
+        }
+
+        // A tuple must not satisfy the requirement for an explicit `closed` key.
+        d.deserialize_map(Object)
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum FixtureShape {
     Path {
@@ -251,7 +295,7 @@ enum FixtureShape {
         fill_rule: FixtureFillRule,
     },
     CompoundPath {
-        subpaths: Vec<Vec<FixtureSegment>>,
+        subpaths: Vec<FixtureSubpath>,
         fill_rule: FixtureFillRule,
     },
     Circle {
@@ -298,8 +342,8 @@ impl TryFrom<FixtureShape> for DecodedShape {
                 if subpaths.is_empty() {
                     return Err("compound path must have a subpath");
                 }
-                for segments in &subpaths {
-                    if !matches!(segments.as_slice(), [FixtureSegment::Move { .. }, rest @ ..]
+                for subpath in &subpaths {
+                    if !matches!(subpath.segments.as_slice(), [FixtureSegment::Move { .. }, rest @ ..]
                         if !rest.is_empty() && rest.iter().all(|s| matches!(s, FixtureSegment::Line { .. } | FixtureSegment::Cubic { .. })))
                     {
                         return Err("compound subpath must start with its only move and have a line or cubic");
@@ -308,7 +352,10 @@ impl TryFrom<FixtureShape> for DecodedShape {
                 Shape::CompoundPath {
                     subpaths: subpaths
                         .into_iter()
-                        .map(|segments| segments.into_iter().map(Into::into).collect())
+                        .map(|subpath| Subpath {
+                            closed: subpath.closed,
+                            segments: subpath.segments.into_iter().map(Into::into).collect(),
+                        })
                         .collect(),
                     fill_rule: fill_rule.into(),
                 }
@@ -374,6 +421,13 @@ fn stop_opacity<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FixtureGradientUnits {
+    UserSpace,
+    ObjectBoundingBox,
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum FixturePaint {
     Solid {
@@ -383,6 +437,7 @@ enum FixturePaint {
         stops: Vec<FixtureGradientStop>,
     },
     RadialGradientAt {
+        units: FixtureGradientUnits,
         cx: i64,
         cy: i64,
         r: i64,
@@ -411,6 +466,7 @@ impl TryFrom<FixturePaint> for DecodedPaint {
                 stops: stops.into_iter().map(Into::into).collect(),
             },
             FixturePaint::RadialGradientAt {
+                units,
                 cx,
                 cy,
                 r,
@@ -436,6 +492,10 @@ impl TryFrom<FixturePaint> for DecodedPaint {
                     _ => return Err("radial gradient fx and fy must be supplied together"),
                 };
                 Paint::RadialGradientAt {
+                    units: match units {
+                        FixtureGradientUnits::UserSpace => GradientUnits::UserSpace,
+                        FixtureGradientUnits::ObjectBoundingBox => GradientUnits::ObjectBoundingBox,
+                    },
                     cx,
                     cy,
                     r,
@@ -584,6 +644,7 @@ mod inline_masks {
             Self {
                 canvas: tree.canvas,
                 background: tree.background.map(Into::into),
+                pixel_grid: None,
                 primitives: tree.primitives.into_iter().map(Into::into).collect(),
             }
         }
@@ -747,6 +808,7 @@ mod tests {
             RenderTree {
                 canvas: 240,
                 background: None,
+                pixel_grid: None,
                 primitives: vec![
                     circle(
                         "a",

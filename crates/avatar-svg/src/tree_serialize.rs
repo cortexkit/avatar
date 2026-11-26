@@ -7,8 +7,9 @@
 use avatar_phenotype::{Rgb, Q32};
 
 use crate::tree::{
-    assert_compound_path, assert_radial_gradient_at, Effect, FillRule, GradientStop, Paint,
-    Primitive, RenderTree, Segment, Shape, StrokeCap, StrokeJoin, TransformOp,
+    assert_compound_path, assert_pixel_grid, assert_radial_gradient_at, Effect, FillRule,
+    GradientStop, GradientUnits, Paint, Primitive, RenderTree, Segment, Shape, StrokeCap,
+    StrokeJoin, TransformOp,
 };
 
 /// Serializes every primitive in a render tree without interpreting its label.
@@ -70,10 +71,7 @@ pub fn serialize_tree_with_id_prefix(tree: &RenderTree, prefix: &str) -> Vec<u8>
         index = end;
     }
 
-    let mut output = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\">\n",
-        tree.canvas, tree.canvas
-    );
+    let mut output = svg_root(tree);
     if !defs.is_empty() {
         output.push_str("<defs>\n");
         output.push_str(&defs);
@@ -90,6 +88,19 @@ pub fn serialize_tree_with_id_prefix(tree: &RenderTree, prefix: &str) -> Vec<u8>
     output.push_str(&content);
     output.push_str("</svg>\n");
     output.into_bytes()
+}
+
+pub(crate) fn svg_root(tree: &RenderTree) -> String {
+    let rendering = if let Some(cells) = tree.pixel_grid {
+        assert_pixel_grid(cells);
+        " shape-rendering=\"crispEdges\""
+    } else {
+        ""
+    };
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\"{rendering}>\n",
+        tree.canvas, tree.canvas
+    )
 }
 
 fn serialize_primitive(
@@ -224,13 +235,14 @@ fn paint_value(paint: &Paint, gradient_id: &str, defs: &mut String) -> String {
             format!("url(#{gradient_id})")
         }
         Paint::RadialGradientAt {
+            units,
             cx,
             cy,
             r,
             focal,
             stops,
         } => {
-            positioned_gradient(defs, gradient_id, *cx, *cy, *r, *focal, stops);
+            positioned_gradient(defs, gradient_id, *units, (*cx, *cy), *r, *focal, stops);
             format!("url(#{gradient_id})")
         }
         Paint::None => "none".to_owned(),
@@ -240,21 +252,29 @@ fn paint_value(paint: &Paint, gradient_id: &str, defs: &mut String) -> String {
 pub(crate) fn positioned_gradient(
     defs: &mut String,
     id: &str,
-    cx: i64,
-    cy: i64,
+    units: GradientUnits,
+    (cx, cy): (i64, i64),
     r: i64,
     focal: Option<(i64, i64)>,
     stops: &[GradientStop],
 ) {
     assert_radial_gradient_at(cx, cy, r, focal);
+    let (units_attribute, coordinate): (_, fn(i64) -> String) = match units {
+        GradientUnits::UserSpace => (" gradientUnits=\"userSpaceOnUse\"", milli),
+        GradientUnits::ObjectBoundingBox => ("", box_fraction),
+    };
     defs.push_str(&format!(
-        "<radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{}\" cy=\"{}\" r=\"{}\"",
-        milli(cx),
-        milli(cy),
-        milli(r),
+        "<radialGradient id=\"{id}\"{units_attribute} cx=\"{}\" cy=\"{}\" r=\"{}\"",
+        coordinate(cx),
+        coordinate(cy),
+        coordinate(r),
     ));
     if let Some((fx, fy)) = focal {
-        defs.push_str(&format!(" fx=\"{}\" fy=\"{}\"", milli(fx), milli(fy)));
+        defs.push_str(&format!(
+            " fx=\"{}\" fy=\"{}\"",
+            coordinate(fx),
+            coordinate(fy)
+        ));
     }
     defs.push_str(" spreadMethod=\"pad\">");
     finish_gradient(defs, stops);
@@ -303,11 +323,11 @@ pub(crate) fn shape_element(shape: &Shape, attributes: &str, in_clip: bool) -> S
         } => {
             assert_compound_path(subpaths);
             let mut data = String::new();
-            for segments in subpaths {
+            for subpath in subpaths {
                 if !data.is_empty() {
                     data.push(' ');
                 }
-                append_path_data(&mut data, segments, true);
+                append_path_data(&mut data, &subpath.segments, subpath.closed);
             }
             let rule = if in_clip { "clip-rule" } else { "fill-rule" };
             let value = match fill_rule {
@@ -445,6 +465,23 @@ fn q32(value: Q32) -> String {
     }
 }
 
+fn box_fraction(raw: i64) -> String {
+    // Q32 denominators are powers of two, so their decimal expansion is
+    // finite. Preserve it exactly: rounding can turn a positive radius into
+    // zero or move a valid focus onto the circle.
+    let sign = if raw < 0 { "-" } else { "" };
+    let raw = raw.unsigned_abs();
+    let scale = 1_u64 << 32;
+    let whole = raw / scale;
+    let fraction = u128::from(raw % scale) * 5_u128.pow(32);
+    if fraction == 0 {
+        format!("{sign}{whole}")
+    } else {
+        let fraction = format!("{fraction:032}");
+        format!("{sign}{whole}.{}", fraction.trim_end_matches('0'))
+    }
+}
+
 fn bam_degrees(angle: u16) -> String {
     const SCALE: i64 = 1_000_000;
     let scaled = (i64::from(angle) * 360 * SCALE + 32_768) / 65_536;
@@ -520,6 +557,7 @@ mod tests {
         let svg = String::from_utf8(serialize_tree(&RenderTree {
             canvas: 10,
             background: None,
+            pixel_grid: None,
             primitives: vec![subject],
         }))
         .unwrap();
@@ -548,6 +586,7 @@ mod tests {
         let svg = String::from_utf8(serialize_tree(&RenderTree {
             canvas: 10,
             background: None,
+            pixel_grid: None,
             primitives: vec![painted],
         }))
         .unwrap();
@@ -579,6 +618,7 @@ mod tests {
         let svg = String::from_utf8(serialize_tree(&RenderTree {
             canvas: 10,
             background: None,
+            pixel_grid: None,
             primitives: vec![painted],
         }))
         .unwrap();
@@ -662,6 +702,7 @@ mod tests {
         let svg = String::from_utf8(serialize_tree(&RenderTree {
             canvas: 10,
             background: None,
+            pixel_grid: None,
             primitives: vec![path, circle],
         }))
         .unwrap();

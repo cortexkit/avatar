@@ -9,6 +9,7 @@ fn tree(shape: Shape, paint: Paint) -> RenderTree {
     RenderTree {
         canvas: 10,
         background: None,
+        pixel_grid: None,
         primitives: vec![Primitive {
             shape,
             transform: None,
@@ -45,7 +46,7 @@ fn optional_focus_and_stop_opacity_are_omitted_or_explicit() {
     };
     let absent = gradient(None, None);
     let json = serialize_tree_json(&absent);
-    assert!(json.contains(r#""paint":{"cx":0,"cy":0,"kind":"radial_gradient_at","r":400,"stops":[{"color":{"b":0,"g":0,"r":0},"offset_q32":0}]}"#), "{json}");
+    assert!(json.contains(r#""paint":{"cx":0,"cy":0,"kind":"radial_gradient_at","r":400,"stops":[{"color":{"b":0,"g":0,"r":0},"offset_q32":0}],"units":"user_space"}"#), "{json}");
     let svg = String::from_utf8(serialize_tree(&absent)).unwrap();
     assert!(
         svg.contains(
@@ -78,6 +79,7 @@ macro_rules! invalid_values {
                 $serialize(&tree(
                     CIRCLE,
                     Paint::RadialGradientAt {
+                        units: GradientUnits::UserSpace,
                         cx: 0,
                         cy: 0,
                         r,
@@ -90,7 +92,13 @@ macro_rules! invalid_values {
             fn compound(subpaths: Vec<Vec<Segment>>) {
                 $serialize(&tree(
                     Shape::CompoundPath {
-                        subpaths,
+                        subpaths: subpaths
+                            .into_iter()
+                            .map(|segments| Subpath {
+                                segments,
+                                closed: true,
+                            })
+                            .collect(),
                         fill_rule: FillRule::EvenOdd,
                     },
                     Paint::None,
@@ -152,6 +160,14 @@ macro_rules! invalid_values {
             #[should_panic(expected = "compound subpath must start with its only move")]
             fn refuses_move_only() {
                 compound(vec![vec![MOVE]]);
+            }
+
+            #[test]
+            #[should_panic(expected = "pixel grid must have at least one cell")]
+            fn refuses_zero_pixel_grid() {
+                let mut tree = tree(CIRCLE, Paint::None);
+                tree.pixel_grid = Some(0);
+                $serialize(&tree);
             }
         }
     };
@@ -242,4 +258,69 @@ fn constructor_handles_coordinate_and_radius_limits() {
         "focus search at coordinate and radius limits: {:?}",
         start.elapsed()
     );
+}
+
+fn box_focal(cx: i64, cy: i64, r: i64, fx: i64, fy: i64) -> (i64, i64) {
+    let Paint::RadialGradientAt {
+        units: GradientUnits::ObjectBoundingBox,
+        focal: Some(point),
+        ..
+    } = Paint::radial_gradient_in_box(Q32(cx), Q32(cy), Q32(r), Some((Q32(fx), Q32(fy))), vec![])
+    else {
+        panic!("expected a positioned bounding-box focus");
+    };
+    point
+}
+
+#[test]
+fn box_constructor_clamps_in_fraction_space() {
+    assert_eq!(box_focal(0, 0, 4, 4, 4), (2, 3));
+    assert_eq!(box_focal(0, 0, 4, 4, 0), (3, 0));
+}
+
+#[test]
+#[should_panic(expected = "radial gradient radius must be positive")]
+fn box_constructor_rejects_zero_radius() {
+    box_focal(0, 0, 0, 0, 0);
+}
+
+#[test]
+#[should_panic(expected = "bounding-box radial gradient constructor fractions must be within ±1")]
+fn box_constructor_rejects_out_of_range_fraction() {
+    box_focal(0, 0, 4, Q32::ONE.0 + 1, 0);
+}
+
+#[test]
+fn box_constructor_handles_fraction_and_radius_limits() {
+    let limit = Q32::ONE.0;
+    let start = std::time::Instant::now();
+    assert_eq!(box_focal(-limit, limit, limit, limit, limit), (-1, limit));
+    assert_eq!(
+        box_focal(limit, limit, limit, -limit, -limit),
+        (1_257_966_796, 1_257_966_797)
+    );
+    eprintln!(
+        "bounding-box focus search at fraction and radius limits: {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn svg_bounding_box_radius_keeps_one_q32_tick() {
+    let gradient = Paint::radial_gradient_in_box(Q32(0), Q32(0), Q32(1), None, vec![]);
+    let svg = String::from_utf8(serialize_tree(&tree(CIRCLE, gradient))).unwrap();
+    assert!(
+        svg.contains(r#"r="0.00000000023283064365386962890625""#),
+        "{svg}"
+    );
+    assert!(!svg.contains("gradientUnits"), "{svg}");
+}
+
+#[test]
+fn unspecified_pixel_grid_adds_no_json_key_or_svg_attribute() {
+    let tree = tree(CIRCLE, Paint::None);
+    assert!(!serialize_tree_json(&tree).contains("pixel_grid"));
+    assert!(!String::from_utf8(serialize_tree(&tree))
+        .unwrap()
+        .contains("shape-rendering"));
 }

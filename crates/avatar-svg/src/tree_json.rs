@@ -20,9 +20,9 @@ use std::{
 use avatar_phenotype::{Rgb, Q32};
 
 use crate::tree::{
-    assert_compound_path, assert_radial_gradient_at, Effect, FillRule, GradientStop, Paint,
-    Primitive, RenderTree, Role, Segment, Shape, Stroke, StrokeCap, StrokeJoin, Transform,
-    TransformOp,
+    assert_compound_path, assert_pixel_grid, assert_radial_gradient_at, Effect, FillRule,
+    GradientStop, GradientUnits, Paint, Primitive, RenderTree, Role, Segment, Shape, Stroke,
+    StrokeCap, StrokeJoin, Transform, TransformOp,
 };
 
 /// Serializes a render tree as whitespace-free JSON with byte-sorted object keys.
@@ -142,6 +142,7 @@ fn write_tree(writer: &mut Writer, tree: &RenderTree) {
     let RenderTree {
         canvas,
         background,
+        pixel_grid,
         primitives,
     } = tree;
     // The mask table comes before the primitives in key order but is complete
@@ -156,6 +157,10 @@ fn write_tree(writer: &mut Writer, tree: &RenderTree) {
         object.field("masks", |writer| {
             writer.array(&masks, |writer, entry| writer.output.push_str(entry))
         });
+        if let Some(cells) = pixel_grid {
+            assert_pixel_grid(*cells);
+            object.field("pixel_grid", |writer| writer.integer(*cells));
+        }
         object.field("primitives", |writer| writer.output.push_str(&primitives));
     });
 }
@@ -218,8 +223,13 @@ fn write_shape(writer: &mut Writer, shape: &Shape) {
                 object.field("fill_rule", |writer| write_fill_rule(writer, *fill_rule));
                 object.field("kind", |writer| writer.string("compound_path"));
                 object.field("subpaths", |writer| {
-                    writer.array(subpaths, |writer, segments| {
-                        writer.array(segments, write_segment)
+                    writer.array(subpaths, |writer, subpath| {
+                        writer.object(|object| {
+                            object.field("closed", |writer| writer.boolean(subpath.closed));
+                            object.field("segments", |writer| {
+                                writer.array(&subpath.segments, write_segment)
+                            });
+                        });
                     });
                 });
             });
@@ -307,6 +317,7 @@ fn write_paint(writer: &mut Writer, paint: &Paint) {
             object.field("stops", |writer| writer.array(stops, write_gradient_stop));
         }),
         Paint::RadialGradientAt {
+            units,
             cx,
             cy,
             r,
@@ -324,6 +335,12 @@ fn write_paint(writer: &mut Writer, paint: &Paint) {
                 object.field("kind", |writer| writer.string("radial_gradient_at"));
                 object.field("r", |writer| writer.integer(*r));
                 object.field("stops", |writer| writer.array(stops, write_gradient_stop));
+                object.field("units", |writer| {
+                    writer.string(match units {
+                        GradientUnits::UserSpace => "user_space",
+                        GradientUnits::ObjectBoundingBox => "object_bounding_box",
+                    })
+                });
             });
         }
         Paint::None => writer.object(|object| {
@@ -544,6 +561,7 @@ mod tests {
         let tree = RenderTree {
             canvas: u32::MAX,
             background: Some(color(7, 8, 9)),
+            pixel_grid: None,
             primitives: vec![
                 path,
                 primitive(
@@ -596,6 +614,7 @@ mod tests {
         let json = serialize_tree_json(&RenderTree {
             canvas: 10_000,
             background: None,
+            pixel_grid: None,
             primitives: vec![primitive(
                 Shape::Rect {
                     x: 1,
@@ -627,6 +646,7 @@ mod tests {
         let json = serialize_tree_json(&RenderTree {
             canvas: 240,
             background: None,
+            pixel_grid: None,
             primitives,
         });
         serde_json::from_str(&json).expect("encoder emits JSON")
@@ -647,6 +667,7 @@ mod tests {
         let json = serialize_tree_json(&RenderTree {
             canvas: 1,
             background: None,
+            pixel_grid: None,
             primitives: vec![masked_by("drawn", vec![circle("mask")])],
         });
         let circle_json = |label: &str, effects: &str| {
@@ -668,6 +689,7 @@ mod tests {
         let json = serialize_tree_json(&RenderTree {
             canvas: 240,
             background: None,
+            pixel_grid: None,
             primitives: vec![
                 masked_by("first", mask.clone()),
                 masked_by("second", mask.clone()),

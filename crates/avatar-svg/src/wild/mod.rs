@@ -56,6 +56,7 @@ pub(crate) fn render_tree(
     RenderTree {
         canvas: 240,
         background: None,
+        pixel_grid: None,
         primitives: draw_full(&decode_genome(bytes), mood, 120.0, 120.0, generation),
     }
 }

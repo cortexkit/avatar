@@ -45,8 +45,8 @@ pub use geometry::{body_geometry, BodyGeometry};
 pub use serialize::serialize_svg;
 pub use svg::{render_body_svg, render_svg, Mood, RenderError, RenderParams};
 pub use tree::{
-    Affine, Effect, FillRule, GradientStop, Paint, Primitive, RenderTree, Role, Segment, Shape,
-    Stroke, StrokeCap, StrokeJoin, Transform, TransformOp,
+    Affine, Effect, FillRule, GradientStop, GradientUnits, Paint, Primitive, RenderTree, Role,
+    Segment, Shape, Stroke, StrokeCap, StrokeJoin, Subpath, Transform, TransformOp,
 };
 pub use tree_json::serialize_tree_json;
 pub use tree_serialize::{serialize_tree, serialize_tree_with_id_prefix};

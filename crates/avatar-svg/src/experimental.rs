@@ -109,10 +109,7 @@ pub fn build_render_tree_experimental(
 /// order and intentionally skips lighting and turbulence effects; stable output
 /// remains the responsibility of [`crate::serialize_svg`].
 pub fn serialize_svg_experimental(tree: &RenderTree) -> Vec<u8> {
-    let mut output = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\">\n",
-        tree.canvas, tree.canvas
-    );
+    let mut output = crate::tree_serialize::svg_root(tree);
     if let Some(background) = tree.background {
         output.push_str(&format!(
             "  <rect width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
@@ -278,6 +275,7 @@ fn preview_definitions(primitives: &[Primitive]) -> String {
             }
             output.push_str("    </radialGradient>\n");
         } else if let Paint::RadialGradientAt {
+            units,
             cx,
             cy,
             r,
@@ -288,8 +286,8 @@ fn preview_definitions(primitives: &[Primitive]) -> String {
             crate::tree_serialize::positioned_gradient(
                 &mut output,
                 &format!("av-experimental-gradient-{index}"),
-                *cx,
-                *cy,
+                *units,
+                (*cx, *cy),
                 *r,
                 *focal,
                 stops,

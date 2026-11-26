@@ -48,13 +48,14 @@ fn primitive(shape: Shape, paint: Paint) -> Primitive {
 }
 
 fn contours() -> Shape {
-    let square = |lo, hi| {
-        vec![
+    let square = |lo, hi| Subpath {
+        closed: true,
+        segments: vec![
             Segment::MoveTo { x: lo, y: lo },
             Segment::LineTo { x: hi, y: lo },
             Segment::LineTo { x: hi, y: hi },
             Segment::LineTo { x: lo, y: hi },
-        ]
+        ],
     };
     Shape::CompoundPath {
         subpaths: vec![square(100, 900), square(400, 600)],
@@ -62,10 +63,11 @@ fn contours() -> Shape {
     }
 }
 
-fn cases() -> [(&'static str, RenderTree); 4] {
+fn cases() -> [(&'static str, RenderTree); 7] {
     let tree = |primitive| RenderTree {
         canvas: 10,
         background: None,
+        pixel_grid: None,
         primitives: vec![primitive],
     };
     let stop = GradientStop::with_opacity;
@@ -90,12 +92,83 @@ fn cases() -> [(&'static str, RenderTree); 4] {
     clipped.effects.push(Effect::Masked {
         mask: vec![primitive(contours(), Paint::Solid { color: WHITE })],
     });
+    let mixed = mixed_contours();
+    let box_gradient = tree(primitive(
+        ELLIPSE,
+        Paint::radial_gradient_in_box(
+            Q32(1_803_886_264),                             // .42
+            Q32(1_546_188_227),                             // .36
+            Q32(3_092_376_453),                             // .72
+            Some((Q32(1_546_188_227), Q32(1_202_590_843))), // (.36, .28)
+            vec![
+                stop(Q32(0), WHITE, 0.2),
+                stop(Q32(1_803_886_264), WHITE, 0.0),
+                stop(Q32(3_178_275_799), Rgb { r: 0, g: 0, b: 0 }, 0.05),
+                stop(Q32::ONE, Rgb { r: 0, g: 0, b: 0 }, 0.3),
+            ],
+        ),
+    ));
+    let cell = |x, y, color| {
+        primitive(
+            Shape::Rect {
+                x,
+                y,
+                w: 200,
+                h: 200,
+            },
+            Paint::Solid { color },
+        )
+    };
+    let grid = RenderTree {
+        canvas: 10,
+        background: None,
+        pixel_grid: Some(5),
+        primitives: vec![
+            cell(200, 200, BLUE),
+            cell(400, 200, RED),
+            cell(200, 400, BLUE),
+        ],
+    };
     [
         ("radial-gradient-at", positioned),
         ("stop-opacity", opacity),
         ("compound-path", compound),
         ("compound-path-clip", tree(clipped)),
+        ("compound-path-mixed", tree(mixed)),
+        ("radial-gradient-in-box", box_gradient),
+        ("pixel-grid", grid),
     ]
+}
+
+fn mixed_contours() -> Primitive {
+    let contour = |start: (i64, i64), rest: &[(i64, i64)], closed| {
+        let segments = std::iter::once(Segment::MoveTo {
+            x: start.0,
+            y: start.1,
+        })
+        .chain(rest.iter().map(|&(x, y)| Segment::LineTo { x, y }))
+        .collect();
+        Subpath { closed, segments }
+    };
+    let mut mixed = primitive(
+        Shape::CompoundPath {
+            subpaths: vec![
+                contour((100, 300), &[(800, 300), (800, 400)], false),
+                contour((300, 300), &[(700, 300), (700, 700), (300, 700)], true),
+                contour((300, 100), &[(300, 800), (400, 800)], false),
+            ],
+            fill_rule: FillRule::NonZero,
+        },
+        Paint::None,
+    );
+    mixed.stroke = Some(Stroke {
+        color: BLUE,
+        width: 60,
+        cap: StrokeCap::Round,
+        join: StrokeJoin::Round,
+    });
+    mixed.opacity = Some(Q32(Q32::ONE.0 / 2));
+    mixed
 }
 
 fn root() -> PathBuf {
@@ -131,6 +204,16 @@ fn feature_trees_round_trip_and_match_svg() {
         vec![
             format!(r#"<clipPath id="mask-group-0-0" clipPathUnits="userSpaceOnUse"><path d="{CONTOURS}" clip-rule="evenodd"/></clipPath>"#),
             r##"<g clip-path="url(#mask-group-0-0)"><rect x="1" y="1" width="8" height="8" fill="#0060e0"/>"##.to_owned(),
+        ],
+        vec![r##"<path d="M1 3 L8 3 L8 4 M3 3 L7 3 L7 7 L3 7 Z M3 1 L3 8 L4 8" fill-rule="nonzero" fill="none" stroke="#0060e0" stroke-width="0.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>"##.to_owned()],
+        vec![
+            r#"<radialGradient id="gradient-primitive-0" cx="0.41999999992549419403076171875" cy="0.36000000010244548320770263671875" r="0.71999999997206032276153564453125" fx="0.36000000010244548320770263671875" fy="0.28000000002793967723846435546875" spreadMethod="pad">"#.to_owned(),
+            r##"<stop offset="0" stop-color="#ffffff" stop-opacity="0.2"/><stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/><stop offset="0.74" stop-color="#000000" stop-opacity="0.05"/><stop offset="1" stop-color="#000000" stop-opacity="0.3"/>"##.to_owned(),
+            r##"<ellipse cx="5" cy="5" rx="4" ry="3" fill="url(#gradient-primitive-0)"/>"##.to_owned(),
+        ],
+        vec![
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" shape-rendering="crispEdges">"#.to_owned(),
+            r##"<rect x="2" y="2" width="2" height="2" fill="#0060e0"/>"##.to_owned(),
         ],
     ];
     for ((name, tree), markup) in cases().into_iter().zip(expected) {
@@ -192,22 +275,24 @@ fn refuses_null_and_out_of_range_stop_opacity() {
 
 #[test]
 fn refuses_invalid_radius_or_focus_without_overflow() {
-    let gradient = |cx, cy, r, fx, fy| {
-        let mut doc = document();
-        doc["primitives"][0]["paint"] = json!({"kind":"radial_gradient_at", "cx":cx, "cy":cy, "r":r, "fx":fx, "fy":fy, "stops":[]});
-        doc
-    };
-    for r in [0, -1, i64::MIN] {
-        refuses(&gradient(0, 0, r, 0, 0), "radius must be positive");
-    }
-    for doc in [
-        gradient(0, 0, 5, 3, 4),
-        gradient(0, 0, 5, 4, 4),
-        gradient(i64::MIN, 0, i64::MAX, i64::MAX, 0),
-        gradient(0, i64::MAX, i64::MAX, 0, i64::MIN),
-        gradient(0, 0, i64::MAX, i64::MAX - 1, i64::MAX - 1),
-    ] {
-        refuses(&doc, "focus must be strictly inside the circle");
+    for units in ["user_space", "object_bounding_box"] {
+        let gradient = |cx, cy, r, fx, fy| {
+            let mut doc = document();
+            doc["primitives"][0]["paint"] = json!({"kind":"radial_gradient_at", "units":units, "cx":cx, "cy":cy, "r":r, "fx":fx, "fy":fy, "stops":[]});
+            doc
+        };
+        for r in [0, -1, i64::MIN] {
+            refuses(&gradient(0, 0, r, 0, 0), "radius must be positive");
+        }
+        for doc in [
+            gradient(0, 0, 5, 3, 4),
+            gradient(0, 0, 5, 4, 4),
+            gradient(i64::MIN, 0, i64::MAX, i64::MAX, 0),
+            gradient(0, i64::MAX, i64::MAX, 0, i64::MIN),
+            gradient(0, 0, i64::MAX, i64::MAX - 1, i64::MAX - 1),
+        ] {
+            refuses(&doc, "focus must be strictly inside the circle");
+        }
     }
 }
 
@@ -218,25 +303,61 @@ fn refuses_empty_or_malformed_compound_paths() {
     for (subpaths, expected) in [
         (json!([]), "compound path must have a subpath"),
         (
-            json!([[]]),
+            json!([{"closed":true,"segments":[]}]),
             "compound subpath must start with its only move",
         ),
         (
-            json!([[mv]]),
+            json!([{"closed":false,"segments":[mv]}]),
             "compound subpath must start with its only move",
         ),
         (
-            json!([[line, line]]),
+            json!([{"closed":true,"segments":[line,line]}]),
             "compound subpath must start with its only move",
         ),
         (
-            json!([[mv, line, mv]]),
+            json!([{"closed":false,"segments":[mv,line,mv]}]),
             "compound subpath must start with its only move",
         ),
+        (json!([{"segments":[mv,line]}]), "missing field `closed`"),
+        (
+            json!([{"closed":null,"segments":[mv,line]}]),
+            "invalid type: null",
+        ),
+        (json!([[false, [mv, line]]]), "invalid type: sequence"),
     ] {
         let mut doc = document();
         doc["primitives"][0]["shape"] =
             json!({"kind":"compound_path", "fill_rule":"even_odd", "subpaths":subpaths});
+        refuses(&doc, expected);
+    }
+}
+
+#[test]
+fn positioned_gradient_requires_known_units() {
+    let mut doc = document();
+    doc["primitives"][0]["paint"]["units"] = json!("screen_space");
+    refuses(&doc, "unknown variant `screen_space`");
+    doc["primitives"][0]["paint"]["units"] = Value::Null;
+    refuses(&doc, "invalid type: null");
+    doc["primitives"][0]["paint"]
+        .as_object_mut()
+        .unwrap()
+        .remove("units");
+    refuses(&doc, "missing field `units`");
+}
+
+#[test]
+fn refuses_invalid_pixel_grid() {
+    for (field, expected) in [
+        (json!(0), "pixel grid must have at least one cell"),
+        (Value::Null, "invalid type: null"),
+        (json!(-1), "expected u32"),
+        (json!(4_294_967_296_u64), "expected u32"),
+        (json!(1.5), "expected u32"),
+        (json!("5"), "expected u32"),
+    ] {
+        let mut doc = document();
+        doc["pixel_grid"] = field;
         refuses(&doc, expected);
     }
 }
