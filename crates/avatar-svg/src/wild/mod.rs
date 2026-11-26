@@ -48,7 +48,14 @@ impl Generation {
     pub const LATEST: Generation = Generation::V2;
 }
 
-pub(crate) fn render_tree(
+/// Draws one wild genome in one mood at the given generation, on the
+/// 240-unit canvas with no background.
+///
+/// This is the generator itself, with no type or version routing. A stored
+/// row must go through the `avatar` crate's dispatch instead, which maps the
+/// row's version to its `Generation` and refuses a genome of the wrong length
+/// before this is called.
+pub fn render_tree(
     bytes: &[u8; GENOME_LEN],
     mood: crate::Mood,
     generation: Generation,

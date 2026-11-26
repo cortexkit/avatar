@@ -7,8 +7,9 @@
 //! [`serialize_tree`] turns the tree into SVG and [`serialize_tree_json`] into
 //! its canonical JSON.
 //!
-//! Every item is re-exported unchanged from the crate that implements it, so
-//! a value from here is the same type the lower-level crates use.
+//! Dispatch is implemented here. Every other item is re-exported unchanged
+//! from the crate that implements it, so a value from here is the same type
+//! the lower-level crates use.
 //!
 //! ```
 //! use avatar::{render_tree_for_bytes, serialize_tree, Mood, Shape, WILD};
@@ -41,8 +42,9 @@
 //! assert!(svg.starts_with("<svg"));
 //! ```
 
+mod dispatch;
+
 pub use avatar_genome::Genome;
-pub use avatar_svg::{render_tree_for, render_tree_for_bytes, DispatchError, CLASSIC, WILD};
 pub use avatar_svg::{
     serialize_svg, serialize_tree, serialize_tree_json, serialize_tree_with_id_prefix,
 };
@@ -51,3 +53,4 @@ pub use avatar_svg::{
     Segment, Shape, Stroke, StrokeCap, StrokeJoin, Subpath, Transform, TransformOp,
 };
 pub use avatar_svg::{Bam16, Mood, RenderError, Rgb, Q32};
+pub use dispatch::{render_tree_for, render_tree_for_bytes, DispatchError, CLASSIC, WILD};

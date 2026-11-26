@@ -3,7 +3,7 @@
 //! at version 2 and at version 1, which must keep its old placement.
 
 use super::*;
-use crate::{render_tree_for_bytes, Mood, Segment, Shape, WILD};
+use crate::{Mood, Segment, Shape};
 
 /// A committed corpus genome with DotShine eyes and an eye aspect of about
 /// 1.13, so its eyes are drawn noticeably narrower than their frame.
@@ -45,8 +45,8 @@ struct EyeLid {
     line: f64,
 }
 
-fn eye_lids(genome: &[u8; GENOME_LEN], version: u32) -> Vec<EyeLid> {
-    let tree = render_tree_for_bytes(genome, WILD, version, Mood::Sleepy).unwrap();
+fn eye_lids(genome: &[u8; GENOME_LEN], generation: Generation) -> Vec<EyeLid> {
+    let tree = render_tree(genome, Mood::Sleepy, generation);
     let labelled = |label: &str| -> Vec<&Primitive> {
         tree.primitives
             .iter()
@@ -107,14 +107,14 @@ fn version_2_draws_sleepy_lids_on_aspect_scaled_eyes() {
         assert!(matches!(creature.eyes, face::EyeKind::DotShine), "{name}");
         assert!(creature.face_style.eye_aspect > 1.1, "{name}");
 
-        for lid in eye_lids(&genome, 2) {
+        for lid in eye_lids(&genome, Generation::V2) {
             println!("{name} v2: {lid:?}");
             assert!((lid.cover - lid.pupil).abs() <= 0.05, "{name} v2: {lid:?}");
             assert!((lid.line - lid.pupil).abs() <= 0.05, "{name} v2: {lid:?}");
         }
         // Version 1 still builds the lid at the unscaled eye centre, away
         // from the narrowed eye; rows stored at version 1 keep that drawing.
-        for lid in eye_lids(&genome, 1) {
+        for lid in eye_lids(&genome, Generation::V1) {
             println!(
                 "{name} v1: {lid:?}, lid offset {:.2}",
                 lid.cover - lid.pupil

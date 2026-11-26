@@ -95,11 +95,11 @@ fn wild_totality_extremes_and_64_probe_genomes_at_every_mood() {
         .chain((0..64).map(probe_genome));
     for (index, bytes) in genomes.enumerate() {
         for mood in mood::ALL {
-            let tree = crate::render_tree_for_bytes(&bytes, crate::WILD, 1, mood)
-                .unwrap_or_else(|error| panic!("genome {index}, mood {mood:?}: {error}"));
-            assert_eq!(tree.canvas, 240);
-            assert_eq!(tree.background, None);
-            assert!(!tree.primitives.is_empty());
+            let tree = render_tree(&bytes, mood, Generation::V1);
+            let case = format!("genome {index}, mood {mood:?}");
+            assert_eq!(tree.canvas, 240, "{case}");
+            assert_eq!(tree.background, None, "{case}");
+            assert!(!tree.primitives.is_empty(), "{case}");
         }
     }
 }
@@ -118,8 +118,7 @@ fn weld_byte_identity_and_timing() {
         weld[68 + i * 10] = (63 * i) as u8;
         weld[69 + i * 10] = 200;
     }
-    let render =
-        |bytes: &[u8], mood| crate::render_tree_for_bytes(bytes, crate::WILD, 1, mood).unwrap();
+    let render = |bytes: &[u8; GENOME_LEN], mood| render_tree(bytes, mood, Generation::V1);
     let mut hash = blake3::Hasher::new();
     let mut count = 0;
     for genome in (0..300).map(probe_genome).chain(std::iter::once(weld)) {

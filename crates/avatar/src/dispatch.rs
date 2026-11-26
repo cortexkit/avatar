@@ -6,8 +6,8 @@
 
 use avatar_genome::{decode, Genome};
 use avatar_phenotype::Q32;
-
-use crate::{build_render_tree, Mood, RenderError, RenderParams, RenderTree};
+use avatar_svg::wild::{self, Generation};
+use avatar_svg::{build_render_tree, Mood, RenderError, RenderParams, RenderTree};
 
 /// The stable registry type for the classic creature representation.
 pub const CLASSIC: &str = "creature.classic";
@@ -114,8 +114,8 @@ pub fn render_tree_for_bytes(
             // Keep every shipped arm when adding a newer one. Stored rows
             // render at their named generation, so version 1 keeps drawing
             // its off-eye mood lids for the rows that still store it.
-            1 => render_wild(genome_bytes, mood, crate::wild::Generation::V1),
-            2 => render_wild(genome_bytes, mood, crate::wild::Generation::V2),
+            1 => render_wild(genome_bytes, mood, Generation::V1),
+            2 => render_wild(genome_bytes, mood, Generation::V2),
             requested => Err(DispatchError::UnsupportedVersion {
                 avatar_type: avatar_type.to_owned(),
                 requested,
@@ -130,15 +130,15 @@ pub fn render_tree_for_bytes(
 fn render_wild(
     genome_bytes: &[u8],
     mood: Mood,
-    generation: crate::wild::Generation,
+    generation: Generation,
 ) -> Result<RenderTree, DispatchError> {
     let bytes = genome_bytes
         .try_into()
         .map_err(|_| DispatchError::GenomeLength {
-            expected: crate::wild::GENOME_LEN,
+            expected: wild::GENOME_LEN,
             actual: genome_bytes.len(),
         })?;
-    Ok(crate::wild::render_tree(bytes, mood, generation))
+    Ok(wild::render_tree(bytes, mood, generation))
 }
 
 fn render_classic_v2(genome_bytes: &[u8], mood: Mood) -> Result<RenderTree, DispatchError> {
@@ -243,16 +243,15 @@ mod tests {
 
     #[test]
     fn wild_dispatch_renders_every_mood_on_its_own_canvas() {
-        use crate::wild::Generation;
-        let bytes = crate::wild::probe_genome(0);
+        let bytes = wild::probe_genome(0);
         for (version, generation) in [(1, Generation::V1), (2, Generation::V2)] {
-            for mood in crate::wild::mood::ALL {
+            for mood in wild::mood::ALL {
                 let tree = render_tree_for_bytes(&bytes, WILD, version, mood).unwrap();
                 assert_eq!(tree.canvas, 240);
                 assert_eq!(tree.extent(), 24_000);
                 assert_eq!(tree.background, None);
                 assert!(!tree.primitives.is_empty());
-                assert_eq!(tree, crate::wild::render_tree(&bytes, mood, generation));
+                assert_eq!(tree, wild::render_tree(&bytes, mood, generation));
             }
         }
     }
@@ -276,12 +275,12 @@ mod tests {
                     })
                 );
             }
-            if length != crate::wild::GENOME_LEN {
+            if length != wild::GENOME_LEN {
                 for version in [1, 2] {
                     assert_eq!(
                         render_tree_for_bytes(&bytes, WILD, version, Mood::Neutral),
                         Err(DispatchError::GenomeLength {
-                            expected: crate::wild::GENOME_LEN,
+                            expected: wild::GENOME_LEN,
                             actual: length
                         })
                     );
@@ -309,10 +308,10 @@ mod extent_tests {
 
         let mut max_seen = 0_i64;
         for primitive in &tree.primitives {
-            if let crate::tree::Shape::Path { segments, .. } = &primitive.shape {
+            if let avatar_svg::Shape::Path { segments, .. } = &primitive.shape {
                 for segment in segments {
-                    if let crate::tree::Segment::LineTo { x, y }
-                    | crate::tree::Segment::MoveTo { x, y } = segment
+                    if let avatar_svg::Segment::LineTo { x, y }
+                    | avatar_svg::Segment::MoveTo { x, y } = segment
                     {
                         max_seen = max_seen.max(*x).max(*y);
                     }

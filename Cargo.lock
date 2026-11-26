@@ -143,6 +143,7 @@ name = "cortexkit-avatar"
 version = "0.1.0"
 dependencies = [
  "cortexkit-avatar-genome",
+ "cortexkit-avatar-phenotype",
  "cortexkit-avatar-svg",
 ]
 
