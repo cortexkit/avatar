@@ -1,0 +1,17 @@
+[package]
+name = "cortexkit-avatar"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Render a stored avatar: routes its type and generation version to the generator that draws it, and serializes the resulting render tree."
+
+# Published as cortexkit-avatar. The library keeps its short Rust name, so
+# code imports it as `avatar` under either package name. A Rust host depends
+# on this crate alone.
+[lib]
+name = "avatar"
+
+[dependencies]
+avatar-genome = { version = "0.1.0", path = "../avatar-genome", package = "cortexkit-avatar-genome" }
+avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }

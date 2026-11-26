@@ -137,6 +137,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cortexkit-avatar"
+version = "0.1.0"
+dependencies = [
+ "cortexkit-avatar-genome",
+ "cortexkit-avatar-svg",
+]
+
+[[package]]
 name = "cortexkit-avatar-genome"
 version = "0.1.0"
 dependencies = [
