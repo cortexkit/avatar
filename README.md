@@ -152,4 +152,7 @@ The manifest's `corpus_revision` is **not** that version. It counts
 re-mints, moves when a vector or a boundary is added, and implies nothing
 about what any creature looks like. The versions a row can carry are the
 dispatch arms in `crates/avatar-svg/src/dispatch.rs`: `creature.classic`
-version 2 and `creature.wild` version 1.
+version 2, and `creature.wild` versions 1 and 2. Wild version 2 is the
+current one; it fixes mood lids and squints that version 1 draws beside
+eyes the creature's eye aspect has narrowed, and version 1 keeps drawing
+the rows that store it.

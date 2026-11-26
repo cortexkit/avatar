@@ -13,7 +13,7 @@ Two decisions carry the design:
 
 - **Genome:** the stored bytes. `creature.classic` uses 1,024 bytes (2,048 hex characters); `creature.wild` uses 16,384 bytes (32,768 hex characters). A wild genome derived from an id begins with the classic genome derived from the same id (`derive_genome_bytes` in `crates/avatar-genome/src/identity.rs`).
 - **Type:** which representation draws a genome. Registered types are `creature.classic` and `creature.wild` (`crates/avatar-svg/src/dispatch.rs`). A new look is a new type.
-- **Version:** one generation of a type's generator. It exists to fix generation bugs. Every row renders at the version it stores, so versions are added and never edited (`docs/design/012-version-and-type-procedure.md`). Today: classic 2, wild 1. A type no agent uses yet may still change in place, because no agent's creature moves.
+- **Version:** one generation of a type's generator. It exists to fix generation bugs. Every row renders at the version it stores, so versions are added and never edited (`docs/design/012-version-and-type-procedure.md`). Today: classic 2, wild 2. Wild version 1 still draws every row that stores it; version 2 exists because version 1 draws mood lids and squints beside eyes that the creature's eye aspect or the mood has scaled (`wild::Generation` in `crates/avatar-svg/src/wild/mod.rs`). A type no agent uses yet may still change in place, because no agent's creature moves.
 - **Mood:** one of seven render-time moods: neutral, working, happy, waiting, blocked, sad, sleepy. A mood changes face geometry, never identity or colour, so a render cache must key on it.
 - **Phenotype:** classic only. Typed fixed-unit parameters decoded from a classic genome (`crates/avatar-phenotype`), with a canonical JSON form. Wild decodes its genome straight into its own `Creature` struct.
 - **Render tree:** the output of every generator: a flat, painter-order list of primitives (shapes, paths, paints, strokes, transforms, effects) in `crates/avatar-svg/src/tree.rs`. `canvas` is the SVG viewBox edge; coordinates are 100 times finer, so divide by `RenderTree::extent()`, never by `canvas`. Classic draws on a 10,000-unit canvas, wild on 240.
@@ -42,7 +42,7 @@ Two decisions carry the design:
 
 1. The caller holds the row's bytes, type and version, plus a mood.
 2. `render_tree_for_bytes` checks the type, then the version, then the genome length that type needs. The order is a contract. An unknown type or version means "this build cannot draw it": the client draws nothing and stays quiet. A wrong length for a known type means the row is malformed: the client reports it. Checking length first would report every row of a newer, differently sized type as corrupt.
-3. Classic v2: `avatar_genome::decode` gives a `Phenotype`, and `build_render_tree` builds the tree. Wild v1: `wild::decode_genome` reads each feature from fixed region offsets (body bytes 0..64, extremities 64..160, palette and face from 160, surface sites 240..304), and `draw_full` builds the primitives.
+3. Classic v2: `avatar_genome::decode` gives a `Phenotype`, and `build_render_tree` builds the tree. Wild v1 and v2: `wild::decode_genome` reads each feature from fixed region offsets (body bytes 0..64, extremities 64..160, palette and face from 160, surface sites 240..304), and `draw_full` builds the primitives for the `wild::Generation` the version names.
 4. The tree leaves through one of three projections: `serialize_tree_json` (the canonical JSON every consumer decodes), `serialize_tree` (generic SVG; `serialize_tree_with_id_prefix` when several creatures share one document), or `serialize_svg` (classic only, the historical SVG layout its corpus pins). The JSON writes each distinct mask once, in a top-level `masks` table that masked effects name by index (`mask_ref`), because wild creatures clone one body mask into many primitives and the full copies made up most of a wild tree's bytes. Decoders resolve the references back into inline masks, so the in-memory tree is the same in every language (`docs/design/006-render-tree.md`).
 
 How each consumer gets there:
@@ -67,9 +67,9 @@ The golden corpus lives in `vectors/`. The mint test in `crates/avatar-vectors` 
 
 - **Genome to phenotype:** `dna/` to `phenotype/`, 22 classic genomes.
 - **Phenotype to classic SVG:** `svg/`, 40 genome and mood cells.
-- **Tree to canonical JSON:** `tree/`, 58 trees (40 classic, 18 wild). This pins the transport every consumer decodes.
-- **Tree to generic SVG:** `tree-svg/`, the same 58. This pins the drawing every consumer must reproduce.
-- **Wild references:** `vectors/wild/` holds 12 genomes derived from the fixed ids in `corpus.tsv`, and its manifest. The tests render every reference genome in every mood; 18 of those renders are pinned as tree files.
+- **Tree to canonical JSON:** `tree/`, 65 trees (40 classic, 25 wild). This pins the transport every consumer decodes.
+- **Tree to generic SVG:** `tree-svg/`, the same 65. This pins the drawing every consumer must reproduce.
+- **Wild references:** `vectors/wild/` holds 12 genomes derived from the fixed ids in `corpus.tsv`, and its manifest. Each `corpus.tsv` row and manifest entry names the wild version its trees render at. The tests render every reference genome in every mood at version 1, and one of them, `wild-port-0022`, at version 2 too. 25 of those renders are pinned as tree files: 18 at version 1, and the seven version 2 moods of `wild-port-0022`, named `<id>__v2__<mood>.json`. A further test checks that on every reference genome in every mood, version 2 differs from version 1 only in where the lids and squints sit.
 - `vectors/contact-sheet.html` is regenerated with the corpus and byte-checked, so the visual review sheet cannot drift from the vectors.
 - **Classic coverage:** the `fleet_coverage` example decodes 1,000 synthetic genomes and fails when a classic decode branch has no corpus vector.
 
