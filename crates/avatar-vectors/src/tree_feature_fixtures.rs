@@ -70,7 +70,13 @@ fn cases() -> [(&'static str, RenderTree); 7] {
         pixel_grid: None,
         primitives: vec![primitive],
     };
-    let stop = GradientStop::with_opacity;
+    let stop = |offset: Q32, color: Rgb, opacity: f64| {
+        GradientStop::with_opacity(
+            offset,
+            color,
+            Q32((opacity * Q32::ONE.0 as f64).round() as i64),
+        )
+    };
     let positioned = tree(primitive(
         ELLIPSE,
         Paint::radial_gradient_at(

@@ -156,9 +156,11 @@ pub struct GradientStop {
 }
 
 impl GradientStop {
-    /// Clamp and quantize opacity, omitting a stop opacity that rounds to one.
-    pub fn with_opacity(offset_q32: Q32, color: Rgb, opacity: f64) -> Self {
-        let opacity = Q32((opacity.clamp(0.0, 1.0) * Q32::ONE.0 as f64).round() as i64);
+    /// Clamp opacity to [0, 1] and omit it when fully opaque. The argument is
+    /// already Q32: this crate's shared tree code stays integer-only, so
+    /// generators that compute opacity in `f64` quantize it themselves.
+    pub fn with_opacity(offset_q32: Q32, color: Rgb, opacity: Q32) -> Self {
+        let opacity = Q32(opacity.0.clamp(0, Q32::ONE.0));
         Self {
             offset_q32,
             color,

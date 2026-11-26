@@ -176,12 +176,13 @@ invalid_values!(json, serialize_tree_json);
 invalid_values!(svg, serialize_tree);
 
 #[test]
-fn opacity_clamps_and_canonicalizes_after_quantization() {
-    let opacity = |value| GradientStop::with_opacity(Q32(0), BLACK, value).opacity_q32;
-    assert_eq!(opacity(1.0 - 1.0 / (1_u64 << 34) as f64), None);
-    assert_eq!(opacity(2.0), None);
-    assert_eq!(opacity(-1.0), Some(Q32(0)));
-    assert_eq!(opacity(0.5), Some(Q32(Q32::ONE.0 / 2)));
+fn opacity_clamps_and_canonicalizes() {
+    let opacity = |value| GradientStop::with_opacity(Q32(0), BLACK, Q32(value)).opacity_q32;
+    assert_eq!(opacity(Q32::ONE.0), None);
+    assert_eq!(opacity(Q32::ONE.0 - 1), Some(Q32(Q32::ONE.0 - 1)));
+    assert_eq!(opacity(2 * Q32::ONE.0), None);
+    assert_eq!(opacity(-1), Some(Q32(0)));
+    assert_eq!(opacity(Q32::ONE.0 / 2), Some(Q32(Q32::ONE.0 / 2)));
 }
 
 fn focal(cx: i64, cy: i64, r: i64, fx: i64, fy: i64) -> (i64, i64) {
