@@ -122,8 +122,9 @@ pub unsafe extern "C" fn avatar_string_free(ptr: *mut c_char) {
 /// `drop_ground_shadow` and `straight_alpha` must each be 0 or 1. Any other
 /// value, a null argument or a `size_px` outside 1..=2,048 returns
 /// `INVALID_ARGUMENT`. The size is checked after the type, version and
-/// genome length, as `avatar::render_image` checks it, so a row this build
-/// cannot depict is reported as such whatever size was asked for.
+/// genome length, as `avatar::render_image` checks it, so a stored avatar
+/// whose type, version or genome length this build refuses is reported as
+/// such whatever size was asked for.
 ///
 /// # Safety
 /// Non-null inputs must be readable for their declared lengths; strings must
@@ -661,8 +662,9 @@ mod tests {
 
     #[test]
     fn image_refusals_check_the_row_before_the_size_and_clear_both_outputs() {
-        // A row this build cannot depict is reported as such, never as a bad
-        // size, so each of these asks for a size the call would also refuse.
+        // A stored avatar whose type, version or genome length this build
+        // refuses is reported as such, never as a bad size, so each of these
+        // asks for a size the call would also refuse.
         for (bytes, avatar_type, version, mood, size_px, expected) in [
             (
                 &[0; 16_384][..],

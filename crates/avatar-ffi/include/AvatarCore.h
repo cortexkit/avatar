@@ -39,8 +39,9 @@ void avatar_string_free(char *ptr);
  * value returns AVATAR_STATUS_INVALID_ARGUMENT before anything else is
  * checked. Then come the tree call's checks, in the same order, and only
  * then size_px, which must be 1 to 2048 or the call returns
- * AVATAR_STATUS_INVALID_ARGUMENT. So a row this build cannot depict is
- * reported as such whatever size was asked for. A rasterizer failure returns
+ * AVATAR_STATUS_INVALID_ARGUMENT. So a stored avatar whose type, version or
+ * genome length this build refuses is reported as such whatever size was
+ * asked for. A rasterizer failure returns
  * AVATAR_STATUS_RENDER_ERROR.
  * out_pixels and out_len must be writable and must not alias each other or
  * any input. Each non-NULL output is first set to NULL or 0, and a NULL

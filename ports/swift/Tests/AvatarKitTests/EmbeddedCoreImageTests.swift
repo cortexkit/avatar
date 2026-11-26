@@ -74,8 +74,9 @@ final class EmbeddedCoreImageTests: XCTestCase {
     func testRefusedImageInputsSurfaceTheTreeCallsErrors() throws {
         let wild = [UInt8](repeating: 7, count: 16_384)
         let classic = [UInt8](repeating: 0, count: 1_024)
-        // The row is checked before the size, so the first three ask for a
-        // size the core would also refuse and must still report the row.
+        // Type, version and genome length are checked before the size, so
+        // the first three ask for a size the core would also refuse and must
+        // still report the type, version or length.
         let cases: [([UInt8], String, UInt32, String, UInt32, CoreRenderError)] = [
             (wild, "creature.unknown", 1, "neutral", 0, .unsupportedType),
             (classic, classicAvatarType, 999, "neutral", 2_049, .unsupportedVersion),
