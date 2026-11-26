@@ -12,15 +12,13 @@ Standing rules for every worker in this repository. A brief can tighten them but
 ## Test what you changed, nothing more
 
 Run only the checks for what you changed:
-- the tests for the files and behaviour you changed, by name or filter (`cargo test -p <crate> <filter>`, `bun test <file>`);
-- formatting and lint for what you touched (`cargo fmt --check`, `cargo clippy -p <crate> --all-targets -- -D warnings`, and `bunx tsc --noEmit` if you touched `ports/ts`);
+- the tests for the files and behaviour you changed, by name or filter (`cargo test -p <package> <filter>`, `bun test <file>`); the four library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar-svg`), while `avatar-ffi`, `avatar-export` and `avatar-vectors` do not;
+- formatting and lint for what you touched (`cargo fmt --check`, `cargo clippy -p <package> --all-targets -- -D warnings`, and `bunx tsc --noEmit` if you touched `ports/ts`);
 - for a bug fix, one test shown once to fail without the fix.
 
 Never run the repository gate (`./scripts/check.sh`, with or without `--linux`), a whole crate's or package's test suite, or the workspace tests. The head runs the full gate once per landing, over the merged deliveries.
 
 If a test you didn't touch fails, rerun that one test by name on your base commit, never a suite. A filtered run that takes more than about 15 minutes means the filter is too broad: narrow it instead of waiting on it.
-
-In `playground/experiments/`, no cargo test covers your change. Check your pages with the kit tools instead (`kit/measure.sh`, `kit/shot.sh`).
 
 Put each command, its pass and fail counts, and every failing test name in your report. Say if your change touches what the head's own checks cover: the browser lab comparison, the embedded core binary's freshness, or the Swift suite.
 
@@ -28,7 +26,6 @@ Put each command, its pass and fail counts, and every failing test name in your 
 
 - Regenerating golden vectors with the mint commands (`UPDATE_GOLDEN=1` or `UPDATE_WILD_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --exact --nocapture --ignored`) and pasting the printed pins, when the new output differs only by the cause you state. Say so in the commit message.
 - Updating a test that your intended change breaks, keeping what the test checks.
-- In `playground/experiments/`, using the kit tools (`kit/shot.sh`, `kit/measure.sh`, `kit/compare-rows.py`) and the git-ignored `kit/fleet-genomes.js` the brief gives you.
 
 ## Never
 
@@ -38,7 +35,7 @@ Put each command, its pass and fail counts, and every failing test name in your 
 - Edit files under `vectors/` by hand. The mint commands write them.
 - Rebuild `ports/swift/AvatarCore.xcframework`. Building it needs Xcode, so the head rebuilds it; say in your report when you change generator source.
 - Loosen an assertion, a threshold or a timeout to get green. Find the cause.
-- Open, copy or write the live stores under `~/.local/share/cortexkit/`. Work on copies you were given.
+- Open, copy or write a live agent store. Work on copies you were given.
 - Force-add ignored `.cortexkit/` files.
 - Put backticks inside `git commit -m "..."`: the shell runs them as commands. Use plain quotes.
 

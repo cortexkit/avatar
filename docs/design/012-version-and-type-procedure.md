@@ -1,12 +1,12 @@
 # Design note 012 — Changing what a creature looks like
 
-Status: NORMATIVE procedure. Written after the operator ruled the
-type/version semantics on 2026-08-25, because the library accepted an
+Status: NORMATIVE procedure. Written after the type/version semantics
+were settled on 2026-08-25, because the library had accepted an
 obligation that nothing described how to discharge.
 
 ## The rule this exists to protect
 
-**An Alfonso's face does not change unless someone decided it should.**
+**An agent's face does not change unless someone decided it should.**
 
 Everything below follows from that one sentence. A stored row names its
 `avatar_type` and `avatar_version`; the library renders at those, never
@@ -27,7 +27,7 @@ creatures look different is NOT a version bump, however much better it
 is. It is a new type, and it reaches an agent when someone chooses it.
 The wild-creature redesign in flight is `creature.wild`, not
 `creature.classic` v3, for exactly this reason — and that is what
-removed the flag day where every avatar in the fleet would have changed
+removed the flag day where every stored avatar would have changed
 at once.
 
 A version bump is for when the generation is WRONG: a spline that
@@ -58,29 +58,29 @@ off the body. Something a user would call a defect rather than a style.
 
    > Note (2026-10-26): Native Swift/TS builders were removed; new version arms are implemented once in Rust and consumed via render trees.
 5. **Announce the upgrade path, not the change.** Nobody's face moves on
-   deploy. Rows move when the operator or the agent chooses, through
-   prefrontal's gated op.
+   deploy. Rows move when the person running the agents, or the agent
+   itself, chooses, through the registry's controlled update path.
 
 ## Adding a type
 
 1. Pick a name for its **character, not a number**: `creature.classic`,
    `creature.wild`. Numbered type names collide with the version axis
    and make a reader assume one of the two columns is wrong.
-2. Declare its genome layout size. The registry's deposit gate enforces
-   it fail-closed, so a wrong-length genome is refused rather than
-   rendered as a partial creature.
+2. Declare its genome layout size. The registry that stores genomes
+   enforces it fail-closed on write, so a wrong-length genome is refused
+   rather than rendered as a partial creature.
 3. Implement its dispatch arm in all three languages, plus corpus
    vectors. Unknown types must keep erroring cleanly on older clients —
    that path is what makes shipping a type safe while phones lag.
 
    > Note (2026-10-26): Native Swift/TS builders were removed; new types are implemented once in Rust and consumed via render trees.
 4. If the layout differs from an existing type, existing agents need a
-   **new genome** to wear it. That is a deliberate re-deposit, never an
-   automatic migration.
+   **new genome** to wear it. That is a deliberate new genome written to
+   the row, never an automatic migration.
 5. Hand consumers a **fixture row** with the corpus tag: one avatar object
    shaped exactly as the wire delivers it (genome fingerprint, type,
    version), so a client can pin its wire decode and its render in the
-   same change. Requested by the iOS client, and the reason is worth
+   same change. Requested by the phone app, and the reason is worth
    keeping: without a fixture, the first row of a new type a consumer
    ever sees is a live one, which makes production the place where a
    decode mistake surfaces. The corpus proves renderers agree on bytes;
@@ -99,19 +99,19 @@ is still under review. They land with the schema.
   `ground_shadow`: a creature drawn beside a floating element has no
   ground for its shadow to fall on, and that is a property of the
   PLACEMENT rather than of the creature, so the consumer decides and one
-  tree still serves both. Requested by the iOS client, who correctly
+  tree still serves both. Requested by the phone app, which correctly
   refused to identify the shadow by primitive index — that coupling
   fails silently the day the pipeline emits something before it.
   The corpus must gate that exactly one primitive carries the role, so
   "skip the shadow" cannot quietly become "skip nothing".
-- ~~**Ink-coverage normalization.**~~ RULED: LEAVE AS IS. The extent fit
+- ~~**Ink-coverage normalization.**~~ DECIDED: LEAVE AS IS. The extent fit
   already scales every creature until one axis touches the wall, so
   bounding boxes are normalized and that part works — measured from
   pixels, every creature fills 0.854 to 0.997 of its largest axis. Ink
   coverage still spans 0.146 to 0.407, a 2.8x spread, because equal
   boxes are not equal visual weight: a spindly star and a solid blob
   both touch the wall and the star has a third of the ink. Offered as
-  compress-toward-1.5x or equalize; the operator chose neither. Density
+  compress-toward-1.5x or equalize; neither was chosen. Density
   is a trait at full range, so a dense little imp and an airy sprawling
   thing stay as different in weight as their genomes make them.
 
@@ -130,15 +130,15 @@ nothing fails, and two surfaces disagree about who an agent is while
 both appear healthy.
 
 Unknown type or version is a NORMAL state — a client older than a row is
-routine in a fleet with independently-versioned surfaces — and is not
-worth reporting. A wrong-length genome is not normal: the deposit gate
-should have refused it, so that one is a bug worth raising.
+routine when surfaces update independently — and is not
+worth reporting. A wrong-length genome is not normal: the registry's
+length check should have refused it, so that one is a bug worth raising.
 
 ## Never
 
 - Never fix a generation bug by editing an existing version's arm.
 - Never re-run a genome seed manifest as a repair path: it would
-  overwrite re-rolls and take the operator's choice away silently.
+  overwrite re-rolls and take the row owner's choice away silently.
   Seeding applies only where a row has no genome.
 - Never key a cache or derived artifact by agent id. A re-roll changes
   the genome under a stable id, so id-keyed entries serve the previous

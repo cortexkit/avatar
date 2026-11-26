@@ -1,12 +1,12 @@
 # Architecture
 
-Avatar draws each CortexKit agent as a creature. The creature comes from three fields of the agent's registry row: `avatar_genome` (bytes, stored as hex), `avatar_type` and `avatar_version`. A mood is added at draw time. The same genome, type, version and mood always produce the same bytes, on every platform.
+Avatar draws an agent as a creature. The creature comes from three fields stored on the agent's record in a host's registry: `avatar_genome` (bytes, stored as hex), `avatar_type` and `avatar_version`. A mood is added at draw time. The same genome, type, version and mood always produce the same bytes, on every platform.
 
-Avatar is a library. It has no service, no store and no wire surface, and it never decides which genome an agent has. Entorhinal writes a new agent's genome when the agent is created (16,384 random bytes as `creature.wild` version 1; every byte pattern is a valid creature). Apps and tools read the row and render it with this code. Renders and caches must key on the stored row, never on the agent id: a genome can be re-rolled.
+Avatar is a library. It has no service, no store and no wire surface, and it never decides which genome an agent has. The registry that stores agents writes a new agent's genome when the agent is created, for example 16,384 random bytes as `creature.wild` (every byte pattern is a valid creature). Apps and tools read the record and render it with this code. Renders and caches must key on the stored record, never on the agent id: a genome can be re-rolled.
 
 Two decisions carry the design:
 
-- **One generator per type, written once, in Rust** (`crates/avatar-svg`). Consumers receive the finished render tree and draw it; nobody writes a second copy of a generator. Comparing independent implementations against a corpus checks a sample of a huge input space, so it cannot prove they agree on rare features (`docs/design/011-port-surface.md`). The iPhone app runs this Rust itself, through an embedded static library.
+- **One generator per type, written once, in Rust** (`crates/avatar-svg`). Consumers receive the finished render tree and draw it; nobody writes a second copy of a generator. Comparing independent implementations against a corpus checks a sample of a huge input space, so it cannot prove they agree on rare features (`docs/design/011-port-surface.md`). Apple-platform apps run this Rust themselves, through an embedded static library in the Swift package.
 - **Platform-invariant arithmetic.** A creature must be byte-identical everywhere, so no generation path calls the platform maths library. See Determinism.
 
 ## Terms
@@ -33,10 +33,11 @@ Two decisions carry the design:
 | Export | `crates/avatar-export` | CLI: renders a stored genome to PNG, SVG or tree JSON, and mints genome manifests. |
 | Corpus | `crates/avatar-vectors`, `vectors/` | Golden vectors and the tests that pin every boundary. |
 | Review harness | `playground/` | Grids, review sheets, the placement-invariant checker and the browser lab. Not shipped. |
-| Experiments | `playground/experiments/` | Browser prototypes of candidate new types, 2D and 3D. Not shipped. |
 | Gate | `scripts/check.sh` | The only gate. See The gate. |
 
 `STRUCTURE.md` has the directory map and where to add new code.
+
+The four library crates have prefixed package names, the names they are published under: `cortexkit-avatar-tables`, `cortexkit-avatar-phenotype`, `cortexkit-avatar-genome` and `cortexkit-avatar-svg`. Each keeps its short library name: code imports `avatar_tables`, `avatar_phenotype`, `avatar_genome` and `avatar_svg`. Cargo commands that select a package use the prefixed name (`cargo test -p cortexkit-avatar-svg`). `avatar-ffi`, `avatar-export` and `avatar-vectors` are never published.
 
 ## Rendering a stored avatar
 
@@ -47,8 +48,8 @@ Two decisions carry the design:
 
 How each consumer gets there:
 
-- **iPhone and Mac apps:** AvatarKit's `renderTreeViaCore(genomeBytes:type:version:mood:)` calls the embedded core, then decodes the JSON with `decodeRenderTreeJson` (`RenderTree.swift`), which first checks the integer-only number grammar with the strict parser in `RenderTreeJSON.swift`. Each core status maps to its own `CoreRenderError`. `RenderTreeCache` is owned by the host app, keyed by bytes, type, version and mood, and can be emptied under memory pressure. `TreeAffine.swift` composes decoded transforms with the pinned sine table and a fixed-point multiply; it builds no geometry.
-- **Rust hosts** (cerebellum, for example): depend on `avatar-svg` by git at a pinned commit, and call `render_tree_for_bytes` and `serialize_tree`.
+- **Apple-platform apps:** AvatarKit's `renderTreeViaCore(genomeBytes:type:version:mood:)` calls the embedded core, then decodes the JSON with `decodeRenderTreeJson` (`RenderTree.swift`), which first checks the integer-only number grammar with the strict parser in `RenderTreeJSON.swift`. Each core status maps to its own `CoreRenderError`. `RenderTreeCache` is owned by the host app, keyed by bytes, type, version and mood, and can be emptied under memory pressure. `TreeAffine.swift` composes decoded transforms with the pinned sine table and a fixed-point multiply; it builds no geometry.
+- **Rust hosts:** depend on the `cortexkit-avatar-svg` package (its library is imported as `avatar_svg`), from crates.io or by git at a pinned commit, and call `render_tree_for_bytes` and `serialize_tree`.
 - **TypeScript:** `decodeRenderTreeJson` and `serializeTree` in `ports/ts/src`.
 - **Images:** `avatar-export --genome-file <path> --type <type> --version <n> --out <file>`. The `--out` extension picks the format: `.png` or none, `.svg`, or `.json`; any other extension is refused. Live agents always render their stored genome. `--mint-genomes` writes a manifest of id-derived genomes for a type. A wild genome does not fit on a Windows command line, so portable callers use `--genome-file` (`-` reads standard input) rather than `--genome <hex>`.
 
@@ -81,8 +82,8 @@ The browser lab (`playground/web/index.html`) is a JavaScript twin of the wild g
 
 `scripts/check.sh` is the repository's only gate. CI runs only when started by hand, and the untracked `.git/hooks/pre-push` runs the gate on every push except branch deletions.
 
-- With the build-server client `ck` on `PATH`, every cargo stage, the Python checks and the Rust half of the lab comparison run as one Linux build-server job (`check.sh --linux`), within a 600-second limit that covers queueing and retries. The workstation runs the embedded core's freshness check, the browser half of the lab comparison (with `chrome-headless-shell`), TypeScript, and the Swift suite where Swift is installed.
-- Without `ck` the gate refuses. `AVATAR_GATE_LOCAL=1` runs every stage on the workstation; it is never chosen automatically.
+- By default every cargo stage, the Python checks and the Rust half of the lab comparison run as one job on a Linux build server (`check.sh --linux`), sent there by the build-server client `ck` (a maintainers' tool that is not published) within a 600-second limit that covers queueing and retries. The workstation runs the embedded core's freshness check, the browser half of the lab comparison (with `chrome-headless-shell`), TypeScript, and the Swift suite where Swift is installed.
+- Without `ck` the gate refuses. `AVATAR_GATE_LOCAL=1` runs every stage on the workstation, and is how to run the gate without that build server; it is never chosen automatically.
 - Build-server jobs cannot write git-tracked files, so no gate stage writes one. Mints that rewrite tracked files run in a worktree.
 
 ## The embedded core
@@ -98,12 +99,7 @@ Everything fails closed. No path falls back to a default or newest creature.
 - `GenomeError` covers malformed hex (`InvalidHexLength`, `InvalidHexDigit`).
 - The Swift and TypeScript tree decoders throw on an unknown tag or role, a missing field, a fraction where an integer belongs, or a `mask_ref` that breaks the mask table's rules (out of range, pointing to its own or a later entry, or leaving an entry unreferenced). Both decoders also refuse unknown fields. A silently defaulted primitive would draw a wrong creature that looks right.
 
-## Experiments
-
-`playground/experiments/` holds browser prototypes of candidate new types (wild++, sprouts, pixel critters, knitted toys, small robots, drawn heads, 3D versions of each, and a 3D version of today's wild), plus `live-3d/` motion demos and a shared kit (`kit/`) for review sheets and screenshots. They read the same genomes as the shipped types, but none of this code is a registered type. A species becomes a type only when it is written in Rust under `crates/avatar-svg`, registered in dispatch, and given a corpus, with the operator's approval.
-
 ## Further reading
 
-- `docs/charter.md`: the project's purpose.
 - `docs/design/`: the design notes. 006 (render tree), 009 (wild genome layout), 011 (one generator, and the determinism decision) and 012 (versions and types) bear on most changes.
-- `.cortexkit/WORKER.md`: what a delegated worker may and may not do here.
+- `.cortexkit/WORKER.md`: standing rules for automated contributors working in this repository.

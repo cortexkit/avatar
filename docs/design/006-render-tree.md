@@ -2,7 +2,7 @@
 
 > Note (2026-10-26): The native Swift classic builder was removed; consumers draw decoded trees using the retained `Transform.affine()` helper and its quarter-wave sine table.
 
-Status: rev 2 after CKIOS's corpus-first review. Rev 1 was written from
+Status: rev 2 after a corpus-first review from the phone app's side. Rev 1 was written from
 the generator's intent and the corpus proved it wrong in four places;
 this revision was derived by inventorying every attribute the 30 golden
 SVGs actually emit. Rule zero for future revisions: **the corpus is the

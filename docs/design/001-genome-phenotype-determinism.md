@@ -1,14 +1,15 @@
 # Design note 001 — Genome, phenotype, and the determinism contract
 
-Status: DRAFT for review (Ufuk + SUBC). Nothing here is code yet; this note
-settles the architecture the charter demands before the canonical Rust
-implementation starts.
+Status: accepted. Written before any code, this note settled the
+architecture of the canonical Rust implementation. Where later notes
+changed it, the section says so and names the note in force.
 
-Inputs: `docs/charter.md`; TOG source pass (`type1.ts`, `spline.ts`,
+Inputs: a source pass over TOG, the author's earlier procedural SVG
+creature project that this one descends from (`type1.ts`, `spline.ts`,
 `math.ts`, `colors.ts`, `face.tsx`, `pattern.tsx`, `bodylayer.tsx`,
-`index.tsx`); subconscious golden-vector pattern
-(`crates/subc-protocol/tests/golden/`, TS `golden-conformance.test.ts`,
-Swift `ProtocolConstantsTests` / `ParityTests`).
+`index.tsx`); and an existing golden-vector pattern from a protocol
+library, where a Rust-minted corpus is checked by TypeScript and Swift
+conformance tests.
 
 ## 1. Pipeline
 
@@ -18,7 +19,7 @@ DNA (bits)  --decode-->  Phenotype (typed integers)  --render-->  SVG bytes
                               +--> golden boundary 1                 +--> golden boundary 2
 ```
 
-Three strict layers, per charter constraint #1:
+Three strict layers:
 
 - **Genome**: a fixed-size bit string with a versioned region map.
   Decoding never knows about SVG.
@@ -28,9 +29,9 @@ Three strict layers, per charter constraint #1:
 - **Renderer**: consumes (phenotype, mood, canvas) and emits SVG bytes.
   Never reads bits.
 
-The phenotype is the contract between ports. 3D renderers later consume the
-same phenotype (charter open question #3 — deferred, but the layering is
-what keeps it one genome).
+The phenotype is the contract between ports. 3D renderers would later
+consume the same phenotype (3D is deferred, but the layering is what keeps
+it one genome).
 
 ## 2. The determinism contract (numeric discipline)
 
@@ -116,17 +117,17 @@ Rules:
 
 ## 4. Identity core vs cosmetic region
 
-Charter constraint #4. The partition is **by region**:
+Part of a creature must never change, so that it stays recognisable,
+and part may. The partition is **by region**:
 
-- **Identity core** = `BODY` + `PALETTE`. Derivation (settling charter
-  open question #1; revised twice, see §10): hash of the durable stable
-  ID alone —
-  `blake3("cortexkit-avatar/identity-core/v2" || 0x00 || entorhinal_registration_id)`
+- **Identity core** = `BODY` + `PALETTE`. Derivation (revised twice, see
+  §10): hash of the durable stable ID alone —
+  `blake3("cortexkit-avatar/identity-core/v2" || 0x00 || registered_id)`
   — expanded via `blake3` XOF to fill exactly the core regions.
   **No name is ever hashed** (v2 change): names — configured agent
   names, display labels, room titles — are presentation strings:
-  user-editable, non-unique (two live projects configure the same agent
-  name today), and renameable. A name in the hash means a rename
+  user-editable, non-unique (two projects can configure the same agent
+  name), and renameable. A name in the hash means a rename
   re-rolls a creature and a collision merges two. Identity is one
   opaque value from one registry authority; every string renders
   BESIDE the creature, never inside it. The derivation contract
@@ -134,59 +135,49 @@ Charter constraint #4. The partition is **by region**:
   `generator_version`: a derivation change alters which DNA a seat
   gets, not what any DNA renders as.
   The identity input is **the registry's authoritative id for the
-  SEAT**, not for its project. Ruled 2026-08-23 when ALF's fleet-row op
-  surfaced the ambiguity: the derivation takes an opaque string and
-  cannot tell which id-space it came from, so two producers feeding
-  different ids draw two different creatures for one agent with nothing
-  failing — the never-derive rule's failure mode arriving through the
-  producer door. **`agent_id` is the input**, because an avatar
-  identifies a seat while a project id identifies a project: one agent
-  per project happens to hold across the fleet today, which is why the
-  flaw stayed invisible, but any project hosting two agents would give
-  them identical creatures and no error. Consumers pass through
-  whatever the wire delivers, verbatim, and never substitute or
-  normalise it.
-  The original derivation used the **entorhinal registration ID** (the
-  registry's minted stable project ID, which survives workspace moves
-  and path renames via the journal), and the reasoning for preferring
-  it over the canonical path still holds for any id chosen: a path is mutable
-  and aliasable, and deriving a durable key from it means a routine
-  folder rename re-rolls the seat's face — the exact failure the
-  identity core exists to prevent (and the exact class that stranded 24
-  broca sessions in the brocatui→alfonso-tui rename). The domain-
-  separation prefix pins this derivation against colliding with any
-  other blake3-of-seat-identity in the fleet.
+  agent** (its seat), not for its project. The derivation takes an
+  opaque string and cannot tell which id-space it came from, so two
+  producers feeding different ids draw two different creatures for one
+  agent with nothing failing. **`agent_id` is the input**, because an
+  avatar identifies an agent while a project id identifies a project:
+  while every project hosts one agent the two look interchangeable,
+  which hides the flaw, but a project hosting two agents would give them
+  identical creatures and no error. Consumers pass through whatever the
+  wire delivers, verbatim, and never substitute or normalise it.
+  The original derivation used the registry's minted stable project ID,
+  which survives workspace moves and path renames, and the reasoning for
+  preferring it over the canonical path still holds for any id chosen: a
+  path is mutable and aliasable, and deriving a durable key from it means
+  a routine folder rename re-rolls the agent's face — the exact failure
+  the identity core exists to prevent. The domain-separation prefix pins
+  this derivation against colliding with any other blake3 hash of the
+  same identity.
   **Unregistered projects**: fall back to path-derived identity, with
   the fallback recorded; when registration happens, an
   **identity-migration era event** repoints the derivation — an audited
-  repoint, never a silent re-roll.
-  Wire mapping (per SUBC): `ck-entorhinal resolve <dir> --json` reports
-  `via:"root"` with the minted stable `projectId` for registered
-  projects (use it directly), or `via:"implicit"` with a path-derived
-  `projectId` for unregistered ones — which is exactly the fallback
-  case, no heuristics needed. The implicit→registered transition is the
-  migration-event trigger. Registration is idempotent-by-name (response
-  carries `noop`), so register-if-implicit bootstrap is safe to repeat.
+  repoint, never a silent re-roll. The registry reports whether an id is
+  a minted registration or a path-derived fallback, so the transition
+  from one to the other is the migration-event trigger, with no
+  heuristics needed.
   Immutable for the life of the seat; survives restarts and machine
-  moves; differs per project.
-  **Identity is host-authored, only.** Consumers (iOS, desktop, web)
-  never construct identity from strings they hold; they render from the
+  moves; differs per agent.
+  **Identity is host-authored, only.** Consumers (the phone app, the
+  desktop app, the web) never construct identity from strings they hold; they render from the
   identity value the wire delivers, and where the wire carries none
   they render a deliberate placeholder — never a guessed creature. A
   client-derived identity means the same agent wears different faces on
   different surfaces with no error anywhere; this rule deletes that
   class.
-  **Scope of the rule, stated because it travelled without its
-  qualifier and over-blocked a consumer for weeks.** The prohibition is
-  on a surface DECIDING WHICH STRING identifies a seat. It is not a
-  prohibition on running the generator: rendering from a wire-delivered
-  authoritative id, using the pinned library, cannot diverge, because
-  byte-identity across the three languages is gated by the committed
-  golden corpus and the pinned identity vectors in every CI leg. ALF's
-  formulation is the sharpest statement of the discriminator and is
-  adopted here: client derivation is safe exactly when a multi-leg
-  corpus GATES THE EQUALITY, and a relayed rule that drops that
-  qualifier flips polarity.
+  **Scope of the rule, stated because it is easily read without its
+  qualifier.** The prohibition is on a surface DECIDING WHICH STRING
+  identifies a seat. It is not a prohibition on running the generator:
+  rendering from a wire-delivered authoritative id, using the pinned
+  library, cannot diverge, because byte-identity across the three
+  languages is gated by the committed golden corpus and the pinned
+  identity vectors in every conformance leg. Put sharply: client
+  derivation is safe exactly when a multi-leg corpus GATES THE
+  EQUALITY, and a restatement of the rule that drops that qualifier
+  flips its polarity.
   Consequence for the wire: it carries the INPUT (the seat's
   authoritative id), not the derived genome — until mutation makes the
   genome stateful, at which point an additive optional `avatarGenome`
@@ -199,10 +190,9 @@ Charter constraint #4. The partition is **by region**:
   XOF stream (so a fresh seat is fully determined by identity), then
   mutable via the governed mutation interface.
 - **Era history**: every mutation appends `(era_n, full_cosmetic_region,
-  actor, timestamp)` — append-only, so "what did my Alfonso look like in
-  August" replays exactly. Store design is deferred until mutation ships
-  (fusiform era-store pattern applies); the DNA/phenotype layers don't
-  care where eras live.
+  actor, timestamp)` — append-only, so "what did my agent look like in
+  August" replays exactly. Store design is deferred until mutation
+  ships; the DNA/phenotype layers don't care where eras live.
 
 Open sub-question for review: does `FACE` belong (partly) in the identity
 core? Eyes are highly recognizable. Current lean: keep `FACE` cosmetic
@@ -213,7 +203,7 @@ design comes with the mutation note, later).
 
 A closed enum, render-time input, versioned with the generator:
 
-| Mood | Fleet source (consumer's mapping, not ours) | Visual axes (from TOG's proven set + extensions) |
+| Mood | Typical source (the consumer's mapping, not ours) | Visual axes (from TOG's proven set + extensions) |
 | --- | --- | --- |
 | `Neutral` | default | DNA-neutral lids, brows, mouth |
 | `Working` | board status `working` | slight eye narrowing, focused pupils, tempo up |
@@ -225,15 +215,16 @@ A closed enum, render-time input, versioned with the generator:
 
 TOG precedent: mood 0–4 (neutral/angry/sad/sleepy/happy) already drives
 lid closure, eye/brow rotation, eyeball translation, and mouth-component
-curvature — the extension to 7 is additive. Mapping fleet state → mood is
-the consuming surface's business (charter constraint #5); the phenotype
+curvature — the extension to 7 is additive. Mapping an agent's state to a
+mood is the consuming surface's business; the phenotype
 carries per-creature mood *response coefficients* (how strongly this
 creature's face reacts), the renderer takes `(phenotype, mood)`.
 
 ## 6. Golden-vector conformance
 
-Following the subc-protocol pattern, upgraded where our constraint is
-stricter (subc's JSON corpus pins semantic shape; we must pin **bytes**):
+Following the golden-corpus pattern named under Inputs, upgraded where
+our constraint is stricter (a JSON corpus that pins semantic shape is not
+enough; we must pin **bytes**):
 
 - **Corpus layout** (in-repo, minted by the canonical Rust impl):
 
@@ -258,21 +249,21 @@ stricter (subc's JSON corpus pins semantic shape; we must pin **bytes**):
 - **Coverage**: every region min/max, every point count 2–16, every mood
   × a body sample, degenerate shapes (all-zero DNA, all-ones DNA,
   min-area bodies that stress the mouth-fit search), every easing table
-  boundary byte (0, 1, 127, 128, 254, 255), plus N seats' real derived
-  DNA as realistic samples.
-- **Minting**: `UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --ignored` (subc
-  convention), which also stamps `manifest.json` with the producer
-  commit. CI never regenerates, only verifies. Ports vendor the corpus
-  with the recorded producer SHA (cross-repo payload rule).
-- **Ports don't exist until their conformance leg is in their CI**
-  (charter). The easing/trig tables ship with a hash assertion in every
+  boundary byte (0, 1, 127, 128, 254, 255), plus DNA derived from
+  sample ids as realistic samples.
+- **Minting**: `UPDATE_GOLDEN=1 cargo test -p avatar-vectors tests::mint -- --ignored`,
+  which also stamps `manifest.json` with the producer commit. CI never
+  regenerates, only verifies. Ports vendor the corpus with the recorded
+  producer SHA.
+- **Ports don't exist until their conformance leg is in their CI**.
+  The easing/trig tables ship with a hash assertion in every
   port so table drift fails loudly and separately from geometry drift.
 
 ## 7. Versioning
 
 > **Superseded by `docs/design/012`.** The definition below treats any
 > observable output change as a version bump, which would move every
-> agent's face whenever the renderer improves. The operator ruled the
+> agent's face whenever the renderer improves. The project settled on the
 > opposite: a version exists ONLY to fix a generation bug, an upgrade is
 > chosen per row, and a change of depiction is a new TYPE rather than a
 > version. A version arm is added and never edited. The paragraph is kept
@@ -280,8 +271,8 @@ stricter (subc's JSON corpus pins semantic shape; we must pin **bytes**):
 > in force.
 >
 > Two further drifts from this section: `era history` describes a store
-> this library never owned — the genome lives on the agent's registry row
-> and prefrontal owns it. And the corpus manifest field once called
+> this library never owned — the genome is stored on the agent's record in
+> the host's registry, which owns it. And the corpus manifest field once called
 > `generator_version` is now `corpus_revision`, because it counts
 > re-mints and says nothing about what a creature looks like.
 
@@ -295,8 +286,8 @@ stricter (subc's JSON corpus pins semantic shape; we must pin **bytes**):
 
 ## 8. Repo shape (v1)
 
-Cargo workspace, library-first (charter open question #5: start as a
-library; a serving module can wrap it later if a consumer needs one):
+Cargo workspace, library-first (start as a library; a serving module can
+wrap it later if a consumer needs one):
 
 ```
 crates/
@@ -311,37 +302,37 @@ ports/
 vectors/             # golden corpus (see §6)
 ```
 
-## 9. Decisions requested from review
+## 9. Decisions settled in review
 
-1. **Rounding rule**: half-away-from-zero everywhere — agree?
-2. **Genome size 8192 bits** with the §3 region map — agree, or reshape
-   regions before anything is minted?
-3. **Identity core = BODY + PALETTE** and the blake3-of-seat-identity
-   derivation — settle charter open question #1 as specced?
-4. **Mood vocabulary**: the 7-value enum — right set for v1 surfaces?
-5. **Easing/trig as pinned tables** (spec-as-data) rather than
-   re-specified formulas — agree?
-6. **TOG float accidents dropped** (no bit-archaeology of old outputs) —
-   SUBC confirms TOG never shipped publicly, so no on-chain/archival
-   output needs replaying; awaiting Ufuk's co-sign.
+1. **Rounding rule**: half away from zero, everywhere.
+2. **Genome size 8192 bits** with the §3 region map.
+3. **Identity core = BODY + PALETTE**, with the blake3-of-identity
+   derivation in §4.
+4. **Mood vocabulary**: the 7-value enum in §5.
+5. **Easing and trig as pinned tables** (spec-as-data) rather than
+   re-specified formulas.
+6. **TOG's float accidents are dropped** (no bit-archaeology of old
+   outputs): no earlier TOG output needs replaying bit for bit.
 
 ## 10. Review log
 
-- 2026-08-11 SUBC (wire-protocol bar): approved after folding — negative-
-  value rounding vectors, explicit point-count mapping, committed table
-  minting script, identity derivation from entorhinal registration ID
-  (not path) with domain separation and audited migration for
-  unregistered projects, named canonical-JSON spec with its no-floats
-  dependency stated. Identity/genome crate was held on the derivation
-  fix (folded above); tables, phenotype, and renderer cleared to start.
-- 2026-08-11 identity-core v2 (CKIOS integration review): the seat NAME
-  is removed from the derivation — identity is the stable ID alone.
-  Trigger: every candidate name source measured on the live fleet
-  failed as an identity input (room titles: 100% session-derived;
-  configured agent names: user-editable and already colliding — two
-  projects share one name). The v1 shape (name ‖ id) made the hash's
-  distinguishing power come entirely from the id while exposing the
-  name as a re-roll hazard; v2 removes the hazard structurally. Method
-  note for future revisions: each name source LOOKED durable in
+- 2026-08-11 wire-protocol review: approved after folding in negative-
+  value rounding vectors, an explicit point-count mapping, a committed
+  table minting script, identity derivation from the registry's
+  registration ID (not the path) with domain separation and audited
+  migration for unregistered projects, and a named canonical-JSON spec
+  with its no-floats dependency stated. The genome crate waited for the
+  derivation fix (folded above); tables, phenotype and renderer started.
+- 2026-08-11 identity-core v2 (integration review for the phone app): the
+  agent NAME is removed from the derivation — identity is the stable ID
+  alone. Every candidate name source, measured on a working registry,
+  failed as an identity input (room titles were all session-derived;
+  configured agent names were user-editable and already colliding, with
+  two projects sharing one name). The v1 shape (name ‖ id) made the
+  hash's distinguishing power come entirely from the id while exposing
+  the name as a re-roll hazard; v2 removes the hazard structurally.
+  Method note for future revisions: each name source LOOKED durable in
   documentation and failed only when measured — measure fields, don't
   read about them.
+- 2026-08-23: the identity input is the agent's id, not its project's
+  id (§4), because one project can host more than one agent.

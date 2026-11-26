@@ -2,10 +2,11 @@
 
 Status: DRAFT rev 3. Rev 1 described the retired blob generator; rev 2
 re-carved the regions for the wild-spline pipeline after the grid-7
-course correction; rev 3 re-syncs every band to what the playground
+course correction (the move from blob bodies to mirrored radial splines,
+shown in `explorations/index.html`); rev 3 re-syncs every band to what the playground
 actually decodes, after the bit-budget rebalance and the face block.
-Both earlier revisions are in git history. Ufuk's pending filter pass
-shrinks selector ranges, never offsets.
+Both earlier revisions are in git history. A later filter pass may
+shrink selector ranges, never offsets.
 
 **Measured consumption** (`cargo run --bin grid -- --dna`, 2000 seeds):
 34–91 bytes, mean 62 → **272–728 bits, mean 496**. For scale, the
@@ -98,7 +99,7 @@ Ink discipline (render law, recorded here because palette carries it):
 | --- | --- | --- |
 | 0 | `eye_kind` | mod 5 (dot-shine/lidded/happy-arc/uneven/half-lid) |
 | 1 | `eye_aspect` | EASE_LINEAR → Q [0.80, 1.28]; applied as MIN-scaling (both axis factors ≤ 1) so an eye can only shrink inside its proved radius |
-| 2 | `eye_wonk` | EASE_LINEAR → Q [-0.20, 0.20] SIGNED one-eye shrink (negative = left, positive = right). Live: the archetype renderers take a per-side radius. Signed on purpose — an unsigned shrink puts every wonky creature's smaller eye on the same side, which fleet-wide reads as a renderer quirk rather than character. `Uneven` is exempt, being asymmetric by construction |
+| 2 | `eye_wonk` | EASE_LINEAR → Q [-0.20, 0.20] SIGNED one-eye shrink (negative = left, positive = right). Live: the archetype renderers take a per-side radius. Signed on purpose — an unsigned shrink puts every wonky creature's smaller eye on the same side, which across many creatures reads as a renderer quirk rather than character. `Uneven` is exempt, being asymmetric by construction |
 | 3 | `mouth_kind` | mod 6 (arc/cat-ω/open-happy/snaggle/flat/fangs) |
 | 4 | `mouth_width` | EASE_LINEAR → Q [0.75, 1.30]; feeds the placement fit test |
 | 5 | `mouth_depth` | EASE_LINEAR → Q [0.70, 1.35]; feeds the placement fit test |
@@ -225,7 +226,7 @@ ported. Left as written, a port implementing this note would consume an
 extra byte before the spoke slots and shift every one of them — the same
 seed would grow a different creature, and nothing would fail.
 
-That leaves a real decision, and it is not mine:
+That leaves an open decision:
 
 - **Pin it.** Every creature sits at the same point on the wild↔tame
   axis. That is what every grid, sheet and device preview has shown, so
@@ -245,8 +246,8 @@ before it is chosen rather than after.
 
 Not a phenotype schema (that is 010, written at freeze), not value
 mappings beyond the normative bands above (decoder-owned, generator-
-versioned), not a commitment to family counts (Ufuk's filter pass may
-shrink; mod-N absorbs it). The render laws quoted inline (curvature
+versioned), not a commitment to family counts (a filter pass may
+shrink them; mod-N absorbs it). The render laws quoted inline (curvature
 cap, ink discipline, placement search, pattern masking, archetype-aware
 moods) are 010 material — they appear here so the region map reads with
 its consequences attached.

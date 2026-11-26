@@ -8,9 +8,11 @@
   img, object { width: 100%; background: #efe9e4; border-radius: 8px; }
   .note { color: #887; font-size: .85rem; }
 </style>
-<h1>Creature redesign — exploration grids (design note 008)</h1>
-<p>Look-first exploration for the v2 creature design. Each grid answered one
-question before the contract freezes. Regenerable: <code>git archive &lt;sha&gt;
+<h1>Creature redesign — exploration grids</h1>
+<p>Look-first exploration for the v2 creature design, which became
+<code>creature.wild</code>. Each grid answered one
+question before the contract freezes. Every grid is drawn from synthetic
+seeds (the <code>#</code> numbers), not from any agent's genome. Regenerable: <code>git archive &lt;sha&gt;
 playground | tar -x &amp;&amp; cargo run</code>; the SVGs here are the committed
 outputs of each grid's final state.</p>
 
@@ -45,18 +47,18 @@ mirror bug.</p>
 <h2>Grid 5 — the gacha test (36 random genomes)</h2>
 <p>Question: does "no ugly genome" hold on RANDOM input? Answer: 36/36
 presentable from sequential seeds, dark band rare and striking, two
-near-collisions in 36 (fine at fleet scale).</p>
+near-collisions in 36 (fine for a few dozen agents).</p>
 <object data="grid5.svg" type="image/svg+xml"></object>
 
 <h2>Grid 6 — hue A/B (same genomes, golden-angle spacing)</h2>
-<p>Question: is hue clustering worth a fleet-wide allocator? Answer
+<p>Question: is hue clustering worth a global hue allocator? Answer
 (recommendation): no — evenness gain is modest, silhouette+value already
 carry identity; ship stateless uniform hue, allocator addable later via the
 era store.</p>
 <object data="grid6.svg" type="image/svg+xml"></object>
 
 <h2>Grid 7 — wild spline bodies × domestication (course correction)</h2>
-<p>Ufuk's verdict on the blob generator: cuter but generic — "2021 NFT
+<p>The review verdict on the blob generator: cuter but generic — "2021 NFT
 creativity". Diagnosis: the blob collapsed silhouette entropy, the channel
 humans discriminate best. Grid 7 is the synthesis probe: TOG-class radial
 spline bodies (deep concave radii, overshoot tensions) under a domestication
@@ -74,7 +76,7 @@ computed Voronoi. Rows share seeds; each row adds one system.</p>
 <object data="grid8.svg" type="image/svg+xml"></object>
 
 <h2>Grid 9 — extremity color voices / SDF-merged silhouettes</h2>
-<p>Ufuk's two EVM-impossible experiments: tone vs accent fills for layered
+<p>Two experiments that were impossible under TOG's on-chain limits: tone vs accent fills for layered
 extremities (quiet depth vs loud anatomy — both kept), and the SDF
 smooth-min merge that welds extremities INTO the body as one silhouette
 with organic fillets. Layered-vs-merged emerged as a character axis

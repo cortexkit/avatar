@@ -1,11 +1,14 @@
 # Design note 011 — Port surface: what each language must implement
 
-Status: DECISION BRIEF, for the freeze conversation. Not a decision.
-Written before note 010 because 010's shape depends on the answer.
+Status: DECIDED. This began as a decision brief, written before note 010
+because 010's shape depended on the answer, and it keeps the order in
+which the question was worked through. The decisions are in "Settled:
+sampling cannot prove equivalence" (one generator, written once in Rust)
+and "Determinism under single source" (IEEE f64 with no maths library).
 
 ## The question
 
-The charter requires Rust, TS and Swift to produce byte-identical SVG
+The project requires Rust, TS and Swift to produce byte-identical SVG
 from the same DNA. v1 satisfied that by having all three implement the
 whole generator. v2's generator is a different size of thing.
 
@@ -38,7 +41,7 @@ implementations to agree on every tiebreak.
 Every port implements all ~800 lines. Byte-parity is proved at both
 boundaries by the golden corpus, exactly as today.
 
-- The charter's constraint holds in its strongest form: any client can
+- The cross-language constraint holds in its strongest form: any client can
   derive a creature from DNA alone, offline, with no host.
 - Cost is paid three times, and again on every generator change. A
   tiebreak adjustment is a three-language change plus a re-mint.
@@ -52,7 +55,7 @@ Canonical Rust produces the render tree (note 006). Ports implement
 only the SERIALIZER (tree → SVG) and their native draw path. Byte
 parity is proved on the serializer.
 
-- Port surface collapses to roughly the serializer's size. CKIOS
+- Port surface collapses to roughly the serializer's size. The phone app
   already consumes the tree directly rather than parsing SVG, so for
   the first real consumer this is the shape that already exists.
 - Consistent with the rule the light-y bug produced: resolved values
@@ -67,7 +70,7 @@ parity is proved on the serializer.
 
 ## The deciding question changed (2026-08-25, second update)
 
-Question 1 below was the one I said would settle this. **The stored-genome
+Question 1 below was the one expected to settle this. **The stored-genome
 architecture retired it.** No client derives a creature from an id any
 more: the registry stores the genome, the wire delivers it, and clients
 render what they are given. "Offline DNA → creature with no host" is not
@@ -95,12 +98,12 @@ than a product one:
 a native implementation?** iOS can link Rust. The web can take WASM. A
 future surface that cannot is what would force A.
 
-The cost asymmetry from the type ruling still stands and now bears fully
+The cost asymmetry from the type decision still stands and now bears fully
 on this: under A, types x versions x languages grows forever; under B,
 a new type is written once and every platform gets it by upgrading a
 linked core.
 
-## What I would want to know before choosing
+## What would need to be known before choosing
 
 1. ~~Does any planned consumer need offline DNA → creature with no
    host?~~ RETIRED — no client derives at all under the stored-genome
@@ -115,7 +118,7 @@ linked core.
 
 ## The only shipped consumer removed itself as a constraint (2026-08-29)
 
-Unprompted, from the iOS client: the Swift port's value there was never
+Unprompted, from the phone app: the Swift port's value there was never
 native-ness. It was that `renderTree` returns a **flat primitive list**
 that their UIKit layer rasterizes and caches. Any option preserving that
 output contract is invisible to them, and they asked that the fork be
@@ -177,13 +180,13 @@ than after: under Option A that contradiction would have been
 implemented three times, tested by nothing, and discovered the first
 day a vocabulary change made the branch reachable.
 
-## The type ruling changes the arithmetic (2026-08-25)
+## The type decision changes the arithmetic (2026-08-25)
 
 This brief was written when the redesign was understood as a
 generator_version bump: the wild pipeline would REPLACE the classic
 creature, so porting cost was "port the new thing once".
 
-The operator has since ruled that types are different representations
+It has since been decided that types are different representations
 of the same genome, and that a change of depiction is a NEW TYPE rather
 than a version bump. So the redesign ships as `creature.wild`
 alongside `creature.classic`, which keeps its faces. That is better for
@@ -201,7 +204,7 @@ languages and it only grows.
 
 ## The maintenance cost, measured (2026-08-29)
 
-The iOS client asked that the fork be weighed on maintenance cost rather
+The phone app asked that the fork be weighed on maintenance cost rather
 than phone-side ergonomics. That deserved a measurement rather than the
 assertion above, so here is the port surface counted by role. Lines are
 a proxy, not the cost itself: what actually costs is HAND-WRITTEN
@@ -228,8 +231,8 @@ classic rather than merely bigger: classic is spline flattening and
 shape assembly, while wild adds SDF fields, smooth-min welds, marching
 squares, Lloyd relaxation, arc-length resampling, a greedy placement
 search and a belly profile walk. Every one has an iteration count or a
-tiebreak that must match exactly. Two have already diverged between my
-OWN two implementations (the contour chaining tiebreak and the marching
+tiebreak that must match exactly. Two had already diverged between the
+project's OWN two implementations (the contour chaining tiebreak and the marching
 squares resolution, found by the drift check) — before any third
 language existed.
 
@@ -262,13 +265,13 @@ still A's real advantage, and question 1 below is still the one that
 decides — but the cost side is now visibly super-linear where it looked
 linear before.
 
-Worth noting what the ruling does NOT change: `creature.classic` is
+Worth noting what the type decision does NOT change: `creature.classic` is
 already ported three ways and shipping, so B would not be a rewrite of
 what exists. It is a decision about where the NEXT type lands.
 
-## Settled: sampling cannot prove equivalence (2026-08-29, operator)
+## Settled: sampling cannot prove equivalence (2026-08-29)
 
-The operator's objection retires the fork, and on a stronger axis than
+The project owner's objection retires the fork, and on a stronger axis than
 cost:
 
 > The problem with output comparison is that when the genome gets big
@@ -284,7 +287,7 @@ cannot establish equality.
 
 The coverage gate added earlier this week improves the sample and does
 not change its nature. It targets branch coverage rather than random
-draws, but it covers only the selectors I thought to enumerate, and it
+draws, but it covers only the selectors someone thought to enumerate, and it
 deliberately excludes continuous fields — which is exactly where
 rounding boundaries live. A divergence that fires for one input in 10^9
 is invisible to it, and stays invisible until it renders on somebody's
@@ -315,7 +318,7 @@ Checked before assuming a contract change: `creature.wild` needs
 radial-gradient paint for the voronoi face-fade, mask geometry for the
 body clip, and closed paths with a fill rule. `Paint::RadialGradient`,
 `Effect::Masked` and `Shape::Path` already carry all three. The
-primitive list the iOS client depends on does not have to change shape
+primitive list the phone app depends on does not have to change shape
 to ship wild — which is what makes a preview on device cheap.
 
 ## The wild tree is 10x to 60x heavier than the classic one (2026-08-29)
@@ -338,22 +341,22 @@ as line segments, so the tree carries the tessellation instead of the
 curve.
 
 This matters well beyond file size. A consumer builds one path per
-primitive and walks every segment, so a fleet list of thirty wild
+primitive and walks every segment, so a list of thirty wild
 avatars is on the order of 350,000 segments where the same list of
 classic avatars is about 6,000. It is also memory in any tree cache.
 
 Not urgent and deliberately not fixed here — the preview path tolerates
 it. But it is a real constraint on the wild pipeline.
 
-Measured on the shipped path (2026-10-16, iOS, release build on an
+Measured on the shipped path (2026-10-16, the phone app's release build on an
 Apple-silicon Mac standing in for the phone): decoding the tree JSON in
 Swift costs about 0.06 ms per KB, so 4–5 ms for a 71 KB tree and 12–15 ms
 for a 220 KB one. The whole embedded call, generation plus hand-off, is
 about 16 ms per creature, and a cold call costs the same as a warm one.
 Thirty creatures are about 0.5 s of CPU at cold launch, run in parallel
 off the main thread, plus about 1 ms of rasterizing each on the main
-thread. iOS judged that acceptable, so tree weight stays deferred.
-Confirmed on real hardware (TestFlight 231 on the operator's iPhone): the
+thread. The phone app judged that acceptable, so tree weight stays deferred.
+Confirmed on real hardware (a TestFlight build on a physical iPhone): the
 embedded core draws the wild reference creature byte-identical to the
 corpus in 24.2 ms, putting thirty creatures near 0.7 s of background CPU at
 cold launch. Revisit if that grows much worse.
@@ -364,7 +367,7 @@ every copy in full: 77% of the bytes across the 18 committed wild trees.
 The JSON now writes each distinct mask once, in a top-level `masks` table,
 and a masked effect refers to its entry by index (design note 006). The wild
 trees shrank from 3,537,942 to 820,554 bytes, and the largest from 345 KB to
-54 KB. Measured by the iOS client (2026-11-20, release build, iPhone 17 Pro
+54 KB. Measured by the phone app (2026-11-20, release build, iPhone 17 Pro
 simulator, medians of five warm runs, its own rasterizer at 40 pt x3), decode
 plus raster per creature went from 26.30 to 3.99 ms on the largest tree and
 from 13.94 to 4.32 ms on a typical one, 3.2x to 6.6x faster, almost all of it
@@ -415,7 +418,7 @@ Three things the spike established that are worth keeping:
   test is the load-bearing one. It caught reparameterization rounding a
   square, which is exactly the failure a ratio would have hidden.
 
-Measured on device rather than guessed, by the iOS client: all thirty
+Measured on device rather than guessed, by the phone app: all thirty
 heavy trees decode and rasterize in well under the screen's first
 settle on an M-series simulator, at 108pt tiles, with no list jank.
 So the weight is tolerable at preview scale — but that number says
@@ -462,7 +465,7 @@ mid-port. Answered here.
   through `face::eyes_inked`. That was false. `eyes_inked` delegates to
   `eyes`, so the live chain is `draw_full -> eyes_inked -> eyes ->
   arc_to`, and the Lidded eye's lid band and the HalfLid arc are drawn
-  through it. The port's review panel found it; a call graph confirms
+  through it. A review of the port found it; a call graph confirms
   it.
 
   The irony is specific: the "correction" was written to fix a first
