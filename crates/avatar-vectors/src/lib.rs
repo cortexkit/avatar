@@ -101,6 +101,7 @@ mod tree_fixture;
 
 #[cfg(test)]
 mod tests {
+    mod image;
     mod wild;
 
     use std::{
@@ -385,6 +386,7 @@ mod tests {
         let expected_root = BTreeSet::from([
             "contact-sheet.html".to_owned(),
             "dna".to_owned(),
+            "image".to_owned(),
             "manifest.json".to_owned(),
             "phenotype".to_owned(),
             "svg".to_owned(),

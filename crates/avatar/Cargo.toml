@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Render a stored avatar: routes its type and generation version to the generator that draws it, and serializes the resulting render tree."
+description = "Render a stored avatar: routes its type and generation version to the generator that draws it, and returns the render tree or a finished RGBA image."
 
 # Published as cortexkit-avatar. The library keeps its short Rust name, so
 # code imports it as `avatar` under either package name. A Rust host depends
@@ -15,4 +15,5 @@ name = "avatar"
 [dependencies]
 avatar-genome = { version = "0.1.0", path = "../avatar-genome", package = "cortexkit-avatar-genome" }
 avatar-phenotype = { version = "0.1.0", path = "../avatar-phenotype", package = "cortexkit-avatar-phenotype" }
+avatar-raster = { version = "0.1.0", path = "../avatar-raster", package = "cortexkit-avatar-raster" }
 avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }

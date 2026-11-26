@@ -5,7 +5,7 @@
 > Breaking changes will happen between versions, including changes to its settings,
 > stored data and interfaces. Pin an exact version if you depend on it.
 
-Render a stored avatar. A stored avatar is a genome (bytes), a creature type and a generator version. `render_tree_for_bytes` routes them to the generator that draws them and returns a render tree, a flat list of shapes in painter order. `serialize_tree` writes it as SVG, and `serialize_tree_json` as canonical JSON.
+Render a stored avatar. A stored avatar is a genome (bytes), a creature type and a generator version. `render_image` draws it as a finished square RGBA image at the size you ask for. `render_tree_for_bytes` instead routes it to the generator that draws it and returns a render tree, a flat list of shapes in painter order. `serialize_tree` writes the tree as SVG, and `serialize_tree_json` as canonical JSON.
 
 This is the one crate a Rust host needs to render avatars:
 
@@ -15,13 +15,17 @@ avatar = { package = "cortexkit-avatar", version = "=0.1.0" }
 ```
 
 ```rust
-use avatar::{render_tree_for_bytes, serialize_tree, Mood, WILD};
+use avatar::{render_image, render_tree_for_bytes, serialize_tree, ImageOptions, Mood, WILD};
 
 let genome = vec![0u8; 16_384]; // a stored creature.wild genome
+let image = render_image(&genome, WILD, 2, Mood::Happy, 256, &ImageOptions::default())
+    .expect("wild version 2 is supported");
+assert_eq!(image.pixels.len(), 256 * 256 * 4); // premultiplied RGBA, top row first
+
 let tree = render_tree_for_bytes(&genome, WILD, 2, Mood::Happy).expect("wild version 2 is supported");
 let svg: Vec<u8> = serialize_tree(&tree);
 ```
 
-An unknown type or version is a distinct error, so a host can draw nothing rather than a wrong creature. The same genome, type, version and mood always produce the same bytes on every platform.
+An unknown type or version is a distinct error, so a host can draw nothing rather than a wrong creature. The same genome, type, version and mood always produce the same tree bytes on every platform.
 
 This crate is part of [avatar](https://github.com/cortexkit/avatar), which draws deterministic creatures from a stored genome. Licensed under MIT.

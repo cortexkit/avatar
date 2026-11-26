@@ -52,7 +52,9 @@ dependencies = [
  "cortexkit-avatar",
  "cortexkit-avatar-genome",
  "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-raster",
  "cortexkit-avatar-svg",
+ "png",
  "serde",
  "serde_json",
 ]
@@ -144,6 +146,7 @@ version = "0.1.0"
 dependencies = [
  "cortexkit-avatar-genome",
  "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-raster",
  "cortexkit-avatar-svg",
 ]
 

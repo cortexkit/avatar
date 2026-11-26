@@ -67,6 +67,9 @@ pub unsafe extern "C" fn avatar_render_tree_json(
             Err(DispatchError::UnsupportedVersion { .. }) => return UNKNOWN_VERSION,
             Err(DispatchError::GenomeLength { .. }) => return GENOME_LENGTH,
             Err(DispatchError::Render(_)) => return RENDER_ERROR,
+            // Only the image call checks a size or rasterizes, so the tree
+            // call never returns these.
+            Err(DispatchError::ImageSize { .. } | DispatchError::Raster(_)) => return RENDER_ERROR,
         };
         let Ok(json) = CString::new(serialize_tree_json(&tree)) else {
             return RENDER_ERROR;

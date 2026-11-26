@@ -27,17 +27,17 @@ struct WildManifest {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct WildVector {
-    project_id: String,
-    version: u32,
-    moods: Vec<String>,
+pub(super) struct WildVector {
+    pub(super) project_id: String,
+    pub(super) version: u32,
+    pub(super) moods: Vec<String>,
 }
 
 impl WildVector {
     /// Version 1 trees keep the names they shipped with. Later versions add
     /// a version infix, so one genome's trees from two generations can sit
     /// side by side in `vectors/tree`.
-    fn tree_name(&self, mood: &str) -> String {
+    pub(super) fn tree_name(&self, mood: &str) -> String {
         match self.version {
             1 => format!("{}__{mood}.json", self.project_id),
             version => format!("{}__v{version}__{mood}.json", self.project_id),
@@ -380,7 +380,7 @@ pub(super) fn mint_corpus() {
     );
 }
 
-fn frozen_vectors() -> Vec<WildVector> {
+pub(super) fn frozen_vectors() -> Vec<WildVector> {
     FROZEN_CORPUS
         .lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
@@ -419,7 +419,7 @@ fn read_manifest() -> WildManifest {
         .expect("parse wild manifest")
 }
 
-fn genome_path(project_id: &str) -> PathBuf {
+pub(super) fn genome_path(project_id: &str) -> PathBuf {
     corpus_root().join("wild").join(format!("{project_id}.hex"))
 }
 
@@ -441,7 +441,7 @@ fn hex(bytes: &[u8]) -> String {
     hex
 }
 
-fn read_genome(project_id: &str) -> [u8; GENOME_LEN] {
+pub(super) fn read_genome(project_id: &str) -> [u8; GENOME_LEN] {
     let hex = fs::read_to_string(genome_path(project_id)).expect("read wild genome hex");
     assert_eq!(hex.len(), GENOME_LEN * 2, "{project_id} genome hex length");
     assert!(hex

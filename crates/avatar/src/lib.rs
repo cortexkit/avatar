@@ -2,14 +2,15 @@
 //!
 //! This is the one crate a Rust host depends on. A registry row stores an
 //! avatar's genome bytes, its type (such as [`WILD`] or [`CLASSIC`]) and the
-//! generation version that produced it. [`render_tree_for_bytes`] routes that
-//! row to the generator that draws it and returns the generic [`RenderTree`];
+//! generation version that produced it. [`render_image`] draws that row as a
+//! finished RGBA [`Image`]. [`render_tree_for_bytes`] instead routes the row
+//! to the generator that draws it and returns the generic [`RenderTree`];
 //! [`serialize_tree`] turns the tree into SVG and [`serialize_tree_json`] into
 //! its canonical JSON.
 //!
-//! Dispatch is implemented here. Every other item is re-exported unchanged
-//! from the crate that implements it, so a value from here is the same type
-//! the lower-level crates use.
+//! Dispatch and [`render_image`] are implemented here. Every other item is
+//! re-exported unchanged from the crate that implements it, so a value from
+//! here is the same type the lower-level crates use.
 //!
 //! ```
 //! use avatar::{render_tree_for_bytes, serialize_tree, Mood, Shape, WILD};
@@ -45,6 +46,7 @@
 mod dispatch;
 
 pub use avatar_genome::Genome;
+pub use avatar_raster::{Alpha, GroundShadow, Image, ImageOptions, RasterError, MAX_SIZE_PX};
 pub use avatar_svg::{
     serialize_svg, serialize_tree, serialize_tree_json, serialize_tree_with_id_prefix,
 };
@@ -53,4 +55,7 @@ pub use avatar_svg::{
     Segment, Shape, Stroke, StrokeCap, StrokeJoin, Subpath, Transform, TransformOp,
 };
 pub use avatar_svg::{Bam16, Mood, RenderError, Rgb, Q32};
-pub use dispatch::{render_tree_for, render_tree_for_bytes, DispatchError, CLASSIC, WILD};
+pub use dispatch::{
+    render_image, render_tree_for, render_tree_for_bytes, render_tree_for_bytes_at, DispatchError,
+    CLASSIC, WILD,
+};
