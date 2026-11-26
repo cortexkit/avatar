@@ -25,9 +25,11 @@ export CARGO_INCREMENTAL=0
 # directory per run left a full debug build behind on every run.
 CARGO_TARGET_DIR="$root/target/wild-cross-platform"
 export CARGO_TARGET_DIR
-cargo build --locked -j 4 -p cortexkit-avatar-svg --lib
+# The mint renders through the avatar crate, the one a Rust host depends on.
+# Its library is named avatar, so cargo writes libavatar.rlib.
+cargo build --locked -j 4 -p cortexkit-avatar --lib
 rustc --edition=2021 scripts/wild-port/mint.rs \
-    --extern "avatar_svg=$CARGO_TARGET_DIR/debug/libavatar_svg.rlib" \
+    --extern "avatar=$CARGO_TARGET_DIR/debug/libavatar.rlib" \
     -L "dependency=$CARGO_TARGET_DIR/debug/deps" -o "$CARGO_TARGET_DIR/wild-mint"
 "$CARGO_TARGET_DIR/wild-mint" "$root" "$run/macos"
 for arch in arm64 amd64; do
@@ -42,9 +44,9 @@ for arch in arm64 amd64; do
             echo "Container architecture: $(uname -m)"
             case "$1:$(uname -m)" in arm64:aarch64|amd64:x86_64) ;; *) exit 1 ;; esac
             rustc --version --verbose
-            cargo build --manifest-path /src/Cargo.toml --locked -j 4 -p cortexkit-avatar-svg --lib
+            cargo build --manifest-path /src/Cargo.toml --locked -j 4 -p cortexkit-avatar --lib
             rustc --edition=2021 /src/scripts/wild-port/mint.rs \
-                --extern avatar_svg=/tmp/wild-target/debug/libavatar_svg.rlib \
+                --extern avatar=/tmp/wild-target/debug/libavatar.rlib \
                 -L dependency=/tmp/wild-target/debug/deps -o /tmp/wild-mint
             /tmp/wild-mint /src /out/trees
         ' bash "$arch"

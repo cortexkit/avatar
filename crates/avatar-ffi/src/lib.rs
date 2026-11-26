@@ -4,7 +4,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
-use avatar_svg::{render_tree_for_bytes, serialize_tree_json, DispatchError, Mood};
+use avatar::{render_tree_for_bytes, serialize_tree_json, DispatchError, Mood};
 
 const OK: i32 = 0;
 const UNKNOWN_TYPE: i32 = 1;
@@ -125,11 +125,11 @@ mod tests {
             ("sad", Mood::Sad),
             ("sleepy", Mood::Sleepy),
         ] {
-            let (status, output) = render(&bytes, avatar_svg::CLASSIC, 2, name);
+            let (status, output) = render(&bytes, avatar::CLASSIC, 2, name);
             assert_eq!(status, OK);
             assert!(!output.is_null());
             let expected = serialize_tree_json(
-                &render_tree_for_bytes(&bytes, avatar_svg::CLASSIC, 2, mood).unwrap(),
+                &render_tree_for_bytes(&bytes, avatar::CLASSIC, 2, mood).unwrap(),
             );
             unsafe {
                 assert_eq!(CStr::from_ptr(output).to_str().unwrap(), expected);
@@ -144,25 +144,19 @@ mod tests {
             (&[0; 1_024][..], "unknown", 2, "neutral", UNKNOWN_TYPE),
             (
                 &[0; 1_024][..],
-                avatar_svg::CLASSIC,
+                avatar::CLASSIC,
                 999,
                 "neutral",
                 UNKNOWN_VERSION,
             ),
             (
                 &[0; 1_023][..],
-                avatar_svg::CLASSIC,
+                avatar::CLASSIC,
                 2,
                 "neutral",
                 GENOME_LENGTH,
             ),
-            (
-                &[0; 1_024][..],
-                avatar_svg::CLASSIC,
-                2,
-                "unknown",
-                UNKNOWN_MOOD,
-            ),
+            (&[0; 1_024][..], avatar::CLASSIC, 2, "unknown", UNKNOWN_MOOD),
         ] {
             let (status, output) = render(bytes, avatar_type, version, mood);
             assert_eq!(status, expected);
@@ -182,7 +176,7 @@ mod tests {
         assert!(output.is_null());
 
         // The same length under the KNOWN type is still a malformed row.
-        let (status, output) = render(&newer_type_genome, avatar_svg::CLASSIC, 2, "neutral");
+        let (status, output) = render(&newer_type_genome, avatar::CLASSIC, 2, "neutral");
         assert_eq!(status, GENOME_LENGTH);
         assert!(output.is_null());
     }
@@ -227,7 +221,7 @@ mod tests {
     fn concurrent_calls_own_independent_strings() {
         let expected: Vec<_> = (0..8)
             .map(|seed| {
-                let (status, output) = render(&[seed; 1_024], avatar_svg::CLASSIC, 2, "happy");
+                let (status, output) = render(&[seed; 1_024], avatar::CLASSIC, 2, "happy");
                 assert_eq!(status, OK);
                 assert!(!output.is_null());
                 unsafe {
@@ -241,8 +235,7 @@ mod tests {
             let handles: Vec<_> = (0..8)
                 .map(|seed| {
                     scope.spawn(move || {
-                        let (status, output) =
-                            render(&[seed; 1_024], avatar_svg::CLASSIC, 2, "happy");
+                        let (status, output) = render(&[seed; 1_024], avatar::CLASSIC, 2, "happy");
                         assert_eq!(status, OK);
                         assert!(!output.is_null());
                         // Transfer ownership across the join without copying or

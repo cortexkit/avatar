@@ -1,10 +1,10 @@
-//! Mint the wild golden corpus pairs through public dispatch, into a scratch
-//! directory, without touching the committed goldens.
+//! Mint the wild golden corpus pairs through the `avatar` crate's public
+//! dispatch, into a scratch directory, without touching the committed goldens.
 //!
 //! scripts/wild-cross-platform.sh compiles and runs this natively and inside
 //! Linux containers, then compares the outputs byte for byte.
 
-use avatar_svg::{render_tree_for_bytes, serialize_tree_json, Mood};
+use avatar::{render_tree_for_bytes, serialize_tree_json, Mood};
 use std::{collections::BTreeSet, fs, path::Path};
 
 fn main() {

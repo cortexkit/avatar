@@ -1,6 +1,7 @@
 use super::*;
+use avatar::render_tree_for_bytes;
 use avatar_genome::derive_genome_bytes;
-use avatar_svg::{render_tree_for_bytes, wild::decode_genome, Primitive, RenderTree, TransformOp};
+use avatar_svg::{wild::decode_genome, Primitive, RenderTree, TransformOp};
 use serde::Serialize;
 
 const GENOME_LEN: usize = 16_384;

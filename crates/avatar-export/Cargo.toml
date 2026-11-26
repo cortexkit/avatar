@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Export stored avatar genomes to PNG, SVG, or render-tree JSON."
 
 [dependencies]
+avatar = { path = "../avatar", package = "cortexkit-avatar" }
 avatar-genome = { path = "../avatar-genome", package = "cortexkit-avatar-genome" }
 avatar-svg = { path = "../avatar-svg", package = "cortexkit-avatar-svg" }
 resvg = "0.44"

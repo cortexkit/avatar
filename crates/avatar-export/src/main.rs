@@ -27,10 +27,11 @@
 //!     With @file, reads one agent ID per line, ignoring blank lines and # comments.
 //!     Writes a JSON genome manifest, to standard output if --out is absent.
 
+use avatar::{render_tree_for_bytes, serialize_tree, serialize_tree_json, Mood};
 use avatar_genome::{decode, derive_genome_bytes, Genome, SeatIdentity};
-use avatar_svg::{
-    render_svg, render_tree_for_bytes, serialize_tree, serialize_tree_json, Mood, RenderParams, Q32,
-};
+// Classic SVG and PNG exports keep avatar-svg's direct classic renderer,
+// whose bytes differ from the generic tree serializer's.
+use avatar_svg::{render_svg, RenderParams, Q32};
 
 /// The avatar TYPE: which procedural representation renders the genome.
 /// Types are different representations OF THE SAME GENOME behind one

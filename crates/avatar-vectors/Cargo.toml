@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dev-dependencies]
+avatar = { path = "../avatar", package = "cortexkit-avatar" }
 avatar-genome = { path = "../avatar-genome", package = "cortexkit-avatar-genome" }
 avatar-phenotype = { path = "../avatar-phenotype", package = "cortexkit-avatar-phenotype" }
 avatar-svg = { path = "../avatar-svg", package = "cortexkit-avatar-svg" }

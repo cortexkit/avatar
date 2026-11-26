@@ -1,8 +1,9 @@
 # Embedded AvatarCore
 
-`avatar-ffi` is a static-library C boundary around `avatar-svg`'s versioned
-`render_tree_for` dispatch and canonical `serialize_tree_json`. It does not
-implement generation or select a default creature for unsupported requests.
+`avatar-ffi` is a static-library C boundary around the `avatar` crate's
+versioned `render_tree_for` dispatch and canonical `serialize_tree_json`. It
+does not implement generation or select a default creature for unsupported
+requests.
 
 The committed `ports/swift/AvatarCore.xcframework` contains **static `.a`
 archives**, not dynamic frameworks, for arm64 iOS (13+), arm64 iOS simulator,

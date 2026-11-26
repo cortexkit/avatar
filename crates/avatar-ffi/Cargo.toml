@@ -13,4 +13,4 @@ description = "C boundary that renders an avatar's canonical render-tree JSON, b
 crate-type = ["staticlib"]
 
 [dependencies]
-avatar-svg = { path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+avatar = { path = "../avatar", package = "cortexkit-avatar" }

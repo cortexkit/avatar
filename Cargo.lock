@@ -30,6 +30,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "avatar-export"
 version = "0.1.0"
 dependencies = [
+ "cortexkit-avatar",
  "cortexkit-avatar-genome",
  "cortexkit-avatar-svg",
  "resvg",
@@ -40,7 +41,7 @@ dependencies = [
 name = "avatar-ffi"
 version = "0.1.0"
 dependencies = [
- "cortexkit-avatar-svg",
+ "cortexkit-avatar",
 ]
 
 [[package]]
@@ -48,6 +49,7 @@ name = "avatar-vectors"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "cortexkit-avatar",
  "cortexkit-avatar-genome",
  "cortexkit-avatar-phenotype",
  "cortexkit-avatar-svg",
