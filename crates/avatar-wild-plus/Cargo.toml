@@ -13,7 +13,6 @@ name = "avatar_wild_plus"
 
 [dependencies]
 avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }
-avatar-tables = { version = "0.1.0", path = "../avatar-tables", package = "cortexkit-avatar-tables" }
 
 [dev-dependencies]
 # Rasterizes trees for the fidelity comparison and the review sheets, the same

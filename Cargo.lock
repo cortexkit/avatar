@@ -256,7 +256,6 @@ dependencies = [
  "blake3",
  "cortexkit-avatar-raster",
  "cortexkit-avatar-svg",
- "cortexkit-avatar-tables",
  "serde_json",
 ]
 
