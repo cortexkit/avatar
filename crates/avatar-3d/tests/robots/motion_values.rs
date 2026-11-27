@@ -1,7 +1,6 @@
 //! Motion values: face swaps and the lights that follow them, reaction
 //! peaks, the working and waiting statuses, idle values worked by hand,
-//! and one keyed value of each clip, as the robots' reactions and status
-//! loops are designed.
+//! and one keyed value of each clip.
 
 use avatar_3d::motion::{Actor, Mode, MotionParams, Reaction, StatusLoop, TrackPath, MOTION_BYTE};
 use avatar_3d::robot::{build_with, BuildOptions, Robot};

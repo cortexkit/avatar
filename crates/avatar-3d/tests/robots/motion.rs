@@ -178,7 +178,7 @@ fn pose_digests_equal_the_pins() {
     for (got, want) in lines.iter().zip(&committed) {
         assert_eq!(
             got, want,
-            "rerun the robot_pins mint if the change is intended"
+            "rerun the robot_pins example with --write if the change is intended"
         );
     }
 }

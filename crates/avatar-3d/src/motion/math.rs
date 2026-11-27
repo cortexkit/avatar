@@ -52,10 +52,13 @@ pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
-/// An integer hash: lowbias32 of `a` mixed with `b`. Only 32-bit wrapping
-/// integer arithmetic, so it gives the same bits in every language. `b` is
-/// taken modulo 2³², so a negative slot number hashes as its two's
-/// complement.
+/// A 32-bit integer hash of `a` and `b`: `b` plus a constant, multiplied by
+/// a constant, is xor-ed into `a`; then three rounds each xor the value
+/// with itself shifted right (by 16, 15, 16) and the first two multiply it
+/// by a constant, so every input bit reaches every output bit. Only 32-bit
+/// wrapping integer arithmetic, so it gives the same bits in every
+/// language. `b` is taken modulo 2³², so a negative slot number hashes as
+/// its two's complement.
 pub fn hash32(a: u32, b: i64) -> u32 {
     let mixed = (b.wrapping_add(0x9e37_79b9) as u32).wrapping_mul(0x85eb_ca6b);
     let mut x = a ^ mixed;
