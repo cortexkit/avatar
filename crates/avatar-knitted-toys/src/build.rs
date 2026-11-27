@@ -8,7 +8,8 @@ use avatar_svg::Rgb;
 
 use crate::decode::{plan, Traits};
 use crate::geom::{
-    add, atan2, dir_of, ellipse_pts, flip_x, lerp, max, max_of, min, scl, sdist, sub, Pt, PI,
+    add, atan2, dir_of, ellipse_pts, flip_x, lerp, max, max_of, min, min_of, scl, sdist, sub, Pt,
+    PI,
 };
 use crate::knit::{Row, Stitch};
 use crate::palette::{palette, Palette, Yarn};
@@ -18,6 +19,14 @@ use crate::piece::{arc_spine, make_piece, make_tube, mirror_tube, Piece, Tube};
 pub const MOODS: [&str; 7] = [
     "neutral", "working", "happy", "waiting", "blocked", "sad", "sleepy",
 ];
+
+/// How much larger a single eye is than one of a pair.
+pub const ONE_EYE: f64 = 1.65;
+
+/// How long each half of a single eye's brow is, as a share of a pair's
+/// brow: the two halves meet over the eye as one brow about as wide as the
+/// eye. A wider one reads as a band round the head.
+pub const ONE_EYE_BROW: f64 = 0.65;
 
 /// How a part's open end is sewn on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -52,7 +61,6 @@ pub struct Part {
     pub felt_edge: Option<Rgb>,
     pub vein: bool,
     pub stitched: bool,
-    pub cross_stitch: bool,
     pub thread_on: Option<Rgb>,
     pub ringed: Option<Yarn>,
     pub tip_yarn: Option<&'static str>,
@@ -145,6 +153,19 @@ pub struct Face {
     pub cheeks: Option<CheekSpot>,
     pub brow_y: f64,
     pub brow_len: f64,
+}
+
+impl Face {
+    /// The eye radius embroidered lines are weighted by: a pair's, even
+    /// under a single eye, whose own size would make a mouth or a brow as
+    /// heavy as a moustache or a band.
+    pub fn line_r(&self) -> f64 {
+        if self.eyes.len() == 1 {
+            self.r / ONE_EYE
+        } else {
+            self.r
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -365,7 +386,35 @@ fn build_pieces(t: Traits, pal: Palette) -> Toy {
 /// them, cheeks under the outer corners of the eyes, brows above. Each part
 /// is tested against the piece's outline at a few points and moved in or
 /// shrunk, for a bounded number of tries.
+///
+/// Feet are sewn on over the front of a one-piece toy. A face whose snout
+/// or mouth would reach down onto them is laid out again higher, by the
+/// overlap, up to a tenth of its height: a mouth drawn across the feet
+/// reads as part of them.
 fn layout_face(g: &mut Toy) {
+    let mut face = face_at(g, 0.0);
+    let feet_top = min_of(
+        g.parts
+            .iter()
+            .filter(|q| q.cls == "foot limb")
+            .flat_map(|q| q.outline.iter().map(|v| v[1])),
+    );
+    if !g.t.stacked && feet_top.is_finite() {
+        let lowest = max(
+            face.mouth.y + face.mouth.w * 0.5,
+            face.snout.map_or(f64::NEG_INFINITY, |s| s.c[1] + s.ry),
+        );
+        let over = lowest - (feet_top - 2.0);
+        if over > 0.0 {
+            face = face_at(g, min(over, g.body.h * 0.1));
+        }
+    }
+    g.face = Some(face);
+}
+
+/// The face laid out with its eye line `raise` toy units above where the
+/// genome puts it.
+fn face_at(g: &Toy, raise: f64) -> Face {
     let t = &g.t;
     let p = g.face_piece();
     let e = &t.eyes;
@@ -374,7 +423,7 @@ fn layout_face(g: &mut Toy) {
         p.y_top + p.h * (pl.face + 0.06 * t.face.y)
     } else {
         p.c[1] + p.p.b_b * (0.13 + 0.13 * t.face.y)
-    };
+    } - raise;
     let fw0 = p.half_w(ey);
     let k = t.face.scale * pl.face_scale.unwrap_or(1.0);
     // A dark toy's eyes sit on light felt discs, which need more room. So
@@ -393,8 +442,11 @@ fn layout_face(g: &mut Toy) {
     // two, the middle one a little higher.
     let three = e.count == 3;
     let gap3 = if backed { 3.5 } else { 3.1 };
-    let mut r =
-        fw0 * e.size * k * if e.count == 1 { 1.65 } else { 1.0 } * if backed { 0.88 } else { 1.0 };
+    let mut r = fw0
+        * e.size
+        * k
+        * if e.count == 1 { ONE_EYE } else { 1.0 }
+        * if backed { 0.88 } else { 1.0 };
     let mut ex = if e.count == 1 {
         0.0
     } else if three {
@@ -645,7 +697,24 @@ fn layout_face(g: &mut Toy) {
             });
         }
     }
-    let face = Face {
+    // A brow ends well inside the head: one that reaches the outline reads
+    // as a band round it. Its outer end is half its length past the eye's
+    // middle, or for a single eye's two halves nearly twice their length.
+    let brow_y = ey - r * 1.5 - 2.2;
+    let mut brow_len = r * 1.45 * t.brows.length;
+    let brow_end = |len: f64| {
+        if e.count == 1 {
+            len * 0.5 * ONE_EYE_BROW * 1.95
+        } else {
+            ex + len * 0.5
+        }
+    };
+    let mut it = 0;
+    while it < 10 && !inside([brow_end(brow_len), brow_y], max(3.0, r * 0.4)) {
+        brow_len *= 0.95;
+        it += 1;
+    }
+    Face {
         r,
         ex,
         fw: fw0,
@@ -655,10 +724,9 @@ fn layout_face(g: &mut Toy) {
         nose,
         mouth,
         cheeks,
-        brow_y: ey - r * 1.5 - 2.2,
-        brow_len: r * 1.45 * t.brows.length,
-    };
-    g.face = Some(face);
+        brow_y,
+        brow_len,
+    }
 }
 
 pub fn ang_delta(a: f64, b: f64) -> f64 {

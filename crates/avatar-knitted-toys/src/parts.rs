@@ -5,9 +5,8 @@ use crate::build::{ang_delta, ArmSpec, Belly, EarSpec, Part, Seam, Toy};
 use crate::dna::{hash_str, Stream};
 use crate::geom::{
     add, atan2, clamp, dir_of, dist, ellipse_pts, flip_x, hyp, lerp, max, max_of, min, min_of,
-    mixp, perp, pw16, rot, scl, sdist, sin, smooth, spline, sq, sub, unit, Pt, PI,
+    mixp, perp, pw16, rot, scl, sdist, sin, smooth, spline, sq, sub, Pt, PI,
 };
-use crate::palette::hsl;
 use crate::piece::{arc_spine, make_tube, mirror_tube, Tube};
 
 /// The fixed key for the handwork's small irregularities.
@@ -37,7 +36,7 @@ pub fn ear_frames(kind: &str) -> bool {
 
 type Prof = Box<dyn Fn(f64) -> f64>;
 
-/// One tube of an ear, a gill, a frill fin, a ram's horn or a tuft's loop.
+/// One tube of an ear, a gill, a frill fin or a ram's horn.
 struct EarSpecT {
     l: f64,
     w: f64,
@@ -91,6 +90,10 @@ pub fn build_ears(g: &mut Toy) {
     let p = g.face_piece().clone();
     let base = min(p.w, p.h * 0.55);
     let f = g.face().clone();
+    // How far round from the crown each kind is sewn on, as a share of a
+    // half turn. Ram's horns sit on top of the head: lower down they curl
+    // round the sides like earmuffs. A frill fans out from the sides of the
+    // head: higher up its fins read as a bow.
     let mut range: [f64; 2] = match x.kind {
         "bunny" => [0.07, 0.2],
         "cat" => [0.12, 0.27],
@@ -99,8 +102,8 @@ pub fn build_ears(g: &mut Toy) {
         "gills" => [0.42, 0.54],
         "leaf" => [0.1, 0.25],
         "tentacles" => [0.5, 0.6],
-        "frill" => [0.18, 0.3],
-        "ram" => [0.2, 0.3],
+        "frill" => [0.3, 0.42],
+        "ram" => [0.12, 0.22],
         _ => [0.15, 0.3],
     };
     // Eyes on stalks or bumps hold the top of the head, so ears start below.
@@ -185,7 +188,7 @@ pub fn build_ears(g: &mut Toy) {
                 }
             }
             // A ram's horn: one long tube that curls round on itself.
-            "ram" => specs.push(EarSpecT {
+            _ => specs.push(EarSpecT {
                 n: Some(34),
                 horn: true,
                 ..spec(
@@ -195,21 +198,6 @@ pub fn build_ears(g: &mut Toy) {
                     3.5 + bend * 0.7,
                 )
             }),
-            // A tuft of yarn loops a side.
-            _ => {
-                for d in [-0.5, 0.0, 0.5] {
-                    specs.push(EarSpecT {
-                        d_ang: d,
-                        make: "loop",
-                        ..spec(
-                            sz * if d == 0.0 { 0.4 } else { 0.32 },
-                            wd * 0.07,
-                            Box::new(|_| 1.0),
-                            0.0,
-                        )
-                    });
-                }
-            }
         }
         specs
     };
@@ -268,10 +256,10 @@ pub fn build_ears(g: &mut Toy) {
                 min_of(tbs.iter().map(|tb| sdist([e.x.abs(), e.y], &tb.outline))) / er(e.r)
             }))
         };
-    // Frills and tufts are fans: they are lifted only until they clear the
-    // tops of the eyes, and stand no nearer the middle than 0.45 of the
-    // face's half-width.
-    let fan = x.kind == "frill" || x.kind == "tufts";
+    // A frill is a fan: it is lifted only until it clears the tops of the
+    // eyes, and stands no nearer the middle than 0.45 of the face's
+    // half-width.
+    let fan = x.kind == "frill";
     let eye_top = min_of(f.eyes.iter().map(|e| e.y - e.r));
     let lift_to = if fan { eye_top } else { f.brow_y - f.r * 0.35 };
     let apart_x = if fan { f.fw * 0.45 } else { 0.0 };
@@ -347,7 +335,6 @@ pub fn build_ears(g: &mut Toy) {
         let sfx = if side > 0.0 { "r" } else { "l" };
         let root = if side > 0.0 { pt } else { flip_x(pt) };
         g.add_rig(rname, Some(parent), root);
-        let mut loops = Vec::new();
         for (i, sp) in specs.iter().enumerate() {
             let a0 = ang + sp.d_ang;
             let start = sub(pt, scl(dir_of(a0), sp.w * 0.55));
@@ -379,27 +366,6 @@ pub fn build_ears(g: &mut Toy) {
                     vein: true,
                     ..Part::default()
                 });
-                continue;
-            }
-            if sp.make == "loop" {
-                // One loop of yarn: out along one side of the spine, round
-                // its tip and back along the other.
-                let tip = tb.spine[tb.spine.len() - 1];
-                let b0 = tb.spine[0];
-                let mid = mixp(b0, tip, 0.55);
-                let nn = unit(perp(sub(tip, b0)));
-                let w = sp.l * 0.3;
-                loops.push(spline(
-                    &[
-                        add(b0, scl(nn, -w * 0.2)),
-                        add(mid, scl(nn, -w)),
-                        tip,
-                        add(mid, scl(nn, w)),
-                        add(b0, scl(nn, w * 0.2)),
-                    ],
-                    false,
-                    6,
-                ));
                 continue;
             }
             let tip_rows = if x.tip == Some("tipped") { 0.3 } else { 0.0 };
@@ -475,23 +441,6 @@ pub fn build_ears(g: &mut Toy) {
                     });
                 }
             }
-        }
-        // Tufts are the body's own yarn.
-        if !loops.is_empty() {
-            let outline = loops.concat();
-            g.parts.push(Part {
-                id: format!("ear-{sfx}"),
-                cls: "ear tuft",
-                group: "ears",
-                kind: "loops",
-                rig: rname,
-                layer: 70,
-                loops,
-                width: max(2.0, base * x.width * 0.05),
-                outline,
-                yarn: Some(g.pal.main.clone()),
-                ..Part::default()
-            });
         }
     }
     g.ear_spec = Some(EarSpec {
@@ -1649,49 +1598,6 @@ pub fn build_patches(g: &mut Toy) {
         let sh = g.arm_spec.expect("checked above").shoulder;
         let br = clamp(b.w * 0.07, 3.0, 5.5);
         g.joint_buttons = vec![(sh, br), (flip_x(sh), br)];
-    } else if pt.mend == "mend" {
-        let sd = pt.mend_side;
-        let y = match &head {
-            Some(h) => h.y_bot + (b.y_bot - h.y_bot) * 0.45,
-            None => b.y_top + b.h * 0.68,
-        };
-        let x = sd * b.half_w(y) * 0.5;
-        let half = clamp(b.w * 0.2, 6.0, 14.0);
-        let pts: Vec<Pt> = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
-            .iter()
-            .map(|q: &[f64; 2]| {
-                add(
-                    [x, y],
-                    rot([q[0] * half, q[1] * half * 0.9], sd * 0.18, None),
-                )
-            })
-            .collect();
-        // On a one-piece toy the patch keeps below the face.
-        let clear = head.is_some()
-            || y - half * 1.1
-                > max(
-                    f.mouth.y + f.mouth.w * 0.6,
-                    f.cheeks.map_or(0.0, |c| c.y + c.ry),
-                ) + 3.0;
-        if clear && pts.iter().all(|q| sdist(*q, &b.outline) < -2.0) {
-            g.parts.push(Part {
-                id: "mend".into(),
-                cls: "mend patches",
-                group: "patches",
-                kind: "felt",
-                rig: "root",
-                layer: 34,
-                outline: pts,
-                felt: Some(if pal.accent.y > 0.75 {
-                    hsl(pal.main.h + 160.0, 45.0, 74.0)
-                } else {
-                    pal.accent.hex
-                }),
-                felt_edge: Some(pal.main.deep),
-                cross_stitch: true,
-                ..Part::default()
-            });
-        }
     } else if pt.mend == "heart" {
         // A small felt heart sewn on the chest, a little to one side.
         let sd = pt.mend_side;
