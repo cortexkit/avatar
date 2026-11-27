@@ -4,12 +4,13 @@
 //!
 //! ```text
 //! cargo run --release -p cortexkit-avatar-3d-wgpu --example review_sheets -- \
-//!     --out DIR [--only random,moods,reactions,views,plaza]
+//!     --out DIR [--only random,random-509,moods,reactions,views,plaza]
 //! ```
 //!
 //! The sheets:
 //!
-//! - `random`: sixteen robots, genomes 0 to 15 of [`RANDOM_SEED`], neutral,
+//! - `random` and `random-509`: sixteen robots each, genomes 0 to 15 of
+//!   the two [`RANDOM_SEEDS`], neutral,
 //!   from the stage's three-quarter view;
 //! - `moods`: the stated robot, genome [`STATED`] of its seed, in the seven
 //!   moods in `MOODS` order;
@@ -19,9 +20,10 @@
 //!   three quarters of the way from the peak to the end;
 //! - `views`: the stated robot neutral from the three-quarter, front, side
 //!   and back views, all at the stage camera's distance;
-//! - `plaza`: 33 robots, genomes 0 to 32 of [`PLAZA_SEED`], neutral, in
-//!   rows of six from the front row back, labelled "01" to "33" at their
-//!   `headTop` anchors.
+//! - `plaza`: 33 robots, genomes 0 to 32 of [`PLAZA_SEED`], neutral,
+//!   placed by `avatar_3d_wgpu::plaza::layout` in staggered rows so no robot
+//!   covers another's face and no label touches another label or robot,
+//!   labelled "01" to "33" at their `headTop` anchors.
 //!
 //! Genome `g` of seed `s` is derived as the `random_sheet` example derives
 //! it. Every frame is posed with the idle layer off, so a still shows the
@@ -34,16 +36,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use avatar_3d::motion::math::{cos, sin};
 use avatar_3d::motion::{Actor, Pose, REACTIONS};
 use avatar_3d::robot::{build, Robot};
-use avatar_3d_wgpu::view::{framing, View};
-use avatar_3d_wgpu::{frame, GpuRobot, Image, Item, Renderer, Scene};
+use avatar_3d_wgpu::view::View;
+use avatar_3d_wgpu::{plaza, GpuRobot, Image, Item, Renderer, Scene};
 use avatar_small_robots::{mood_name, Mood, Rgb, GENOME_LEN, MOODS};
 use sheet::Sheet;
 
-/// The seed of the sixteen random robots.
-const RANDOM_SEED: u64 = 501;
+/// The seeds of the sixteen random robots: the main sheet and a second
+/// one, so a fix is seen on robots it was not tuned on.
+const RANDOM_SEEDS: [u64; 2] = [501, 509];
 /// The stated robot of the moods, reactions and views sheets: a seed and
 /// a genome index.
 const STATED: (u64, u64) = (501, 14);
@@ -59,12 +61,6 @@ const BACKGROUND: Rgb = Rgb {
 };
 /// The plaza's frame.
 const PLAZA_SIZE: (u32, u32) = (1600, 1000);
-/// The plaza's view, azimuth and elevation in degrees: straight on, so
-/// rows stay level across the frame, and from high enough that each row
-/// shows over the one in front.
-const PLAZA_VIEW: (f64, f64) = (0.0, 35.0);
-/// Robots in each plaza row.
-const PLAZA_COLUMNS: usize = 6;
 
 /// Genome `index` of the sheet drawn with `seed`, as the `random_sheet`
 /// example derives it: the BLAKE3 extendable output of the text `avatar
@@ -162,11 +158,11 @@ fn label(sheet: &mut Sheet, cell: usize, column: u32, row: u32) {
     sheet.label(&format!("{cell:02}"), i64::from(x) + 2, i64::from(y) + 2, 2);
 }
 
-fn random_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
+fn random_sheet(renderer: &Renderer, seed: u64) -> (Sheet, Vec<Row>) {
     let mut sheet = Sheet::grid(4, 4, FRAME, FRAME);
     let mut rows = Vec::new();
     for i in 0..16_u32 {
-        let b = Built::new(renderer, RANDOM_SEED, u64::from(i));
+        let b = Built::new(renderer, seed, u64::from(i));
         let pose = Actor::new(&b.robot, Mood::Neutral)
             .without_idle()
             .evaluate(0.0);
@@ -277,18 +273,6 @@ fn views_sheet(renderer: &Renderer, b: &Built) -> (Sheet, Vec<Row>) {
     (sheet, rows)
 }
 
-/// The rest bounds of a robot's parts.
-fn bounds(robot: &Robot) -> ([f64; 3], [f64; 3]) {
-    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for p in robot.parts.iter().flat_map(|p| p.mesh.positions.iter()) {
-        for k in 0..3 {
-            lo[k] = lo[k].min(p[k]);
-            hi[k] = hi[k].max(p[k]);
-        }
-    }
-    (lo, hi)
-}
-
 fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
     let built: Vec<Built> = (0..33)
         .map(|i| Built::new(renderer, PLAZA_SEED, i))
@@ -301,69 +285,21 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
                 .evaluate(0.0)
         })
         .collect();
-    // Every robot gets the same cell: as wide as the widest robot, and deep
-    // enough that a robot of the median height clears the row in front of
-    // it in the view, and never less than the deepest robot plus a gap. A
-    // short last row is centred.
-    let boxes: Vec<_> = built.iter().map(|b| bounds(&b.robot)).collect();
-    let pitch_x = boxes
-        .iter()
-        .map(|(lo, hi)| hi[0] - lo[0])
-        .fold(0.0, f64::max)
-        + 0.25;
-    let mut heights: Vec<f64> = boxes.iter().map(|(_, hi)| hi[1]).collect();
-    heights.sort_by(f64::total_cmp);
-    let median = heights[heights.len() / 2];
-    let el = PLAZA_VIEW.1 * std::f64::consts::PI / 180.0;
-    let pitch_z = (boxes
-        .iter()
-        .map(|(lo, hi)| hi[2] - lo[2])
-        .fold(0.0, f64::max)
-        + 0.6)
-        .max(0.9 * median * cos(el) / sin(el));
-    let offsets: Vec<[f64; 3]> = (0..built.len())
-        .map(|i| {
-            let row = i / PLAZA_COLUMNS;
-            let in_row = PLAZA_COLUMNS.min(built.len() - row * PLAZA_COLUMNS);
-            let column = (i % PLAZA_COLUMNS) as f64 - 0.5 * (in_row as f64 - 1.0);
-            let (lo, hi) = boxes[i];
-            [
-                column * pitch_x - 0.5 * (lo[0] + hi[0]),
-                0.0,
-                -(row as f64) * pitch_z - 0.5 * (lo[2] + hi[2]),
-            ]
-        })
-        .collect();
-    let anchors: Vec<[f64; 3]> = built
+    let prints: Vec<_> = built
         .iter()
         .zip(&poses)
-        .zip(&offsets)
-        .map(|((b, pose), o)| {
-            let a = frame::anchor(&b.robot, pose, "headTop").expect("every robot has headTop");
-            [a[0] + o[0], a[1] + o[1], a[2] + o[2]]
-        })
+        .map(|(b, pose)| plaza::footprint(&b.robot, pose))
         .collect();
-    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for (i, (blo, bhi)) in boxes.iter().enumerate() {
-        for k in 0..3 {
-            lo[k] = lo[k].min(blo[k] + offsets[i][k]).min(anchors[i][k]);
-            hi[k] = hi[k].max(bhi[k] + offsets[i][k]).max(anchors[i][k]);
-        }
-    }
     let (width, height) = PLAZA_SIZE;
-    let view = framing(
-        lo,
-        hi,
-        PLAZA_VIEW.0,
-        PLAZA_VIEW.1,
-        20.0,
-        f64::from(width) / f64::from(height),
-        0.9,
-    );
+    let placed = plaza::layout(&prints, width, height);
+    let clashes = plaza::clashes(&placed, &prints);
+    if !clashes.is_empty() {
+        eprintln!("review_sheets: the plaza breaks its rules: {clashes:?}");
+    }
     let items: Vec<Item> = built
         .iter()
         .zip(&poses)
-        .zip(&offsets)
+        .zip(&placed.offsets)
         .map(|((b, pose), o)| Item {
             robot: &b.robot,
             gpu: &b.gpu,
@@ -373,7 +309,7 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
         .collect();
     let image = renderer
         .render(&Scene {
-            view,
+            view: placed.view,
             width,
             height,
             background: BACKGROUND,
@@ -382,17 +318,21 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
         .unwrap_or_else(|e| panic!("render the plaza: {e}"));
     let mut sheet = Sheet::of(&image);
     let mut rows = Vec::new();
+    let scale = placed.label_scale;
     for (i, b) in built.iter().enumerate() {
         let text = format!("{:02}", i + 1);
-        let [x, y] = view
-            .to_screen(anchors[i], width, height)
+        let o = placed.offsets[i];
+        let top = prints[i].head_top;
+        let [x, y] = placed
+            .view
+            .to_screen([top[0] + o[0], top[1] + o[1], top[2] + o[2]], width, height)
             .expect("every anchor is in front of the camera");
-        let (w, h) = Sheet::label_size(&text, 3);
+        let (w, h) = Sheet::label_size(&text, scale);
         sheet.label(
             &text,
             x.round() as i64 - i64::from(w / 2),
             y.round() as i64 - i64::from(h),
-            3,
+            scale,
         );
         rows.push(Row {
             cell: text,
@@ -426,7 +366,9 @@ fn main() -> ExitCode {
         }
     }
     let Some(out) = out else {
-        eprintln!("usage: review_sheets --out DIR [--only random,moods,reactions,views,plaza]");
+        eprintln!(
+            "usage: review_sheets --out DIR [--only random,random-509,moods,reactions,views,plaza]"
+        );
         return ExitCode::FAILURE;
     };
     if let Err(e) = fs::create_dir_all(&out) {
@@ -450,7 +392,10 @@ fn main() -> ExitCode {
         .then(|| Built::new(&renderer, STATED.0, STATED.1));
     let mut sheets: Vec<(&str, (Sheet, Vec<Row>))> = Vec::new();
     if wanted("random") {
-        sheets.push(("random", random_sheet(&renderer)));
+        sheets.push(("random", random_sheet(&renderer, RANDOM_SEEDS[0])));
+    }
+    if wanted("random-509") {
+        sheets.push(("random-509", random_sheet(&renderer, RANDOM_SEEDS[1])));
     }
     if let Some(b) = &stated {
         if wanted("moods") {

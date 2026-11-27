@@ -83,7 +83,8 @@ struct VertexIn {
     @location(2) projection: vec2<f32>,
     @location(3) joints: vec4<u32>,
     @location(4) weights: vec4<f32>,
-    // Material, flags, face slot (0 for none) and marks texture.
+    // Material, flags, face slot (0 for none) and the texture shaded like
+    // the paint (marks or a chest drawing), or NO_TEXTURE.
     @location(5) info: vec4<u32>,
 };
 
@@ -140,9 +141,10 @@ fn fs_robot(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) v
     let flags = in.info.y;
     let fade = smoothstep(FADE.x, FADE.y, in.rest_nz);
 
-    // Paint, then the hull's marks over it, shaded together.
+    // Paint, then the marks or chest drawing over it, shaded together. The
+    // vertex carries that texture only on triangles its binding admits.
     var base = m.base.rgb;
-    if ((flags & FLAG_FACING_FRONT) != 0u && in.info.w != NO_TEXTURE) {
+    if (in.info.w != NO_TEXTURE) {
         let t = layer_sample(in.info.w, in.projection, dx, dy) * fade;
         base = t.rgb + base * (1.0 - t.a);
     }

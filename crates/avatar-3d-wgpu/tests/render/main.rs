@@ -5,6 +5,7 @@
 mod faces;
 mod genomes;
 mod gpu;
+mod plaza;
 mod shader;
 mod upload;
 mod view;

@@ -819,10 +819,12 @@ impl Renderer {
 ///
 /// Each vertex carries its position, normal and projection coordinate in
 /// f32, its joints and weights (a rigid part's bone with weight one), and
-/// its material, flags, face slot and marks texture. The flags say
+/// its material, flags, face slot and shaded texture. The flags say
 /// whether the triangle is tagged textured front and whether its outward
 /// normal at rest has z > 0. A vertex shared by triangles with different
 /// flags is split, so every triangle's flags hold over its whole surface.
+/// The shaded texture (marks or a chest drawing) is set only on triangles
+/// its binding's surface admits.
 pub fn vertex_data(robot: &Robot) -> (Vec<u8>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
@@ -830,7 +832,8 @@ pub fn vertex_data(robot: &Robot) -> (Vec<u8>, Vec<u32>) {
     for (index, part) in robot.parts.iter().enumerate() {
         let mesh = &part.mesh;
         let slot = frame::face_slot(robot, index);
-        let marks = frame::marks(robot, index).map_or(NO_TEXTURE, |i| i as u32);
+        let marks =
+            frame::marks(robot, index).map(|i| (i as u32, robot.textures[i].binding.surface));
         // The new index of each original vertex under each of the four
         // flag combinations.
         let mut split = vec![[u32::MAX; 4]; mesh.positions.len()];
@@ -838,6 +841,14 @@ pub fn vertex_data(robot: &Robot) -> (Vec<u8>, Vec<u32>) {
             let [a, b, c] = tri.map(|i| mesh.positions[i as usize]);
             let facing = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0.0;
             let flags = u32::from(mesh.textured_front[t]) | u32::from(facing) << 1;
+            let shaded = match marks {
+                Some((i, surface))
+                    if frame::surface_allows(surface, mesh.textured_front[t], facing) =>
+                {
+                    i
+                }
+                _ => NO_TEXTURE,
+            };
             for &v in tri {
                 let entry = &mut split[v as usize][flags as usize];
                 if *entry == u32::MAX {
@@ -867,7 +878,7 @@ pub fn vertex_data(robot: &Robot) -> (Vec<u8>, Vec<u32>) {
                     for w in weights {
                         vertices.extend_from_slice(&(w as f32).to_le_bytes());
                     }
-                    for i in [part.material as u32, flags, slot, marks] {
+                    for i in [part.material as u32, flags, slot, shaded] {
                         vertices.extend_from_slice(&i.to_le_bytes());
                     }
                 }

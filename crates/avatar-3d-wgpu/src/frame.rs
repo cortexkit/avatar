@@ -7,7 +7,7 @@
 
 use avatar_3d::motion::math::{m_apply, m_mul, M4};
 use avatar_3d::motion::Pose;
-use avatar_3d::robot::{Emission, LightKind, Robot, TextureContent};
+use avatar_3d::robot::{Emission, LightKind, Robot, TextureContent, TextureSurface};
 use avatar_small_robots::Rgb;
 
 /// The blink amount from which the blinking face and stalk-eye textures
@@ -71,12 +71,27 @@ pub fn face_slot(robot: &Robot, part: usize) -> u32 {
         .unwrap_or(0)
 }
 
-/// The marks texture lying on a part, if any.
+/// The texture shaded like the paint on a part, if any: a hull's marks, or
+/// a chest plate's drawing.
 pub fn marks(robot: &Robot, part: usize) -> Option<usize> {
-    robot
-        .textures
-        .iter()
-        .position(|t| t.binding.part == part && t.binding.content == TextureContent::Marks)
+    robot.textures.iter().position(|t| {
+        t.binding.part == part
+            && matches!(
+                t.binding.content,
+                TextureContent::Marks | TextureContent::Chest
+            )
+    })
+}
+
+/// Whether a triangle may show a texture bound to its part, from the
+/// triangle's textured-front tag and whether its outward normal at rest
+/// has z > 0.
+pub fn surface_allows(surface: TextureSurface, textured_front: bool, facing_front: bool) -> bool {
+    match surface {
+        TextureSurface::TexturedFront => textured_front,
+        TextureSurface::FacingFront => facing_front,
+        _ => false,
+    }
 }
 
 /// Each bone's skin matrix for a pose, `M_j · R_j⁻¹`: it carries a vertex

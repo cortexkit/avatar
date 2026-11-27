@@ -11,8 +11,9 @@
 //!   sky term, a fill, darkening at grazing angles and a highlight per
 //!   finish, with no tone mapping;
 //! - the ground shadow, a soft disc under each robot;
-//! - offscreen frames of one robot or of many (the plaza), read back as
-//!   RGBA8, with anchors projected to pixels for labels ([`view`]).
+//! - offscreen frames of one robot or of many (the plaza, laid out by
+//!   [`plaza`] so no robot hides another's face), read back as RGBA8, with
+//!   anchors projected to pixels for labels ([`view`]).
 //!
 //! # Colour
 //!
@@ -34,6 +35,7 @@
 pub mod colour;
 pub mod frame;
 mod gpu;
+pub mod plaza;
 pub mod upload;
 pub mod view;
 
