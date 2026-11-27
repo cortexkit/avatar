@@ -3,11 +3,11 @@
 
 use avatar_svg::{Rgb, StrokeJoin};
 
-use crate::body::Body;
+use crate::body::{Body, Kind, Weld};
 use crate::creature::Creature;
 use crate::geometry::{
-    clip_half, curve, curve_v, disc, ellipse_poly, group, oval, path_item, polygon, pt, ptt, shape,
-    Node, PathD, Pt, Style,
+    clip_half, curve, curve_v, disc, ellipse_poly, group, inside, oval, path_item, polygon, pt,
+    ptt, shape, Node, PathD, Pt, Style,
 };
 use crate::maths::{clamp, cos, hyp, max, min, rot, sin, unit, DEG, DOWN, TAU, UP, V};
 use crate::mood::{Brows, Mood, MouthMood, BLOCKED, HAPPY, SAD, SLEEPY, WORKING};
@@ -22,6 +22,8 @@ pub const MOUTHS: [&str; 10] = [
 ];
 const BROWS: [&str; 4] = ["none", "thin", "thick", "leaf"];
 const CHEEKS: [&str; 3] = ["blush", "freckles", "none"];
+/// The resting brow's shape, as [`brow_line`] takes it.
+const REST_BROW: [f64; 4] = [0.42, 0.0, 0.08, 0.05];
 
 /// One eye: where it is, how large against the others, and which side.
 #[derive(Clone, Copy, Debug)]
@@ -52,13 +54,13 @@ pub(crate) struct Face {
     pub(crate) cheek: Option<V>,
 }
 
-pub(crate) fn build_face(r: &Reader<'_>, b: &Body) -> Face {
+pub(crate) fn build_face(r: &Reader<'_>, b: &Body, lobes: &[[V; 4]]) -> Face {
     let o = dna::FACE;
     let mut plan = EYE_PLANS[r.pick(o, &[22, 2, 2])];
     let style = EYE_STYLES[r.pick(o + 1, &[4, 5, 3, 3, 2, 2])];
     let pupil = r.lin(o + 6, 0.5, 0.68);
     let mouth = MOUTHS[r.pick(o + 8, &[5, 4, 4, 3, 3, 3, 2, 3, 2, 2])];
-    let brow = BROWS[r.pick(o + 11, &[9, 3, 2, 2])];
+    let mut brow = BROWS[r.pick(o + 11, &[9, 3, 2, 2])];
     let cheeks = CHEEKS[r.pick(o + 12, &[6, 2, 2])];
     // Which eye is the smaller one, and by how much.
     let wonk = r.sgn(o + 14);
@@ -71,6 +73,12 @@ pub(crate) fn build_face(r: &Reader<'_>, b: &Body) -> Face {
     let drop = r.lin(o + 10, 0.3, 0.75);
     let wide = r.lin(o + 9, 0.75, 1.3);
     let [y0, y1, pref] = b.eye;
+    // A gourd with its face on the lower lobe has its brows just under the
+    // waist (the fifth point of its outline), where a pair of leaves reads
+    // as the brim of a hat: its brows are lines.
+    if brow == "leaf" && b.kind == Kind::Gourd && b.half[4].y < pref {
+        brow = "thick";
+    }
     let at = clamp(pref + r.sgn(o + 5) * (y1 - y0) * 0.3, y0, y1);
     let kx = 1.0 / aspect.sqrt();
     let ky = aspect.sqrt();
@@ -111,6 +119,40 @@ pub(crate) fn build_face(r: &Reader<'_>, b: &Body) -> Face {
     }
     if !found {
         radius = 6.5;
+    }
+    // The brows at rest lie on the body too: a brow above the outline of
+    // the head reads as the brim of a hat or a headband. The eye line moves
+    // to where they do, if the eyes still fit there; otherwise the face has
+    // no brows at rest.
+    let brow_fits = |ey: f64, r: f64| {
+        let ex = if plan == "one" { 0.0 } else { gap * r };
+        let side = if plan == "one" { 0.0 } else { 1.0 };
+        let line = brow_line(
+            ex,
+            ey,
+            r * kx * big,
+            r * ky * big,
+            r,
+            side,
+            REST_BROW,
+            f64::NEG_INFINITY,
+            0.0,
+        );
+        brow_on_body(b, lobes, &line, brow)
+    };
+    if brow != "none" && !brow_fits(ey, radius) {
+        let mut moved = false;
+        for k in 0..=12_u32 {
+            let y = at + (if k % 2 == 1 { 1.0 } else { -1.0 }) * (f64::from(k) / 2.0).ceil() * 3.0;
+            if y >= y0 - 6.0 && y <= y1 + 6.0 && fits(y, radius) && brow_fits(y, radius) {
+                ey = y;
+                moved = true;
+                break;
+            }
+        }
+        if !moved {
+            brow = "none";
+        }
     }
     let rad = radius;
     let rx = rad * kx * big;
@@ -190,6 +232,85 @@ pub(crate) fn build_face(r: &Reader<'_>, b: &Body) -> Face {
         eyes,
         cheek,
     }
+}
+
+/// One brow over an eye at (`x`, `y`) with radii `a` and `b`, in a face of
+/// eye radius `r`: its inner end, its middle and its outer end. `shape` is
+/// how far above the eye the brow sits, how far its inner end drops, its
+/// outer end drops and its middle rises, in eye radii. The inner end comes
+/// no nearer the middle of the face than `clear`, so that the brows stop
+/// short of a third eye between them instead of running through it. `drop`
+/// lowers the whole brow.
+#[allow(clippy::too_many_arguments)]
+fn brow_line(
+    x: f64,
+    y: f64,
+    a: f64,
+    b: f64,
+    r: f64,
+    side: f64,
+    shape: [f64; 4],
+    clear: f64,
+    drop: f64,
+) -> [V; 3] {
+    let [up, inner, outer, arch] = shape;
+    let s = if side != 0.0 { side } else { 1.0 };
+    let slant = if side != 0.0 { 1.0 } else { 0.0 };
+    let half = a * 0.95;
+    let by = y - b - r * up + drop;
+    let mut pin = [x - s * half, by + r * inner * slant];
+    let pout = [x + s * half, by + r * outer * slant];
+    let mut mid = x;
+    if s * pin[0] < clear {
+        pin[0] = s * clear;
+        mid = (pin[0] + pout[0]) / 2.0;
+    }
+    let pmid = [mid, by - r * arch + r * (inner + outer) * 0.5 * slant];
+    [pin, pmid, pout]
+}
+
+/// Whether a brow drawn along `line` lies on the body, clear of its
+/// outline: points along it, each with the room the brow takes there, lie
+/// inside the body, whatever is welded to it and the lobes of a rosette as
+/// they lie at rest. A leaf brow is wider than a line in its middle and
+/// reaches a little past its outer end.
+fn brow_on_body(b: &Body, lobes: &[[V; 4]], line: &[V; 3], brow: &str) -> bool {
+    let [pin, pmid, pout] = *line;
+    let between = |p: V, q: V| [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0];
+    let mut marks: Vec<(V, f64)> = Vec::new();
+    if brow == "leaf" {
+        let l = hyp(pout[0] - pin[0], pout[1] - pin[1]);
+        let v = unit(pout[0] - pin[0], pout[1] - pin[1]);
+        for (t, k) in [
+            (0.0, 0.0),
+            (0.25, 0.14),
+            (0.5, 0.2),
+            (0.75, 0.14),
+            (1.0, 0.0),
+        ] {
+            let at = l * 1.08 * t;
+            marks.push(([pin[0] + v[0] * at, pin[1] + v[1] * at], 2.0 + l * k));
+        }
+    } else {
+        for q in [pin, between(pin, pmid), pmid, between(pmid, pout), pout] {
+            marks.push((q, 3.0));
+        }
+    }
+    let has = |x: f64, y: f64| {
+        inside(&b.poly, x, y)
+            || b.welds.iter().any(|w| match w {
+                Weld::Disc(d) => hyp(x - d[0], y - d[1]) < d[2],
+                Weld::Axis(_) => false,
+            })
+            || lobes.iter().any(|q| inside(q, x, y))
+    };
+    marks.iter().all(|&(q, m)| {
+        has(q[0], q[1])
+            && (0..8).all(|k| {
+                let a = TAU * f64::from(k) / 8.0;
+                has(q[0] + m * cos(a), q[1] + m * sin(a))
+            })
+    })
 }
 
 /// One mouth. `w` is its half-width, `d` its unit of depth, `y` the height
@@ -555,22 +676,31 @@ pub(crate) fn face_items(c: &Creature, m: &Mood) -> Vec<Node> {
             other => Some(other),
         };
         if let (Some(kind), true) = (kind, e.k >= 0.7) {
-            // How far above the eye the brow sits, how far its inner end
-            // drops, its outer end drops and its middle rises, in eye radii.
-            let [up, inner, outer, arch] = match kind {
-                Brows::Rest | Brows::None => [0.42, 0.0, 0.08, 0.05],
+            let shape = match kind {
+                Brows::Rest | Brows::None => REST_BROW,
                 Brows::Focus => [0.3, 0.14, 0.0, 0.0],
                 Brows::Raised => [0.74, 0.0, 0.05, 0.2],
                 Brows::Knit => [0.36, 0.5, -0.12, 0.0],
                 Brows::Worry => [0.5, -0.42, 0.14, 0.04],
             };
-            let s = if side != 0.0 { side } else { 1.0 };
-            let slant = if side != 0.0 { 1.0 } else { 0.0 };
-            let half = a * 0.95;
-            let by = y - b - r * up;
-            let pin = [x - s * half, by + r * inner * slant];
-            let pout = [x + s * half, by + r * outer * slant];
-            let pmid = [x, by - r * arch + r * (inner + outer) * 0.5 * slant];
+            // A third eye sits between the brows; they stop short of it,
+            // clear of its outline.
+            let clear = if f.plan == "three" {
+                f.rx * 0.6 * m.eye * 1.2 + 2.5
+            } else {
+                f64::NEG_INFINITY
+            };
+            // A mood's brows may rise off the head; they come down onto it,
+            // but no lower than a little above the eye.
+            let room = max(0.0, r * (shape[0] - 0.15));
+            let lobes = c.lobes.as_ref().map_or(&[][..], |l| l.quads.as_slice());
+            let mut drop = 0.0;
+            let mut line = brow_line(x, y, a, b, r, side, shape, clear, drop);
+            while drop < room && !brow_on_body(&c.b, lobes, &line, f.brow) {
+                drop = min(room, drop + 1.0);
+                line = brow_line(x, y, a, b, r, side, shape, clear, drop);
+            }
+            let [pin, pmid, pout] = line;
             if f.brow == "leaf" {
                 let l = hyp(pout[0] - pin[0], pout[1] - pin[1]);
                 let v = unit(pout[0] - pin[0], pout[1] - pin[1]);

@@ -10,8 +10,8 @@ use crate::geometry::{
 };
 use crate::growth::{build_habit, build_rules, build_sites, interpret, Habit, Site};
 use crate::limits::{
-    blooms_too_close, bunches_too_close, hold_out, limit_bunches, limit_ears, limit_held,
-    limit_reach,
+    blooms_beside_face, blooms_too_close, bunches_too_close, hold_out, limit_bunches, limit_ears,
+    limit_held, limit_reach,
 };
 use crate::maths::{clamp, max, min, r3, rot, DEG, V};
 use crate::mood::{build_temper, mood_of, Mood, Temper, MOODS, NEUTRAL};
@@ -99,22 +99,34 @@ enum Again {
     Shy,
     /// With arms that bear single leaves.
     Lone,
+    /// With a pair that bears neither flowers nor fruit.
+    Bare,
 }
 
-fn build(bytes: &[u8; GENOME_LEN], shy: bool, lone: bool) -> Result<Creature, Again> {
+/// Which plainer forms of the pairs a build draws, set one by one as earlier
+/// builds of the same genome stop on an `Again`.
+#[derive(Clone, Copy, Default)]
+struct Plain {
+    shy: bool,
+    lone: bool,
+    bare: bool,
+}
+
+fn build(bytes: &[u8; GENOME_LEN], plain: Plain) -> Result<Creature, Again> {
+    let Plain { shy, lone, bare } = plain;
     let r = Reader::new(bytes);
     let mut p = build_palette(&r);
     let b = build_body(&r);
     let g = build_rules(&r);
     let hb = build_habit(&r);
     let t = build_temper(&r);
-    let f = build_face(&r, &b);
     let lobes = (b.kind == crate::body::Kind::Rosette).then(|| {
         let mut lobes = build_lobes(&r);
         lobes.quads = lobe_quads(&lobes, b.w, b.top, b.h);
         lobes
     });
-    let s = build_sites(&r, &b, &f, &g, shy, lone);
+    let f = build_face(&r, &b, lobes.as_ref().map_or(&[], |x| x.quads.as_slice()));
+    let s = build_sites(&r, &b, &f, &g, shy, lone, bare);
     // Which organs the plant bears decides which genes for their forms and
     // colours are read at all.
     let grown: String = s.iter().map(|site| site.string.as_str()).collect();
@@ -177,6 +189,10 @@ fn build(bytes: &[u8; GENOME_LEN], shy: bool, lone: bool) -> Result<Creature, Ag
             return Err(Again::Lone);
         }
     }
+    // Whatever the pair holds is judged once more where it ends up.
+    if !bare && blooms_beside_face(&c) {
+        return Err(Again::Bare);
+    }
     let mut all: Option<Bx> = None;
     for index in 0..MOODS.len() {
         let pose = pose_of(&c, index);
@@ -220,21 +236,22 @@ fn build(bytes: &[u8; GENOME_LEN], shy: bool, lone: bool) -> Result<Creature, Ag
     Ok(c)
 }
 
-/// Builds a creature, building it again with plainer pairs when a flower or
-/// a bunch sat too close beside the head.
+/// Builds a creature, building it again with plainer pairs when a flower, a
+/// fruit or a bunch sat too close beside the head.
 pub(crate) fn creature(bytes: &[u8; GENOME_LEN]) -> Creature {
-    let mut shy = false;
-    let mut lone = false;
+    let mut plain = Plain::default();
     loop {
-        match build(bytes, shy, lone) {
+        match build(bytes, plain) {
             Ok(c) => return c,
-            Err(Again::Shy) => shy = true,
+            Err(Again::Shy) => plain.shy = true,
             // The single leaves are a new pair: the flower at its tip is
             // judged afresh.
             Err(Again::Lone) => {
-                lone = true;
-                shy = false;
+                plain.lone = true;
+                plain.shy = false;
+                plain.bare = false;
             }
+            Err(Again::Bare) => plain.bare = true,
         }
     }
 }

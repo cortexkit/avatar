@@ -253,6 +253,15 @@ pub(crate) fn flowerless(s: &str) -> String {
     }
 }
 
+/// A leaf wherever the shoot bore a fruit.
+fn fruitless(s: &str) -> String {
+    if s.contains('K') {
+        single(&s.replace('K', "L"))
+    } else {
+        s.to_owned()
+    }
+}
+
 /// The same stem bearing leaves only: its lowest side growth as a leaf, and
 /// a leaf at its tip.
 fn tipped(s: &str) -> String {
@@ -489,6 +498,8 @@ fn grow(g: &Rules, site: &mut Site) -> String {
 }
 
 /// Lays out the shoots: where they grow and what the rules make of them.
+/// `shy` takes the flowers off the pair, `bare` its flowers and fruit, and
+/// `lone` leaves the arms single leaves.
 pub(crate) fn build_sites(
     r: &Reader<'_>,
     b: &Body,
@@ -496,6 +507,7 @@ pub(crate) fn build_sites(
     g: &Rules,
     shy: bool,
     lone: bool,
+    bare: bool,
 ) -> Vec<Site> {
     let o = dna::PLAN;
     let k = crate::body::spec(b.kind);
@@ -670,9 +682,16 @@ pub(crate) fn build_sites(
         }
     }
     // A tail on one side only: a runner with a plantlet, a tendril, or a
-    // flowering spike.
+    // flowering spike. It leaves the flank low down, where stilt and tripod
+    // roots leave it too: behind such a leg the tail would show only as a
+    // sprig lying loose on the ground, so a creature on those roots has
+    // none.
     let tail = r.pick(o + 20, &[8, 1, 1, 1]);
-    if tail != 0 {
+    let flank_legs = matches!(
+        crate::roots::ROOT_LAYOUTS[r.pick(dna::ROOTS, &k.roots)],
+        "stilt" | "tripod"
+    );
+    if tail != 0 && !flank_legs {
         let side = if r.chance(o + 21, 0.5) { 1.0 } else { -1.0 };
         let at = outline_at(b, b.top + b.h * 0.8);
         let mut s = Site::new(
@@ -757,9 +776,16 @@ pub(crate) fn build_sites(
         };
     } else if let (Some(cr), Some(fl)) = (crown, flanks) {
         if count(&sites[cr].string, "U") > 0 && count(&sites[fl].string, "U") > 0 {
-            let bare = if r.chance(o + 3, 0.5) { fl } else { cr };
-            sites[bare].string = flowerless(&sites[bare].string);
+            let plain = if r.chance(o + 3, 0.5) { fl } else { cr };
+            sites[plain].string = flowerless(&sites[plain].string);
         }
+    }
+    if let (true, Some(fl)) = (bare, flanks) {
+        sites[fl].string = if sites[fl].cactus {
+            sites[fl].string.replace(['U', 'K'], "")
+        } else {
+            fruitless(&flowerless(&sites[fl].string))
+        };
     }
     // The two of a pair are the same shoot mirrored, then told apart.
     for s in sites.iter_mut() {
@@ -1035,6 +1061,9 @@ pub(crate) fn interpret(hb: &Habit, site: &Site, m: f64, mood: &Mood) -> Grown {
         let from = axes[index].from;
         let base = match from {
             Some(parent) => min(axes[parent].pts[axes[index].from_at][2] * 0.74, hb.width),
+            // Above its flared foot, a fruit's stalk is at most half as wide
+            // as it is long: a short, broad one sits on the head like a cap.
+            None if site.stalk => min(site.w0 * (0.6 + 0.4 * scale), total * 0.5),
             None => site.w0 * if site.weld { 1.0 } else { 0.6 + 0.4 * scale },
         };
         let end = max(3.2, base * site.tip_k);

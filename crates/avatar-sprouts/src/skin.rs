@@ -260,15 +260,18 @@ pub(crate) fn build_skin(r: &Reader<'_>, b: &Body, p: &Palette) -> Skin {
                     ));
                 }
             } else {
-                // The nodes of a cane.
-                let n = 2.0 + more();
+                // The nodes of a cane: three at least, each a crease in from
+                // either side. A ring right round the body reads as a belt.
+                let n = 3.0 + more();
                 for j in 0..n as usize {
                     let y = y_at((j as f64 + 1.15) / (n + 1.1));
-                    items.push(curve(&ring(y, -0.99, 0.99, 3.5), line(1.8)));
-                    items.push(curve(
-                        &ring(y + 3.0, -0.99, 0.99, 3.5),
-                        Style::line(p.tone_up, 1.4, "sp-skin-line").op(0.8),
-                    ));
+                    for s in [1.0, -1.0] {
+                        items.push(curve(&ring(y, s * 0.99, s * 0.5, 3.5), line(1.8)));
+                        items.push(curve(
+                            &ring(y + 3.0, s * 0.99, s * 0.5, 3.5),
+                            Style::line(p.tone_up, 1.4, "sp-skin-line").op(0.8),
+                        ));
+                    }
                 }
             }
         }

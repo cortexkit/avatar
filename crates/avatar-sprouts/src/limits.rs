@@ -1,6 +1,7 @@
 //! Holding each shoot to what its place allows, so the body and its face
 //! keep their share of the picture, and the checks that build a creature
-//! again with plainer pairs when a flower or a bunch sits beside the eyes.
+//! again with plainer pairs when a flower, a fruit or a bunch sits beside
+//! the eyes.
 
 use std::collections::HashMap;
 
@@ -267,7 +268,7 @@ fn stem_outside(c: &Creature, g: &Grown, o: &Organ, body_only: bool) -> f64 {
 /// A small flower close beside the head at the height of the eyes reads as
 /// an earring. True when a flower of the pair falls short of the stem it
 /// must be held out on: the creature is then built again with a pair that
-/// bears no flowers.
+/// bears neither flowers nor fruit.
 pub(crate) fn blooms_too_close(c: &Creature) -> bool {
     let b = &c.b;
     let f = &c.f;
@@ -289,6 +290,45 @@ pub(crate) fn blooms_too_close(c: &Creature) -> bool {
                 let bx = organ_item(c, o, &m).bx().expect("an organ has a box");
                 let high = 1.0 + (f.ey - (bx[1] + bx[3]) / 2.0) / f.ry;
                 if high > 0.0 && stem_outside(c, &g, o, true) < 0.5 * b.w * min(1.0, high) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// A flower or a fruit that the pair holds against the side of the head,
+/// anywhere from the top of the eyes down to the chest, reads as an
+/// earring, an ear muff or a brooch however long the stem it grew on. True
+/// when one, as the creature stands at rest with its arms held out, comes
+/// within a sixth of the body's half-width of the head: the creature is
+/// then built again with a pair that bears neither flowers nor fruit.
+pub(crate) fn blooms_beside_face(c: &Creature) -> bool {
+    let b = &c.b;
+    let f = &c.f;
+    let m = c.mood(NEUTRAL);
+    let top = f.ey - f.ry;
+    let low = f.my + f.ry * 1.5;
+    for site in &c.s {
+        if !site.pair || count(&site.string, "UK") == 0 {
+            continue;
+        }
+        for side in [1.0, -1.0] {
+            let mut g = interpret(&c.hb, site, side, &m);
+            let late = site.late_on(side);
+            for i in 0..g.organs.len() {
+                if g.organs[i].kind != 'U' && g.organs[i].kind != 'K' {
+                    continue;
+                }
+                g.organs[i].late = late;
+                let bx = organ_item(c, &g.organs[i], &m)
+                    .bx()
+                    .expect("an organ has a box");
+                let cy = (bx[1] + bx[3]) / 2.0;
+                // The edge of the organ that faces the head.
+                let x = if side > 0.0 { bx[0] } else { bx[2] };
+                if cy > top && cy < low && head_gap(c, x, cy) < b.w / 6.0 {
                     return true;
                 }
             }
