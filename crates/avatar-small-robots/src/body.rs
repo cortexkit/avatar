@@ -27,6 +27,8 @@ pub const BODY_NAMES: [&str; 8] = [
 const BODY_WEIGHTS: [u32; 8] = [3, 5, 5, 4, 5, 3, 3, 4];
 /// How the head is joined on.
 pub const NECK_NAMES: [&str; 6] = ["flush", "collar", "piston", "bellows", "ball", "spring"];
+/// The pelvis shapes of a stack, in gene order.
+pub const PELVIS_NAMES: [&str; 4] = ["box", "soft", "ball", "bucket"];
 
 /// The hull a chassis of each kind is drawn as.
 fn body_hull(kind: &str) -> &'static str {
@@ -58,7 +60,7 @@ fn rounded(kind: &str) -> bool {
 #[derive(Clone, Debug)]
 pub(crate) struct Neck {
     pub(crate) kind: &'static str,
-    w: f64,
+    pub(crate) w: f64,
 }
 
 /// What the plan genes build before anything is plugged in. Heights are
@@ -197,7 +199,7 @@ pub(crate) fn build_core(r: &Reader) -> Core {
     );
     if stack {
         // A second, smaller segment under the chassis, with a waist joint between the two.
-        let pk = ["box", "soft", "ball", "bucket"][r.raw(ob + 3, 0, 2) as usize];
+        let pk = PELVIS_NAMES[r.raw(ob + 3, 0, 2) as usize];
         let hp = h * r.lin(ob + 3, 2, 2, 0.22, 0.3);
         let mut wp = wb * r.lin(ob + 3, 4, 2, 0.62, 0.94);
         if pk == "ball" {
@@ -356,21 +358,7 @@ pub(crate) fn body_draw(out: &mut Out, ctx: &Ctx, c: &Robot, md: &MoodSpec) {
     }
     out.group("rb-chassis-shell", &[], |out| {
         let mut over = out.sub();
-        if c.body_rivets {
-            let yt = c.body_top + 5.5;
-            let yb = c.body_y - 5.5;
-            rivets(
-                &mut over,
-                ctx,
-                &[
-                    [-b.hw_at(-b.h + 5.5) + 5.0, yt],
-                    [b.hw_at(-b.h + 5.5) - 5.0, yt],
-                    [-b.hw_at(-5.5) + 5.0, yb],
-                    [b.hw_at(-5.5) - 5.0, yb],
-                ],
-                &p.metal,
-            );
-        }
+        chassis_rivets(&mut over, ctx, c);
         shell(
             out,
             ctx,
@@ -383,6 +371,24 @@ pub(crate) fn body_draw(out: &mut Out, ctx: &Ctx, c: &Robot, md: &MoodSpec) {
         );
     });
     chest_draw(out, ctx, c, md);
+}
+
+pub(crate) fn chassis_rivet_points(c: &Robot) -> Option<[[f64; 2]; 4]> {
+    let b = c.body.as_ref().filter(|_| c.body_rivets)?;
+    let yt = c.body_top + 5.5;
+    let yb = c.body_y - 5.5;
+    Some([
+        [-b.hw_at(-b.h + 5.5) + 5.0, yt],
+        [b.hw_at(-b.h + 5.5) - 5.0, yt],
+        [-b.hw_at(-5.5) + 5.0, yb],
+        [b.hw_at(-5.5) - 5.0, yb],
+    ])
+}
+
+pub(crate) fn chassis_rivets(out: &mut Out, ctx: &Ctx, c: &Robot) {
+    if let Some(points) = chassis_rivet_points(c) {
+        rivets(out, ctx, &points, &c.p.metal);
+    }
 }
 
 pub(crate) fn head_draw(out: &mut Out, ctx: &Ctx, c: &Robot, md: &MoodSpec) {

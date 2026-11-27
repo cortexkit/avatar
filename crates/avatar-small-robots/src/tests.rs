@@ -61,7 +61,15 @@ fn corpus() -> Vec<Case> {
     cases
 }
 
-fn genome(project_id: &str) -> Box<[u8; GENOME_LEN]> {
+pub(crate) fn corpus_ids() -> impl Iterator<Item = String> {
+    corpus()
+        .into_iter()
+        .map(|case| case.project_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+}
+
+pub(crate) fn genome(project_id: &str) -> Box<[u8; GENOME_LEN]> {
     let path = vectors().join("wild").join(format!("{project_id}.hex"));
     let hex = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let hex = hex.trim();

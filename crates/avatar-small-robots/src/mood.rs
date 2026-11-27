@@ -214,6 +214,19 @@ pub(crate) struct MoodSpec {
 }
 
 impl MoodSpec {
+    pub(crate) fn blinking(&self) -> Self {
+        fn blink(mut eye: EyeSpec) -> EyeSpec {
+            eye.closed.get_or_insert(Shut::Line);
+            eye
+        }
+        Self {
+            eye: blink(self.eye),
+            eye_l: self.eye_l.map(blink),
+            eye_r: self.eye_r.map(blink),
+            ..self.clone()
+        }
+    }
+
     /// The eye spec for an eye on `side`.
     pub(crate) fn eye_for(&self, side: f64) -> EyeSpec {
         if side < 0.0 {

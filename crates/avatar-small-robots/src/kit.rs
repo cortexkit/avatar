@@ -188,11 +188,17 @@ pub(crate) fn blend(a: Rgb, b: Rgb, t: f64) -> Rgb {
 /// One material: its colour, a shade for the side turned from the light, a
 /// tint for the side turned to it, and the line round a piece of it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Material {
-    pub(crate) base: Rgb,
-    pub(crate) dark: Rgb,
-    pub(crate) lite: Rgb,
-    pub(crate) line: Rgb,
+#[non_exhaustive]
+#[deny(missing_docs)]
+pub struct Material {
+    /// Unshaded sRGB paint colour.
+    pub base: Rgb,
+    /// sRGB shade used on the unlit side.
+    pub dark: Rgb,
+    /// sRGB tint used on the lit side.
+    pub lite: Rgb,
+    /// sRGB outline colour.
+    pub line: Rgb,
 }
 
 const fn material(base: u32, dark: u32, lite: u32, line: u32) -> Material {
@@ -248,14 +254,37 @@ const GLOW_HUES: [f64; 8] = [186.0, 152.0, 88.0, 44.0, 328.0, 208.0, 22.0, -1.0]
 
 /// What a status light shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Status {
+#[non_exhaustive]
+#[deny(missing_docs)]
+pub enum Status {
+    /// The robot's dim idle glow.
     Idle,
+    /// The robot's full glow.
     Bright,
+    /// Success (green).
     Ok,
+    /// Attention (amber).
     Warn,
+    /// Error (red).
     Err,
+    /// Cold or inactive (blue).
     Cold,
+    /// Unlit.
     Off,
+}
+
+#[deny(missing_docs)]
+impl Status {
+    /// The statuses in declaration order, used to index colour tables.
+    pub const ALL: [Self; 7] = [
+        Self::Idle,
+        Self::Bright,
+        Self::Ok,
+        Self::Warn,
+        Self::Err,
+        Self::Cold,
+        Self::Off,
+    ];
 }
 
 /// Every colour a robot is painted with.
@@ -298,6 +327,24 @@ impl Palette {
             Status::Err => hex(0xf04d3a),
             Status::Cold => hex(0x72b4f2),
             Status::Off => hex(0x4b4753),
+        }
+    }
+
+    pub(crate) fn bulb(&self, s: Status, lit: bool) -> Rgb {
+        let color = self.status(s);
+        if lit {
+            color
+        } else {
+            blend(hex(0xf1f3f5), color, 0.22)
+        }
+    }
+
+    pub(crate) fn beacon(&self, s: Status, rays: bool) -> Rgb {
+        let color = self.status(s);
+        if rays {
+            color
+        } else {
+            blend(self.glass, color, 0.7)
         }
     }
 }

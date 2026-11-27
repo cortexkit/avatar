@@ -21,7 +21,8 @@ pub const TOP_NAMES: [&str; 11] = [
     "none", "rod", "twin", "zigzag", "coil", "loop", "dish", "bulb", "beacon", "triple", "ears",
 ];
 const TOP_WEIGHTS: [u32; 11] = [8, 10, 9, 5, 5, 4, 5, 6, 3, 4, 5];
-const TIP_NAMES: [&str; 4] = ["ball", "fork", "arrow", "bare"];
+/// Tips on masts that do not end in a built-in fitting, in gene order.
+pub const TIP_NAMES: [&str; 4] = ["ball", "fork", "arrow", "bare"];
 
 /// What is bolted to the sides of the head.
 pub const SIDE_NAMES: [&str; 7] = ["none", "bolts", "rods", "cones", "vents", "knobs", "fins"];
@@ -238,11 +239,7 @@ pub(crate) fn mast_draw(out: &mut Out, ctx: &Ctx, c: &Robot, m: &Mast, md: &Mood
             out.put(
                 El::circle(ctr, r)
                     .class("rb-light")
-                    .fill(if md.lit {
-                        col
-                    } else {
-                        blend(hex(0xf1f3f5), col, 0.22)
-                    })
+                    .fill(p.bulb(md.status, md.lit))
                     .stroke(met.line, ctx.line_w * 0.8),
             );
             if ctx.fine {
@@ -276,11 +273,7 @@ pub(crate) fn mast_draw(out: &mut Out, ctx: &Ctx, c: &Robot, m: &Mast, md: &Mood
             out.put(
                 El::path(&d)
                     .class("rb-light")
-                    .fill(if md.rays {
-                        col
-                    } else {
-                        blend(p.glass, col, 0.7)
-                    })
+                    .fill(p.beacon(md.status, md.rays))
                     .stroke(met.line, ctx.line_w * 0.8)
                     .round_join(),
             );
@@ -499,14 +492,14 @@ fn stalk_mast(c: &Robot, side: f64) -> Mast {
     }
 }
 
-fn stalk_at(c: &Robot, side: f64, md: &MoodSpec) -> (MastGeom, P2) {
+pub(crate) fn stalk_at(c: &Robot, side: f64, md: &MoodSpec) -> (MastGeom, P2) {
     let st = c.f.stalk.as_ref().expect("a stalk part has a stalk");
     let g = mast_geom(c, &stalk_mast(c, side), md);
     let ctr = place(g.t, g.u2, 0.0, st.r * 0.7);
     (g, ctr)
 }
 
-fn pod_eye(c: &Robot, side: f64) -> Eye {
+pub(crate) fn pod_eye(c: &Robot, side: f64) -> Eye {
     let st = c.f.stalk.as_ref().expect("a stalk part has a stalk");
     Eye {
         side,
@@ -560,11 +553,11 @@ pub(crate) fn stalk_pts(c: &Robot, side: f64, md: &MoodSpec) -> Vec<P2> {
 /// Pieces bolted to both sides of the head: what they are, where, and how large.
 #[derive(Clone, Debug)]
 pub(crate) struct Sides {
-    kind: &'static str,
-    x: f64,
-    y: f64,
-    k: f64,
-    reach: f64,
+    pub(crate) kind: &'static str,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) k: f64,
+    pub(crate) reach: f64,
 }
 
 pub(crate) fn plug_sides(r: &Reader, c: &mut Robot) {
@@ -733,9 +726,9 @@ pub(crate) struct Cable {
 pub(crate) struct Pipe {
     x: f64,
     sd: f64,
-    b: P2,
-    k: f64,
-    end: P2,
+    pub(crate) b: P2,
+    pub(crate) k: f64,
+    pub(crate) end: P2,
 }
 
 pub(crate) fn plug_back(r: &Reader, c: &mut Robot) {
@@ -794,18 +787,18 @@ pub(crate) fn plug_back(r: &Reader, c: &mut Robot) {
     });
 }
 
-struct CableGeom {
-    a: P2,
-    ctl: P2,
-    tip: P2,
-    u: P2,
+pub(crate) struct CableGeom {
+    pub(crate) a: P2,
+    pub(crate) ctl: P2,
+    pub(crate) tip: P2,
+    pub(crate) u: P2,
 }
 
 /// The cable swings up when the robot is pleased. Otherwise it runs down to
 /// the ground and its plug lies there: a plug that hung in the air beside an
 /// arm, or a cable that dropped straight past a hand, read as something the
 /// robot was holding.
-fn cable_geom(c: &Robot, md: &MoodSpec, pose: &Pose) -> CableGeom {
+pub(crate) fn cable_geom(c: &Robot, md: &MoodSpec, pose: &Pose) -> CableGeom {
     let cb = c.cable.as_ref().expect("a cable part has a cable");
     let (side, len) = (cb.side, cb.len);
     let a = apply_m(pose.u, [cb.ax, cb.ay]);

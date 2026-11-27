@@ -497,7 +497,7 @@ fn mouth_class(kind: MouthKind) -> &'static str {
     }
 }
 
-fn mouth(out: &mut Out, ctx: &Ctx, f: &Face, p: &Palette, md: &MoodSpec) {
+pub(crate) fn mouth(out: &mut Out, ctx: &Ctx, f: &Face, p: &Palette, md: &MoodSpec) {
     let m = &f.mouth;
     if m.kind == MouthKind::None {
         return;
@@ -660,31 +660,36 @@ fn drop_path(x: f64, y: f64, s: f64) -> Path {
     d
 }
 
+pub(crate) fn bezel_pts(f: &Face) -> Option<Vec<crate::geom::Cp>> {
+    let s = f.screen.as_ref()?;
+    let b = f.bezel;
+    Some(if s.oval {
+        shift_pts(
+            &quad(
+                -s.h - b,
+                s.h + b,
+                s.w + b,
+                s.w + b,
+                s.w + b,
+                s.h + b,
+                s.w + b,
+                s.h + b,
+            ),
+            0.0,
+            s.cy,
+        )
+    } else {
+        rrect(-s.w - b, s.cy - s.h - b, s.w + b, s.cy + s.h + b, s.r + b)
+    })
+}
+
 /// The whole face, in the head's coordinates. Eyes on stalks are drawn
 /// with their stalks, not here.
 pub(crate) fn face(out: &mut Out, ctx: &Ctx, f: &Face, p: &Palette, hull: &Hull, m: &MoodSpec) {
     if let Some(s) = &f.screen {
-        let b = f.bezel;
         out.group("rb-screen", &[], |out| {
             if ctx.fine {
-                let pts = if s.oval {
-                    shift_pts(
-                        &quad(
-                            -s.h - b,
-                            s.h + b,
-                            s.w + b,
-                            s.w + b,
-                            s.w + b,
-                            s.h + b,
-                            s.w + b,
-                            s.h + b,
-                        ),
-                        0.0,
-                        s.cy,
-                    )
-                } else {
-                    rrect(-s.w - b, s.cy - s.h - b, s.w + b, s.cy + s.h + b, s.r + b)
-                };
+                let pts = bezel_pts(f).expect("a screen has a bezel");
                 out.put(
                     El::path(&poly_path(&pts))
                         .class("rb-bezel")

@@ -71,6 +71,9 @@ pub(crate) struct Part {
 pub(crate) struct Pose {
     pub(crate) lift: f64,
     pub(crate) drop: f64,
+    pub(crate) lean: f64,
+    pub(crate) tilt: f64,
+    pub(crate) landed: bool,
     pub(crate) uops: Vec<Op>,
     pub(crate) u: M6,
     hops: Vec<Op>,
@@ -89,9 +92,9 @@ impl Pose {
 /// Where the robot stands in the 240-unit frame: its scale and offset.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Fit {
-    s: f64,
-    x: f64,
-    y: f64,
+    pub(crate) s: f64,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
 }
 
 /// A robot built from a genome: everything the reference's creature holds.
@@ -133,7 +136,7 @@ pub(crate) struct Robot {
     temper: Option<Temper>,
     moods: Vec<MoodSpec>,
     poses: Vec<Pose>,
-    fit: Fit,
+    pub(crate) fit: Fit,
 }
 
 impl Robot {
@@ -240,6 +243,10 @@ impl Robot {
     pub(crate) fn mood(&self, m: Mood) -> &MoodSpec {
         &self.moods[mood_index(m)]
     }
+
+    pub(crate) fn pose(&self, m: Mood) -> &Pose {
+        &self.poses[mood_index(m)]
+    }
 }
 
 /// Where everything stands in one mood. A pod has no neck, so its whole
@@ -275,6 +282,9 @@ fn pose_of(c: &Robot, m: &MoodSpec) -> Pose {
     let mut pose = Pose {
         lift,
         drop,
+        lean,
+        tilt,
+        landed,
         uops,
         u,
         hops,

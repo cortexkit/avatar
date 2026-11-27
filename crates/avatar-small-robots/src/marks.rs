@@ -87,9 +87,16 @@ fn decal_outline(kind: &str) -> &'static [P2] {
     }
 }
 
-const DECAL_NAMES: [&str; 8] = [
+/// Head decal choices, including both picks that mean no decal.
+pub const DECAL_NAMES: [&str; 8] = [
     "none", "none", "number", "star", "bars", "arrow", "bolt", "delta",
 ];
+
+/// Crown paint choices, including the dipped scheme that now resolves to plain paint.
+pub const DECOR_NAMES: [&str; 3] = ["plain", "stripe", "dipped"];
+
+/// Head wear choices; the removed patch pick now means no wear.
+pub const WEAR_NAMES: [&str; 4] = ["none", "dent", "none", "scratch"];
 
 /// What is set into the chassis, or into a pod's hull under its face.
 pub const CHEST_NAMES: [&str; 10] = [
@@ -110,11 +117,11 @@ fn under_screen(kind: &str) -> bool {
 #[derive(Clone, Debug)]
 pub(crate) struct Chest {
     pub(crate) kind: &'static str,
-    y: f64,
-    w: f64,
-    h: f64,
-    n: u32,
-    text: Vec<u32>,
+    pub(crate) y: f64,
+    pub(crate) w: f64,
+    pub(crate) h: f64,
+    pub(crate) n: u32,
+    pub(crate) text: Vec<u32>,
 }
 
 impl Chest {
@@ -361,40 +368,40 @@ pub(crate) fn plug_chest(r: &Reader, pod: bool, f: &Face, y: f64, w: f64, h: f64
 }
 
 #[derive(Clone, Debug)]
-struct Row {
-    y: f64,
-    seam: bool,
-    rivets: bool,
+pub(crate) struct Row {
+    pub(crate) y: f64,
+    pub(crate) seam: bool,
+    pub(crate) rivets: bool,
 }
 
 /// A marking or a mark of wear: what it is, where, and how large.
 #[derive(Clone, Debug)]
-struct Spot {
-    kind: &'static str,
-    x: f64,
-    y: f64,
-    s: f64,
-    text: Vec<u32>,
+pub(crate) struct Spot {
+    pub(crate) kind: &'static str,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) s: f64,
+    pub(crate) text: Vec<u32>,
 }
 
 /// The seams, rivets, markings and wear of a head.
 #[derive(Clone, Debug)]
 pub(crate) struct Decor {
-    rows: Vec<Row>,
-    scheme: &'static str,
-    top: f64,
-    stripe_w: f64,
+    pub(crate) rows: Vec<Row>,
+    pub(crate) scheme: &'static str,
+    pub(crate) top: f64,
+    pub(crate) stripe_w: f64,
     stripe_clear: f64,
-    six: bool,
-    decal: Option<Spot>,
-    wear: Option<Spot>,
+    pub(crate) six: bool,
+    pub(crate) decal: Option<Spot>,
+    pub(crate) wear: Option<Spot>,
 }
 
 impl Decor {
     pub(crate) fn plain() -> Self {
         Self {
             rows: Vec::new(),
-            scheme: "plain",
+            scheme: DECOR_NAMES[0],
             top: 0.0,
             stripe_w: 0.0,
             stripe_clear: 0.0,
@@ -408,6 +415,10 @@ impl Decor {
 /// The seams, rivets and markings of a head, drawn between its paint and
 /// its outline. All but the paint scheme is for the large sizes.
 pub(crate) fn head_marks(out: &mut Out, ctx: &Ctx, c: &Robot) {
+    draw_head_marks(out, ctx, c, true);
+}
+
+pub(crate) fn draw_head_marks(out: &mut Out, ctx: &Ctx, c: &Robot, include_lid: bool) {
     let d = &c.decor;
     let p = &c.p;
     let hull = &c.head;
@@ -430,7 +441,7 @@ pub(crate) fn head_marks(out: &mut Out, ctx: &Ctx, c: &Robot) {
     if !ctx.fine {
         return;
     }
-    if hull.kind == "can" {
+    if include_lid && hull.kind == "can" {
         let e = lerp(6.0, 10.0, hull.a);
         out.put(
             El::ellipse(0.0, -hull.h + e, hull.w - 1.5, e - 1.0)
@@ -603,7 +614,7 @@ pub(crate) fn plug_decor(
         let clear = r.lin(o, 2, 2, 5.0, 11.0);
         let most = (top_room - 1.0) / 6.0;
         if min(clear, most) >= STRIPE_MIN_W {
-            d.scheme = "stripe";
+            d.scheme = DECOR_NAMES[1];
             d.stripe_clear = clear;
             d.stripe_w = min(clear, most);
         }
@@ -677,7 +688,7 @@ pub(crate) fn plug_decor(
         // The wear gene's third kind was a riveted patch. Beside a screen it
         // was a drive slot or a panel of buttons, and anywhere else a sticking
         // plaster, so that kind leaves the hull unworn.
-        let wk = ["none", "dent", "none", "scratch"][r.raw(WEAR, 0, 2) as usize];
+        let wk = WEAR_NAMES[r.raw(WEAR, 0, 2) as usize];
         if wk != "none" {
             let band_top = if top && bottom { r.flag(WEAR, 2) } else { top };
             let mut at = spot(-mark_side(), band_top).expect("the band has room for wear");

@@ -33,7 +33,7 @@ impl Tech {
         Tech::Stalk,
     ];
 
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Tech::Screen => "screen",
             Tech::Lens => "lens",
@@ -78,7 +78,7 @@ pub enum MouthKind {
 }
 
 impl MouthKind {
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             MouthKind::Line => "line",
             MouthKind::Strip => "strip",

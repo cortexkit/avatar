@@ -20,6 +20,16 @@
 //! and cosine from `avatar_svg::wild::math`, so every platform draws the
 //! same tree.
 //!
+//! # Layout and layers
+//!
+//! [`layout::Layout::new`] reads the fitted parts of a decoded [`Creature`]
+//! without applying the 240-unit picture fit. The layout gives rest geometry
+//! and the resolved mood poses in robot units, with negative y pointing up.
+//! [`Creature::face_layer`], [`Creature::stalk_eye_layer`],
+//! [`Creature::head_marks`] and [`Creature::chassis_marks`] draw separate,
+//! transparent trees. Each layer gives the origin of its square canvas in
+//! the original drawing frame, so it can be projected back without scaling.
+//!
 //! ```
 //! use avatar_small_robots::{decode, render_tree, Mood, GENOME_LEN};
 //!
@@ -40,6 +50,7 @@ mod gear;
 mod geom;
 mod hull;
 mod kit;
+pub mod layout;
 mod marks;
 mod mood;
 mod parts;

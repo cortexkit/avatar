@@ -43,7 +43,8 @@ pub(crate) fn splayed(kind: &str) -> bool {
     matches!(kind, "quad" | "hexa" | "tripod")
 }
 
-const FOOT_NAMES: [&str; 7] = ["pad", "dome", "block", "toes", "ball", "roller", "sucker"];
+/// Fitted foot shapes, in gene order.
+pub const FOOT_NAMES: [&str; 7] = ["pad", "dome", "block", "toes", "ball", "roller", "sucker"];
 const FOOT_WEIGHTS: [u32; 7] = [7, 6, 5, 5, 3, 3, 3];
 
 /// How high above the ground the leg meets each kind of foot.
@@ -178,7 +179,7 @@ pub(crate) fn zigzag(a: P2, b: P2, n: u32, amp: f64) -> Path {
 
 /// The ankle of a foot that stands at (x, 0): on the ground while the leg
 /// reaches, lifted with the hip when it cannot.
-fn ankle_of(hip: P2, x: f64, ah: f64, reach: f64) -> P2 {
+pub(crate) fn ankle_of(hip: P2, x: f64, ah: f64, reach: f64) -> P2 {
     let a = [x, -ah];
     let d = hyp(a[0] - hip[0], a[1] - hip[1]);
     if d <= reach {
@@ -190,91 +191,176 @@ fn ankle_of(hip: P2, x: f64, ah: f64, reach: f64) -> P2 {
 
 /// How a two-part leg is built: all metal rods, painted shells, or a boot.
 #[derive(Clone, Copy, Debug)]
-struct Limb {
-    build: &'static str,
-    w: f64,
-    joint: f64,
+#[non_exhaustive]
+#[deny(missing_docs)]
+pub struct Limb {
+    /// Biped leg construction; empty for a piston or spring.
+    pub build: &'static str,
+    /// Limb width in pre-fit robot units.
+    pub w: f64,
+    /// Dimensionless knee size multiplier.
+    pub joint: f64,
 }
 
+/// Dimensions of one mirrored splayed-leg pair, in pre-fit robot units.
 #[derive(Clone, Debug)]
-struct MultiLeg {
-    yh: f64,
-    hx: f64,
-    fx: f64,
-    l1: f64,
-    l2: f64,
+#[non_exhaustive]
+#[deny(missing_docs)]
+pub struct MultiLeg {
+    /// Mount height relative to the base of the lowest module (up is negative).
+    pub yh: f64,
+    /// Mount half-spacing.
+    pub hx: f64,
+    /// Foot half-spacing.
+    pub fx: f64,
+    /// Thigh length.
+    pub l1: f64,
+    /// Shin length.
+    pub l2: f64,
 }
 
-/// The measurements each kind of gear is drawn from.
+/// Construction dimensions of each running gear assembly, in pre-fit robot
+/// units (negative y is up). Floor-standing parts use a floor of y = 0.
 #[derive(Clone, Debug)]
-enum Shape {
+#[non_exhaustive]
+#[deny(missing_docs)]
+pub enum Shape {
+    /// Pair of biped, piston or spring legs.
+    #[non_exhaustive]
     Legs {
+        /// Ankle height above the foot sole.
         ah: f64,
+        /// Hip half-spacing.
         hx: f64,
+        /// Foot half-spacing.
         fx: f64,
+        /// Leg construction and width.
         lm: Limb,
+        /// Unextended hip-to-ankle length.
         rest: f64,
+        /// Maximum hip-to-ankle length.
         l: f64,
+        /// Spring amplitude.
         amp: f64,
     },
+    /// Four or six splayed legs.
+    #[non_exhaustive]
     Multi {
+        /// One mount from each mirrored pair, from front to back.
         legs: Vec<MultiLeg>,
+        /// Thigh width.
         lw: f64,
+        /// Knee radius multiplier.
         jk: f64,
+        /// Whether each end has a flat pad rather than a round tip.
         tip: bool,
     },
+    /// Two articulated sides and one central support.
+    #[non_exhaustive]
     Tripod {
+        /// Ankle height above the foot sole.
         ah: f64,
+        /// Knee radius multiplier.
         jk: f64,
+        /// Side leg width.
         lw: f64,
+        /// Side hip half-spacing.
         hx: f64,
+        /// Side foot half-spacing.
         fx: f64,
+        /// Maximum side hip-to-ankle length.
         l: f64,
     },
+    /// Two track pods viewed end-on.
+    #[non_exhaustive]
     Treads {
+        /// Pod height above the floor.
         th: f64,
+        /// Width of each pod.
         tw: f64,
+        /// Pod half-spacing.
         tx: f64,
+        /// Lug spacing.
         gap: f64,
     },
+    /// One belt around a row of wheels.
+    #[non_exhaustive]
     Track {
+        /// Belt height above the floor.
         th: f64,
+        /// Belt half-width.
         tw: f64,
+        /// Number of wheels in the belt.
         wheels: u32,
+        /// Wheel radius.
         wr: f64,
+        /// Lug spacing.
         gap: f64,
     },
+    /// Pair of tyres viewed end-on.
+    #[non_exhaustive]
     Wheels {
+        /// Tyre radius.
         r: f64,
+        /// Tyre width.
         tw: f64,
+        /// Wheel centre half-spacing.
         wx: f64,
+        /// Tread spacing.
         gap: f64,
     },
+    /// Pair of wheels viewed face-on.
+    #[non_exhaustive]
     Discs {
+        /// Wheel radius.
         r: f64,
+        /// Wheel centre half-spacing.
         wx: f64,
+        /// Number of spoke marks.
         spokes: u32,
     },
+    /// One wheel in a fork or one ball in a cup.
+    #[non_exhaustive]
     Mono {
+        /// Wheel or ball radius.
         r: f64,
+        /// Fork mount half-spacing.
         hx: f64,
+        /// Whether the ball has a painted band.
         band: bool,
     },
+    /// Jet nozzle or ring emitter in upper-body coordinates.
+    #[non_exhaustive]
     Hover {
+        /// Mount half-width.
         top: f64,
+        /// Outlet half-width.
         bot: f64,
+        /// Outlet y coordinate below the lowest module.
         nh: f64,
+        /// Number of visible rings for a ring emitter.
         rings: u32,
     },
+    /// Single centre spring.
+    #[non_exhaustive]
     Pogo {
+        /// Ankle height above the foot sole.
         ah: f64,
+        /// Spring amplitude.
         amp: f64,
+        /// Number of spring zigzag divisions.
         n: u32,
+        /// Maximum hip-to-ankle length.
         l: f64,
     },
+    /// Two pairs of curved supports.
+    #[non_exhaustive]
     Hoses {
+        /// Hose width.
         w: f64,
+        /// Hose material.
         mat: Material,
+        /// Positive-side [mount x, foot x] for each mirrored pair.
         legs: [[f64; 2]; 2],
     },
 }
@@ -290,10 +376,10 @@ pub(crate) struct Gear {
     pub(crate) hover: bool,
     pub(crate) foot: f64,
     pub(crate) land: f64,
-    foot_kind: &'static str,
-    fs: f64,
-    wl: f64,
-    shape: Shape,
+    pub(crate) foot_kind: &'static str,
+    pub(crate) fs: f64,
+    pub(crate) wl: f64,
+    pub(crate) shape: Shape,
 }
 
 pub(crate) fn build_gear(r: &Reader, c: &Core, pal: &Palette, kind: &'static str) -> Gear {
@@ -558,11 +644,11 @@ pub(crate) fn build_gear(r: &Reader, c: &Core, pal: &Palette, kind: &'static str
     g
 }
 
-fn to_g(pose: &Pose, p: P2) -> P2 {
+pub(crate) fn to_g(pose: &Pose, p: P2) -> P2 {
     apply_m(pose.u, p)
 }
 
-fn under(c: &Robot, x: f64) -> P2 {
+pub(crate) fn under(c: &Robot, x: f64) -> P2 {
     [x, c.low().bot_at(x) - 2.5]
 }
 
@@ -1197,7 +1283,7 @@ impl Gear {
 }
 
 /// One leg of four or six: its hip, its ankle, its knee and its foot.
-fn multi_parts(pose: &Pose, side: f64, lg: &MultiLeg) -> (P2, P2, P2, P2) {
+pub(crate) fn multi_parts(pose: &Pose, side: f64, lg: &MultiLeg) -> (P2, P2, P2, P2) {
     let hip = to_g(pose, [side * lg.hx, lg.yh]);
     let a = ankle_of(hip, side * lg.fx, 3.0, (lg.l1 + lg.l2) * 0.995);
     let (e, t) = joint2(hip, a, lg.l1, lg.l2, |e| side * e[0] - e[1]);

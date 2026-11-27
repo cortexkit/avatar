@@ -46,14 +46,14 @@ pub(crate) struct Arms {
     s: P2,
     pub(crate) hand: &'static str,
     pub(crate) hand_l: &'static str,
-    hs: f64,
+    pub(crate) hs: f64,
     len: f64,
-    l1: f64,
-    l2: f64,
-    w: f64,
-    mat: Material,
+    pub(crate) l1: f64,
+    pub(crate) l2: f64,
+    pub(crate) w: f64,
+    pub(crate) mat: Material,
     pub(crate) rest: Gesture,
-    joint: f64,
+    pub(crate) joint: f64,
     odd: f64,
 }
 
@@ -81,10 +81,10 @@ impl Arms {
 /// direction the hand points in.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ArmPose {
-    s: P2,
-    e: P2,
-    t: P2,
-    u: P2,
+    pub(crate) s: P2,
+    pub(crate) e: P2,
+    pub(crate) t: P2,
+    pub(crate) u: P2,
 }
 
 pub(crate) fn plug_arms(r: &Reader, c: &mut Robot) {
