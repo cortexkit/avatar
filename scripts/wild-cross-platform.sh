@@ -65,6 +65,14 @@ run=$(mktemp -d "$logs/cross-platform.XXXXXX")
 exec > >(tee "$run/output.log") 2>&1
 echo "Evidence directory: $run"
 git rev-parse HEAD
+# The containers build a snapshot of the committed tree, not the live
+# checkout: a bind mount of files git has just rewritten was seen serving
+# them cut short ("pub mo" for "pub mod motion;"), and the check is about
+# the commit anyway. The snapshot is removed when the script exits.
+src="$run/src"
+mkdir "$src"
+trap 'rm -rf "$src"' EXIT
+git archive HEAD | tar -x -C "$src"
 uname -sm
 rustc --version --verbose
 [[ $(rustc --version) == 'rustc 1.99.'* ]] || { echo "Use Rust 1.99 for the reference mint"; exit 1; }
@@ -91,7 +99,7 @@ if [[ $mode == robots-3d ]]; then
         # Source is read-only. Cargo artifacts live only in the container's
         # /tmp; /out is the sole writable host mount.
         docker run --rm --platform "linux/$arch" --cpus 4 --memory 14g \
-            --mount "type=bind,source=$root,target=/src,readonly" \
+            --mount "type=bind,source=$src,target=/src,readonly" \
             --mount "type=bind,source=$run/linux-$arch,target=/out" \
             -e CARGO_TARGET_DIR=/tmp/robots-3d-target -e CARGO_INCREMENTAL=0 \
             rust:1.99 bash -euc '
@@ -135,7 +143,7 @@ if [[ $mode == image ]]; then
         # Source is read-only. Cargo artifacts live only in the container's
         # /tmp; /out is the sole writable host mount.
         docker run --rm --platform "linux/${arch/x86_64/amd64}" --cpus 4 --memory 14g \
-            --mount "type=bind,source=$root,target=/src,readonly" \
+            --mount "type=bind,source=$src,target=/src,readonly" \
             --mount "type=bind,source=$run/linux-$arch,target=/out" \
             -e CARGO_TARGET_DIR=/tmp/image-target -e CARGO_INCREMENTAL=0 \
             rust:1.99 bash -euc '
@@ -184,7 +192,7 @@ for arch in arm64 amd64; do
     # Source is read-only. Cargo artifacts live only in the container's /tmp;
     # /out is the sole writable host mount and contains only this run's output.
     docker run --rm --platform "linux/$arch" --cpus 4 --memory 14g \
-        --mount "type=bind,source=$root,target=/src,readonly" \
+        --mount "type=bind,source=$src,target=/src,readonly" \
         --mount "type=bind,source=$run/linux-$arch,target=/out" \
         -e CARGO_TARGET_DIR=/tmp/wild-target -e CARGO_INCREMENTAL=0 \
         rust:1.99 bash -euc '
