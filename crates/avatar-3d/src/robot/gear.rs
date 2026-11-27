@@ -55,20 +55,31 @@ pub(super) fn build(b: &mut Builder) -> Vec<usize> {
                 };
                 let leg_bone = b.bone(leg_name.as_str(), Some(root), hip);
                 let r = 0.5 * leg_width;
+                // A leg ends at its ankle or tip, which can sit lower than
+                // the leg's own radius: such ends are raised so the leg's
+                // round end stays on the floor's top; the foot covers them.
+                let coil = r.max(2.5);
+                let clear = if spring { coil + (0.3 * r).max(0.9) } else { r };
+                let lift = |p: V3| [p[0], p[1].max(clear), p[2]];
+                let (hip_at, end_at) = (lift(hip), lift(end));
                 let mesh = if spring {
-                    helix(hip, end, r.max(2.5), (0.3 * r).max(0.9), 5.0)
+                    helix(hip_at, end_at, coil, (0.3 * r).max(0.9), 5.0)
                 } else if let GearShape::Hoses { .. } = g.shape {
                     let c = s.middle.map_or(hip, |m| at(b, m, z));
-                    hose(&quadratic(hip, c, end, 10), r)
+                    let path: Vec<V3> = quadratic(hip, c, end, 10).into_iter().map(lift).collect();
+                    hose(&path, r)
                 } else if g.kind == "piston" {
-                    let sleeve = solids::mid(hip, end);
-                    merge(vec![drum(hip, sleeve, r * 1.2), drum(hip, end, r * 0.6)])
+                    let sleeve = solids::mid(hip_at, end_at);
+                    merge(vec![
+                        drum(hip_at, sleeve, r * 1.2),
+                        drum(hip_at, end_at, r * 0.6),
+                    ])
                 } else {
-                    let mut pts = vec![hip];
+                    let mut pts = vec![hip_at];
                     if let Some(m) = s.middle {
-                        pts.push(at(b, m, z));
+                        pts.push(lift(at(b, m, z)));
                     }
-                    pts.push(end);
+                    pts.push(end_at);
                     rods(&pts, r)
                 };
                 let material = match &g.shape {

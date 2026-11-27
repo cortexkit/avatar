@@ -24,16 +24,23 @@
 #           cargo run --locked -p cortexkit-avatar --example image-hashes -- --dump DIR > HASHES
 #       Pass HASHES, and DIR if it was written, to compare Windows in the
 #       same run. Without them the run reports Windows as unmeasured.
+#   scripts/wild-cross-platform.sh robots-3d
+#       Run the 3D robots' pins example (crates/avatar-3d, robot_pins) on
+#       the same three platforms. Each prints the labelled SHA-256 digests
+#       of the robots' rest meshes; the digests must be identical on every
+#       platform and equal to the committed vectors/robots-3d/digests.tsv.
+#       The digests leave out texture pixels, which come from the
+#       rasterizer, so they are exact everywhere.
 set -euo pipefail
 usage() {
-    echo "usage: $0 [image [WINDOWS_HASHES [WINDOWS_DUMP]]]" >&2
+    echo "usage: $0 [image [WINDOWS_HASHES [WINDOWS_DUMP]] | robots-3d]" >&2
     exit 2
 }
 mode=${1:-trees}
 windows_hashes=
 windows_dump=
 case $mode:$# in
-    trees:0 | image:1) ;;
+    trees:0 | image:1 | robots-3d:1) ;;
     image:2 | image:3)
         # Resolve the paths before changing directory, so relative ones work.
         [[ -f $2 ]] || { echo "No such file: $2" >&2; exit 2; }
@@ -69,6 +76,48 @@ export CARGO_INCREMENTAL=0
 # directory per run left a full debug build behind on every run.
 CARGO_TARGET_DIR="$root/target/wild-cross-platform"
 export CARGO_TARGET_DIR
+
+if [[ $mode == robots-3d ]]; then
+    # The example writes the pins file's lines to standard output and each
+    # robot's triangle count and texture bytes to standard error.
+    host="macos-$(uname -m)"
+    mkdir "$run/$host"
+    cargo run --locked -j 4 -p cortexkit-avatar-3d --example robot_pins \
+        >"$run/$host/robots-3d.tsv" 2>"$run/$host/robots-3d.stats"
+    for arch in arm64 amd64; do
+        mkdir "$run/linux-$arch"
+        # Source is read-only. Cargo artifacts live only in the container's
+        # /tmp; /out is the sole writable host mount.
+        docker run --rm --platform "linux/$arch" --cpus 4 --memory 14g \
+            --mount "type=bind,source=$root,target=/src,readonly" \
+            --mount "type=bind,source=$run/linux-$arch,target=/out" \
+            -e CARGO_TARGET_DIR=/tmp/robots-3d-target -e CARGO_INCREMENTAL=0 \
+            rust:1.99 bash -euc '
+                echo "Container architecture: $(uname -m)"
+                case "$1:$(uname -m)" in arm64:aarch64|amd64:x86_64) ;; *) exit 1 ;; esac
+                rustc --version --verbose
+                cargo run --manifest-path /src/Cargo.toml --locked -j 4 -p cortexkit-avatar-3d \
+                    --example robot_pins >/out/robots-3d.tsv 2>/out/robots-3d.stats
+            ' bash "$arch"
+    done
+    grep -v '^#' vectors/robots-3d/digests.tsv >"$run/committed.tsv"
+    status=0
+    for platform in "$host" linux-arm64 linux-amd64; do
+        if cmp -s "$run/committed.tsv" "$run/$platform/robots-3d.tsv"; then
+            echo "$platform: $(wc -l <"$run/$platform/robots-3d.tsv" | tr -d ' ') lines identical to the committed pins"
+        else
+            echo "$platform: DIFFERS from the committed pins:"
+            diff "$run/committed.tsv" "$run/$platform/robots-3d.tsv" || true
+            status=1
+        fi
+    done
+    if [[ $status -ne 0 ]]; then
+        echo "Cross-platform 3D robot digest comparison FAILED; full log: $run/output.log"
+        exit 1
+    fi
+    echo "Cross-platform 3D robot digest comparison passed; full log: $run/output.log"
+    exit 0
+fi
 
 if [[ $mode == image ]]; then
     # The producer draws each case in vectors/image/manifest.json with

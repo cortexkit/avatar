@@ -52,8 +52,8 @@ mod skeleton;
 mod solids;
 mod textures;
 
-pub use camera::Camera;
-pub use depth::Depth;
+pub use camera::{Camera, AZIMUTH, ELEVATION, FILL, FOV_Y, FRAME_PX};
+pub use depth::{Depth, BACK_KINDS, FIRST_BYTE as FIRST_DEPTH_BYTE, LAST_BYTE as LAST_DEPTH_BYTE};
 pub use digest::mesh_bytes;
 pub use materials::{Emission, Finish, LightKind, Material, StatusLight, StatusTable, FINISHES};
 
@@ -177,8 +177,9 @@ pub struct Part {
     /// The mapping entry the part realises: a catalogue field and value
     /// ([`mapping::MAPPING`]).
     pub entry: (&'static str, &'static str),
-    /// The component the part is: the entry's own name for a drawable entry,
-    /// or one member of an assembly ([`mapping::Kind::Assembly`]).
+    /// The component the part is, such as `head`, `mast` or `foot`. For a
+    /// part of an assembly it is one of the assembly's members
+    /// ([`mapping::Kind::Assembly`]).
     pub role: &'static str,
     /// The 2D drawing class of the fitting it comes from, or empty.
     pub class: &'static str,

@@ -5,6 +5,9 @@ mod cases;
 
 mod builder;
 mod faces;
+mod ground;
 mod mapping;
 mod same_individual;
 mod separation;
+mod skinning;
+mod textures;

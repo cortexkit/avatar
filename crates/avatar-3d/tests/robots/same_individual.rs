@@ -1,11 +1,9 @@
 //! Same individual: the 3D robot agrees with its 2D layout in its parts,
 //! colours, silhouettes and depth.
 
-use std::collections::BTreeMap;
-
 use avatar_3d::robot::{build_with, BuildOptions, Emission, Robot, Skin, UNIT};
 use avatar_small_robots::layout::{BackLayout, Frame, GearShape, Layout, Status};
-use avatar_small_robots::{decode, render_tree, Mood, Rgb, MOODS};
+use avatar_small_robots::{decode, render_tree, Rgb, MOODS};
 use avatar_svg::Paint;
 
 use crate::cases;
@@ -549,50 +547,64 @@ fn hull_silhouettes_match_the_reference_outlines_unmirrored() {
     }
 }
 
+/// The x and z extents of a part, in robot units.
+fn extents(robot: &Robot, name: &str) -> Option<[f64; 2]> {
+    let part = robot.parts.iter().find(|p| p.name == name)?;
+    let span = |k: usize| {
+        let vs = part.mesh.positions.iter().map(|p| p[k]);
+        (vs.clone().fold(f64::NEG_INFINITY, f64::max) - vs.fold(f64::INFINITY, f64::min)) / UNIT
+    };
+    Some([span(0), span(2)])
+}
+
 #[test]
-fn a_depth_byte_changes_its_part_and_not_the_2d_tree() {
-    let (label, genome) = cases::corpus()
-        .into_iter()
-        .find(|(_, g)| {
-            let kind = decode(g).hull;
-            matches!(
-                avatar_3d::robot::mapping::entry("head", kind).map(|e| e.kind),
-                Some(avatar_3d::robot::mapping::Kind::Drawable {
-                    solid: avatar_3d::robot::mapping::Solid::Extrusion,
+fn depth_bytes_change_their_hulls_and_not_the_2d_tree() {
+    use avatar_3d::robot::mapping::{entry, Kind, Solid};
+    for (label, genome) in cases::cases(cases::committed_prefix()) {
+        let layout = Layout::new(&decode(&genome));
+        let trees: Vec<_> = MOODS
+            .iter()
+            .map(|m| render_tree(&genome, *m, None))
+            .collect();
+        // Bits 0-3 of byte 6145 set the head's depth over its width, 0.76
+        // to 1, and of byte 6144 the chassis's, 0.72 to 1. A lathed hull maps
+        // the same bits to 0.86 to 1 of its widest turn.
+        let hulls = [
+            (6145, "head", Some(&layout.head), 0.76),
+            (6144, "chassis", layout.chassis.as_ref(), 0.72),
+        ];
+        for (byte, name, hull, low) in hulls {
+            let Some(hull) = hull else { continue };
+            let lathed = matches!(
+                entry(name, hull.kind).map(|e| e.kind),
+                Some(Kind::Drawable {
+                    solid: Solid::Lathe,
                     ..
                 })
-            )
-        })
-        .expect("a corpus robot with an extruded head");
-    let width = 2.0 * Layout::new(&decode(&genome)).head.half_width;
-    let depth_of = |robot: &Robot, name: &str| {
-        let part = robot.parts.iter().find(|p| p.name == name).unwrap();
-        let zs = part.mesh.positions.iter().map(|p| p[2]);
-        (zs.clone().fold(f64::NEG_INFINITY, f64::max) - zs.fold(f64::INFINITY, f64::min)) / UNIT
-    };
-    let mut results = BTreeMap::new();
-    // Byte 6145, bits 0-3: the head's depth over its width, 0.76 to 1.
-    for (nibble, ratio) in [(0_u8, 0.76), (15, 1.0)] {
-        let mut g = genome.clone();
-        g[6145] = (g[6145] & 0xf0) | nibble;
-        let robot = build_with(&g, BuildOptions::untextured());
-        let depth = depth_of(&robot, "head");
-        assert!(
-            (depth - width * ratio).abs() < 1e-9 * width,
-            "{label}: head depth {depth} for ratio {ratio}"
-        );
-        let trees: Vec<_> = MOODS.iter().map(|m| render_tree(&g, *m, None)).collect();
-        results.insert(nibble, (depth, trees, robot));
-    }
-    let (a, b) = (&results[&0], &results[&15]);
-    assert_ne!(a.0, b.0, "{label}: the head's depth did not change");
-    assert_eq!(a.1, b.1, "{label}: the 2D trees changed");
-    assert_eq!(render_tree(&genome, Mood::Neutral, None), a.1[0]);
-    if a.2.parts.iter().any(|p| p.name == "chassis") {
-        assert_eq!(
-            depth_of(&a.2, "chassis"),
-            depth_of(&b.2, "chassis"),
-            "{label}: chassis"
-        );
+            );
+            let mut depths = Vec::new();
+            for (nibble, ratio) in [(0_u8, low), (15, 1.0)] {
+                let mut g = genome.clone();
+                g[byte] = (g[byte] & 0xf0) | nibble;
+                let robot = build_with(&g, BuildOptions::untextured());
+                let [x, z] = extents(&robot, name).expect("the hull is built");
+                let want = if lathed {
+                    x * if nibble == 0 { 0.86 } else { 1.0 }
+                } else {
+                    2.0 * hull.half_width * ratio
+                };
+                assert!(
+                    (z - want).abs() < 1e-9 * want,
+                    "{label}: {name} depth {z}, not {want}"
+                );
+                let changed: Vec<_> = MOODS.iter().map(|m| render_tree(&g, *m, None)).collect();
+                assert!(changed == trees, "{label}: byte {byte} changed the 2D tree");
+                depths.push(z);
+            }
+            assert!(
+                depths[0] < depths[1],
+                "{label}: byte {byte} did not change the {name}'s depth"
+            );
+        }
     }
 }
