@@ -1,0 +1,20 @@
+[package]
+name = "cortexkit-avatar-3d"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Avatar creatures in 3D as plain data: deterministic meshes for a renderer to draw."
+publish = false
+
+# The library keeps its short Rust name, so code imports it as `avatar_3d`.
+[lib]
+name = "avatar_3d"
+
+[dependencies]
+# Portable sine and cosine, so every platform builds the same vertices.
+avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+
+[dev-dependencies]
+# Hashes each solid's canonical bytes for the pinned digests.
+sha2 = "0.10"

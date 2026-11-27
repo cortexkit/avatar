@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/avatar",
+    "crates/avatar-3d",
     "crates/avatar-drawn-heads",
     "crates/avatar-ffi",
     "crates/avatar-genome",
