@@ -6,7 +6,7 @@ use avatar_svg::{render_svg, Mood, RenderParams};
 
 fn main() {
     for seat in [
-        "AVA", "SUBC", "ALF", "ENGRAM", "CKIOS", "BROCA", "FUSI", "MC",
+        "amber", "basil", "cedar", "dune", "ember", "fern", "gale", "heath",
     ] {
         let genome = derive_genome(&SeatIdentity::Registered {
             project_id: format!("pj-sample-{seat}"),

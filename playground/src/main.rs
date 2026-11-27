@@ -457,7 +457,7 @@ fn main() {
     //
     // This exists because a Rust-only fix (the eyes-only fallback drawing a
     // mouth) sat un-mirrored in the lab and was caught by hand. The lab is
-    // what Ufuk reviews; if it drifts from canonical, the review is of the
+    // what the maintainer reviews; if it drifts from canonical, the review is of the
     // wrong thing — the same family as every other instrument that was true
     // about something else.
     if let Some(i) = args.iter().position(|a| a == "--bench") {

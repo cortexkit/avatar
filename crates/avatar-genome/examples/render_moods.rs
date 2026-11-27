@@ -5,7 +5,7 @@ use avatar_svg::{render_svg, Mood, RenderParams};
 
 fn main() {
     let genome = derive_genome(&SeatIdentity::Registered {
-        project_id: "pj-sample-ALF".to_owned(),
+        project_id: "pj-sample-cedar".to_owned(),
     });
     let phenotype = decode(&genome);
     for (name, mood) in [

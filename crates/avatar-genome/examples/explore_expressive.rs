@@ -14,7 +14,7 @@ use avatar_svg::{
     Mood, RenderParams,
 };
 
-const SEATS: [&str; 6] = ["AVA", "SUBC", "ALF", "ENGRAM", "CKIOS", "BROCA"];
+const SEATS: [&str; 6] = ["amber", "basil", "cedar", "dune", "ember", "fern"];
 
 fn main() {
     let output = Path::new("/tmp/ava-explore");

@@ -7,7 +7,7 @@ use avatar_phenotype::Q32;
 use avatar_svg::{render_svg, Mood, RenderParams};
 
 fn main() {
-    for seat in ["SUBC", "BROCA"] {
+    for seat in ["basil", "fern"] {
         let genome = derive_genome(&SeatIdentity::Registered {
             project_id: format!("pj-sample-{seat}"),
         });
