@@ -267,9 +267,12 @@ fn within(s: ([f64; 2], [f64; 2]), c: [f64; 2]) -> bool {
         && c[1] <= s.0[1].max(s.1[1])
 }
 
-/// Triangulates a counter-clockwise simple polygon by ear clipping. Each step
-/// clips the ear with the best shape (largest area over squared longest
-/// edge), the lowest index winning a tie, so the result is deterministic.
+/// Triangulates a counter-clockwise simple polygon by ear clipping: an "ear"
+/// is a corner whose triangle with its two neighbours lies inside the polygon,
+/// and each step cuts one ear off as a triangle until three corners remain.
+/// Each step cuts the ear with the best shape (largest area over squared
+/// longest edge), the lowest index winning a tie, so the result is
+/// deterministic.
 /// Every triangle winds counter-clockwise.
 pub(super) fn triangulate(points: &[[f64; 2]]) -> Result<Vec<[usize; 3]>, MeshError> {
     let n = points.len();

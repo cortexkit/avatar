@@ -62,7 +62,7 @@ pub struct Mesh {
     pub positions: Vec<[f64; 3]>,
     /// Outward unit normals, one per vertex.
     pub normals: Vec<[f64; 3]>,
-    /// Each vertex's rest-local (x, y), in the solid's input units.
+    /// Each vertex's (x, y) as the solid was built, before any transform moves it, in the solid's input units.
     pub projection: Vec<[f64; 2]>,
     /// Vertex indices, three per triangle, wound counter-clockwise seen from
     /// outside.
