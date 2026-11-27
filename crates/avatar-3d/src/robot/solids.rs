@@ -151,9 +151,27 @@ pub(super) fn merge(meshes: Vec<Mesh>) -> Mesh {
 }
 
 /// Unwraps a solid that the inputs guarantee; the fallback stands in where a
-/// degenerate input slipped through, so the builder never fails.
+/// degenerate input slipped through, so the builder never fails. Each use
+/// is recorded ([`stand_in`]).
 pub(super) fn or_ball(result: Result<Mesh, MeshError>, centre: V3, radius: f64) -> Mesh {
-    result.unwrap_or_else(|_| ball(centre, radius.max(0.5)))
+    result.unwrap_or_else(|_| {
+        stand_in("a ball for a solid the kit refused");
+        ball(centre, radius.max(0.5))
+    })
+}
+
+thread_local! {
+    static STAND_INS: std::cell::RefCell<Vec<&'static str>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Records that a simpler solid stood in for one the kit refused.
+pub(super) fn stand_in(what: &'static str) {
+    STAND_INS.with(|s| s.borrow_mut().push(what));
+}
+
+/// The stand-ins recorded on this thread since the last call.
+pub(super) fn take_stand_ins() -> Vec<&'static str> {
+    STAND_INS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
 /// A sphere.

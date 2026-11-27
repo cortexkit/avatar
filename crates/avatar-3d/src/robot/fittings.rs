@@ -252,6 +252,7 @@ fn stalk_eye(s: &StalkLayout, housing: f64) -> Mesh {
     let r = s.radii[0].max(s.radii[1]);
     let depth = 2.0 * r * (0.5 + housing);
     let Ok(outline) = Outline::new(&pts) else {
+        solids::stand_in("an ellipsoid for a stalk eye the kit refused");
         let c = s.rest.eye_centre;
         return ellipsoid([c[0], c[1], 0.0], [s.radii[0], s.radii[1], 0.5 * depth]);
     };
@@ -472,6 +473,10 @@ pub(super) fn sides(b: &mut Builder) {
     let head = b.find("head");
     let metal = b.mats.metal();
     for f in &fittings {
+        // Painted vents are a surface contribution in the head's marks.
+        if matches!(f.kind, "vents" | "none") {
+            continue;
+        }
         let k = f.scale;
         let s = f64::from(f.side);
         let [x, y] = [f.mount[0] * s, f.mount[1]];

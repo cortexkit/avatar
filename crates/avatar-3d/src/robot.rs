@@ -107,6 +107,10 @@ pub struct Robot {
     pub textures: Vec<Texture>,
     /// The three-quarter stage camera that frames this robot.
     pub camera: Camera,
+    /// Solids the mesh kit refused for this genome's numbers, each replaced
+    /// by a simpler stand-in so that building never fails. Empty for every
+    /// genome the tests build.
+    pub stand_ins: Vec<&'static str>,
 }
 
 impl Robot {

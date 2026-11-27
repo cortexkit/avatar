@@ -100,18 +100,27 @@ pub(super) struct Made {
     pub half_depth: f64,
 }
 
+/// Outline points closer than this, in robot units, to the point kept before
+/// them are dropped: two rounded corners that meet give nearly equal points,
+/// and an edge that short would leave no room for a bevel.
+pub const MERGE: f64 = 0.01;
+
 /// The outline of a hull in its texture frame: shifted down by `dy`, with
-/// repeated points (where two rounded corners meet) and a repeated closing
-/// point dropped.
+/// points within [`MERGE`] of the point before them (and a closing point
+/// within it of the first) dropped.
 pub(super) fn outline_points(h: &HullLayout, dy: f64) -> Vec<[f64; 2]> {
+    let near = |a: &[f64; 2], b: &[f64; 2]| {
+        let d = [a[0] - b[0], a[1] - b[1]];
+        (d[0] * d[0] + d[1] * d[1]).sqrt() < MERGE
+    };
     let mut pts: Vec<[f64; 2]> = Vec::with_capacity(h.outline.len());
     for p in &h.outline {
         let q = [p[0], p[1] + dy];
-        if pts.last() != Some(&q) {
+        if !pts.last().is_some_and(|last| near(last, &q)) {
             pts.push(q);
         }
     }
-    while pts.len() > 1 && pts.first() == pts.last() {
+    while pts.len() > 1 && near(&pts[0], &pts[pts.len() - 1]) {
         pts.pop();
     }
     pts
@@ -225,6 +234,7 @@ fn extrusion(
 /// The outline's bounding box extruded: the stand-in for an outline the kit
 /// cannot take.
 fn boxed(pts: &[[f64; 2]], depth: f64) -> Made {
+    solids::stand_in("a box for a hull outline the kit refused");
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
     for p in pts {
         for k in 0..2 {

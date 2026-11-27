@@ -138,6 +138,7 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
     let creature = decode(genome);
     let layout = Layout::new(&creature);
     let depth = Depth::new(genome);
+    super::solids::take_stand_ins();
     let mut b = Builder {
         creature: &creature,
         layout: &layout,
@@ -163,6 +164,7 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
     let bones = skeleton::finish(&b.bones);
     let camera = camera::stage(&b.parts);
     let status = b.mats.table();
+    let stand_ins = super::solids::take_stand_ins();
     Robot {
         depth,
         parts: b.parts,
@@ -177,5 +179,6 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
         },
         textures,
         camera,
+        stand_ins,
     }
 }

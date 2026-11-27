@@ -4,3 +4,7 @@
 mod cases;
 
 mod builder;
+mod faces;
+mod mapping;
+mod same_individual;
+mod separation;

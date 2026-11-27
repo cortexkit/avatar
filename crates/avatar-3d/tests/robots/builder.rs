@@ -13,6 +13,11 @@ const RANDOM_COUNT: u64 = 1_000;
 /// values, a bone for every rigid part, weights that sum to one.
 pub fn sound(label: &str, robot: &Robot) {
     assert!(!robot.parts.is_empty(), "{label}: no parts");
+    assert!(
+        robot.stand_ins.is_empty(),
+        "{label}: stand-ins {:?}",
+        robot.stand_ins
+    );
     for part in &robot.parts {
         let m = &part.mesh;
         assert!(
