@@ -97,7 +97,7 @@
 <circle cx="7.2" cy="-1.6" r="11.4" fill="url(#gradient-primitive-65)" class="eye-dome" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
 <ellipse cx="3.6" cy="-5.5" rx="3.1" ry="2.5" fill="#ffffff" opacity="0.93" class="shine" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
 <circle cx="10.7" cy="2" r="1" fill="#ffffff" opacity="0.55" class="shine" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
-<path d="M-7.9 42.6 L-3.2 44.3 M-2.3 44.4 L2.2 44.4 M3.2 44.2 L7.9 42.5" fill-rule="nonzero" fill="none" stroke="#2b2023" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" class="mouth-line" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
+<path d="M-7.9 42.6 L-4.4 44 M-3.8 44.1 L-0.3 44.6 M0.3 44.6 L3.8 44.1 M4.3 44 L7.8 42.6" fill-rule="nonzero" fill="none" stroke="#2b2023" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" class="mouth-line" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
 <path d="M-4.4 44 L-2.2 44 L-3.3 46.7 Z" fill-rule="nonzero" fill="#faf9f4" stroke="#cfc8bf" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="miter" class="fang" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
 <path d="M2.2 44 L4.4 44 L3.3 46.7 Z" fill-rule="nonzero" fill="#faf9f4" stroke="#cfc8bf" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="miter" class="fang" transform="translate(98.8 98.8) scale(0.88 0.88)"/>
 </svg>

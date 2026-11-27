@@ -1,9 +1,14 @@
 //! The `creature.knitted-toys` avatar type: crocheted plush creatures in the
 //! manner of amigurumi, drawn from a stored 16,384-byte genome.
 //!
-//! This is a port of a JavaScript design ("the reference" in this crate's
-//! comments), which lives in the authors' private experiments repository;
-//! `scripts/fidelity/` compares the two drawing by drawing.
+//! This began as a port of a JavaScript design ("the reference" in this
+//! crate's comments), which lives in the authors' private experiments
+//! repository. Version 1 was then refined in Rust, after the port, so that
+//! every genome draws a readable creature: no part that reads as clothing
+//! or an object, and a face that reads at icon size. It therefore no longer
+//! matches the reference exactly. The fidelity harness in
+//! `scripts/fidelity/`, which compares the two drawing by drawing, describes
+//! the port as it was, not the current drawing.
 //!
 //! - [`decode`] reads a toy's traits: bytes 1024 to 1279 for the toy, plus
 //!   creature.wild's colour bytes 160 to 163 for its yarn.

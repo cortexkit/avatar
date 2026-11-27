@@ -12,8 +12,8 @@ use crate::emit::{
     circle, compound, ellipse, poly, q, seg, shade, soft_shadow, stitches, Emitter, Style,
 };
 use crate::geom::{
-    add, clamp, closed_normals, cos, dir_of, dist, js_round, lerp, max, min, mixp, perp, resample,
-    rot, scl, sdist, signed_area, sin, sub, unit, Pt, PI, TAU,
+    add, clamp, closed_normals, cos, dir_of, dist, js_round, lerp, max, min, mixp, resample, rot,
+    scl, sdist, signed_area, sin, sub, unit, Pt, PI, TAU,
 };
 use crate::knit::band_poly;
 use crate::palette::{hsl, rgb, Yarn};
@@ -288,39 +288,13 @@ fn felt_svg(c: &mut Ctx, part: &Part) {
         None,
         part.cls,
     );
-    if c.detail == 2 && (part.stitched || part.cross_stitch) {
+    if c.detail == 2 && part.stitched {
         let colour = if g.pal.dark {
             g.pal.thread
         } else {
             part.thread_on.unwrap_or(edge)
         };
         running_stitch(c, &part.outline, colour, 1.5 / g.fit.s);
-    }
-    if c.detail == 2 && part.cross_stitch {
-        let p = &part.outline;
-        let sum = p.iter().fold([0.0, 0.0], |a, &q| add(a, q));
-        let centre = scl(sum, 1.0 / p.len() as f64);
-        let mut ds = Vec::new();
-        for &pt in p {
-            let qp = mixp(pt, centre, 0.16);
-            let u = scl(unit(sub(centre, pt)), 2.2 / g.fit.s);
-            let v = perp(u);
-            ds.push(seg(sub(qp, add(u, v)), add(qp, add(u, v))));
-            ds.push(seg(sub(qp, sub(u, v)), add(qp, sub(u, v))));
-        }
-        if let Some(shape) = stitches(ds) {
-            c.out.push(
-                shape,
-                Style::line(
-                    g.pal.thread,
-                    0.55 / g.fit.s,
-                    StrokeCap::Round,
-                    StrokeJoin::Miter,
-                ),
-                None,
-                "cross-stitch",
-            );
-        }
     }
     if c.detail >= 1 && part.vein {
         if let Some(tb) = &part.tube {

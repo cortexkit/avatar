@@ -4,7 +4,7 @@
 
 use avatar_svg::{Rgb, StrokeCap, StrokeJoin};
 
-use crate::build::{EyeSpot, Part, Seam};
+use crate::build::{EyeSpot, Part, Seam, ONE_EYE_BROW};
 use crate::draw::{drop_shadow, part_svg, running_stitch, Ctx};
 use crate::emit::{circle, ellipse, eye_gloss, poly, seg, stitches, Style, WHITE};
 use crate::geom::{
@@ -308,8 +308,11 @@ pub fn draw_eye(c: &mut Ctx, e: &EyeSpot) {
     let white = WHITE;
     match ek.kind {
         "stitched" => {
+            // A satin-stitched eye is narrower than the eye's round, but no
+            // less than about two thirds of it, or the face reads as blank.
+            let (sw, sh) = (r * 0.6, r * 0.84);
             c.out.push(
-                ellipse(ctr, r * 0.48, r * 0.68),
+                ellipse(ctr, sw, sh),
                 Style::fill(pal.thread_dark),
                 None,
                 "eye-stitched",
@@ -318,8 +321,8 @@ pub fn draw_eye(c: &mut Ctx, e: &EyeSpot) {
                 let mut ds = Vec::new();
                 for k in -1..=1 {
                     let kf = f64::from(k);
-                    let x = ctr[0] + kf * r * 0.2;
-                    let hh = r * 0.68 * max(0.0, 1.0 - sq(kf * 0.2 / 0.48)).sqrt() * 0.88;
+                    let x = ctr[0] + kf * sw * 0.42;
+                    let hh = sh * max(0.0, 1.0 - sq(kf * 0.42)).sqrt() * 0.88;
                     ds.push(seg(
                         [x - r * 0.04, ctr[1] - hh],
                         [x + r * 0.04, ctr[1] + hh],
@@ -348,44 +351,6 @@ pub fn draw_eye(c: &mut Ctx, e: &EyeSpot) {
                     r * 0.18,
                 ),
                 Style::fill(white).with_opacity(0.92),
-                None,
-                "shine",
-            );
-        }
-        "button" => {
-            let bc = rgb(0x3d2f2c);
-            let be = rgb(0x1f1614);
-            if !backed {
-                c.out.push(
-                    circle(ctr, r * 1.12),
-                    Style::fill(pal.main.deep).with_opacity(0.35),
-                    None,
-                    "socket",
-                );
-            }
-            c.out.push(
-                circle(ctr, r * 1.02),
-                Style::fill(bc).with_stroke(be, max(r * 0.1, c.pxu * 0.5)),
-                None,
-                "button",
-            );
-            if c.detail >= 1 {
-                c.out.push(
-                    circle(ctr, r * 0.74),
-                    Style::line(be, r * 0.06, StrokeCap::Butt, StrokeJoin::Miter),
-                    None,
-                    "button-rim",
-                );
-                for qd in [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]] {
-                    let h = [ctr[0] + qd[0] * r * 0.27, ctr[1] + qd[1] * r * 0.27];
-                    c.out
-                        .push(circle(h, r * 0.1), Style::fill(be), None, "button");
-                }
-            }
-            let at = glint(ctr, [ctr[0] - r * 0.45, ctr[1] - r * 0.5], r * 0.11);
-            c.out.push(
-                ellipse(at, r * 0.16, r * 0.11),
-                Style::fill(white).with_opacity(0.6),
                 None,
                 "shine",
             );
@@ -551,7 +516,7 @@ fn draw_brows(c: &mut Ctx) {
     } else {
         pal.thread_dark
     };
-    let w = max(f.r * 0.22 * b.weight, 1.5 / g.fit.s) * if felt { 1.7 } else { 1.0 };
+    let w = max(f.line_r() * 0.22 * b.weight, 1.5 / g.fit.s) * if felt { 1.7 } else { 1.0 };
     let one = f.eyes.len() == 1;
     for side in [-1.0, 1.0] {
         let p = if mood == "waiting" {
@@ -564,7 +529,7 @@ fn draw_brows(c: &mut Ctx) {
             brows(mood)
         };
         let [dy, ang, arch] = p;
-        let hl = f.brow_len * 0.5 * if one { 1.15 } else { 1.0 };
+        let hl = f.brow_len * 0.5 * if one { ONE_EYE_BROW } else { 1.0 };
         let cx = if one { side * hl * 0.95 } else { side * f.ex };
         let cy = f.brow_y + dy * f.r;
         let inner = [cx - side * hl * cos(ang), cy + hl * sin(ang)];
@@ -713,7 +678,7 @@ fn draw_mouth(c: &mut Ctx) {
     } else {
         pal.thread_dark
     };
-    let tw = max(max(f.r * 0.2, w * 0.13), 1.5 / g.fit.s);
+    let tw = max(max(f.line_r() * 0.2, w * 0.13), 1.5 / g.fit.s);
     // The line from a muzzle's nose down to the mouth.
     if let (Some(nose), Some(snout)) = (f.nose, f.snout) {
         if (mood == "neutral" || mood == "waiting")

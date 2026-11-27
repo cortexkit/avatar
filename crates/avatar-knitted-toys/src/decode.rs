@@ -19,7 +19,7 @@
 //! | 1120-1122 | brows |
 //! | 1124-1125 | cheeks |
 //! | 1127 | whether the head grows something at its sides, its crown, or nothing |
-//! | 1128-1136 | the sides of the head: ears, gills, frills, ram's horns, tentacles, tufts |
+//! | 1128-1136 | the sides of the head: ears, gills, frills, ram's horns, tentacles |
 //! | 1140-1146 | the crown: horns, antlers, antennae, spines, plates, a tuft, a sprout |
 //! | 1147 | one eye or three, for a toy that would otherwise be a stock animal |
 //! | 1148-1149 | the stalks of eyes on stalks |
@@ -28,7 +28,7 @@
 //! | 1168-1172 | tail |
 //! | 1176-1178 | accent yarn, stripe yarn, felt blush |
 //! | 1184-1186 | stripes on ears, tail and wings |
-//! | 1188-1193 | patches: belly, spots, joints, mends and hearts |
+//! | 1188-1193 | patches: belly, spots, joints and hearts |
 //! | 1200-1204 | moods: which side marks take, and how four moods show |
 //!
 //! Bytes 256 to 1023 are kept for traits only a 3D toy would show and are
@@ -458,6 +458,9 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
         &[("none", 2), ("sides", 8), ("crown", 6)],
         TURNS.site,
     );
+    // Frill is listed twice so that the other kinds keep the values that
+    // select them. The last slot gives a frill rather than a fan of yarn
+    // loops, which at the sides of the head reads as a hair bow.
     x.kind = if site != "sides" {
         "none"
     } else {
@@ -474,7 +477,7 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
                 ("tentacles", 2),
                 ("frill", 2),
                 ("ram", 3),
-                ("tufts", 1),
+                ("frill", 1),
             ],
             TURNS.ears,
         )
@@ -534,10 +537,13 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
     st.kind = r.pick(1184, 1, &[("none", 1), ("parts", 1)], 0);
     pt.belly = r.pick(1188, 2, &[("none", 2), ("felt", 1), ("knit", 1)], 0);
     pt.spots = r.pick(1190, 2, &[("none", 3), ("spots", 1)], 0);
+    // "none" is listed twice so that the other patches keep the values that
+    // select them. The second slot gives no patch rather than a square
+    // mending patch, which reads as a sticking plaster.
     pt.mend = r.pick(
         1192,
         3,
-        &[("none", 5), ("joints", 1), ("mend", 1), ("heart", 1)],
+        &[("none", 5), ("joints", 1), ("none", 1), ("heart", 1)],
         0,
     );
 
@@ -570,15 +576,17 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
         "face"
     };
     // Eyes on stalks or bumps take the crown's place, and such a toy has no
-    // ears, frill or tufts beneath them.
+    // ears, frill or ram's horns beneath them: horns pushed down the sides
+    // of the head read as headphones or a pot's handles.
     if e.mount != "face" {
         hd.kind = "none";
-        if familiar_ears(x.kind) || x.kind == "frill" || x.kind == "tufts" {
+        if familiar_ears(x.kind) || matches!(x.kind, "frill" | "ram") {
             x.kind = "none";
         }
     }
     // A loaf with nothing on its head reads as a knitted hat, so it always
-    // grows something at its sides.
+    // grows something at its sides. Frill is listed twice for the reason
+    // given for the sides above.
     if plan_name == "loaf" && x.kind == "none" && hd.kind == "none" && e.mount == "face" {
         x.kind = r.pick(
             1136,
@@ -588,7 +596,7 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
                 ("tentacles", 1),
                 ("frill", 1),
                 ("ram", 2),
-                ("tufts", 1),
+                ("frill", 1),
                 ("cat", 1),
                 ("round", 1),
             ],
@@ -607,8 +615,10 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
         stock_saved = true;
     }
     let odd = odd_body + u32::from(e.count != 2 || e.mount != "face");
-    // A single large button reads as a button sewn on, not an eye.
-    if e.count == 1 && e.kind == "button" {
+    // A button reads as a button sewn on, not an eye, and a single
+    // satin-stitched eye is too narrow a slit to carry a face: each is a
+    // safety eye or a felt eye instead.
+    if e.kind == "button" || (e.count == 1 && e.kind == "stitched") {
         e.kind = r.pick(1101, 1, &[("safety", 1), ("felt", 1)], 0);
     }
     if e.kind == "iris" {
@@ -630,8 +640,9 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
         e.felt = Some(r.pick(1097, 2, &[("round", 2), ("oval", 1), ("drop", 1)], 0));
         e.look = Some(r.pick(1098, 2, &[("centre", 2), ("out", 1), ("cross", 1)], 0));
     }
-    // A button has no lid at rest.
-    e.lid = if e.kind == "button" {
+    // A single eye has no lid at rest: a lid across one large eye reads as
+    // the peak of a cap.
+    e.lid = if e.count == 1 {
         "none"
     } else {
         r.pick(1099, 2, &[("none", 2), ("half", 1), ("heavy", 1)], 0)
@@ -669,6 +680,13 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
     if s.kind == "muzzle" || s.kind == "pig" {
         s.yarn = Some(r.pick(1108, 2, &[("accent", 2), ("tint", 1), ("main", 1)], 0));
     }
+    // A muzzle with no nose on it reads as a mask over the mouth, so on a
+    // muzzle the values that give no nose give a stitched one.
+    let no_nose = if s.kind == "muzzle" {
+        "stitched"
+    } else {
+        "none"
+    };
     let mut n = Nose {
         kind: if matches!(s.kind, "pig" | "beak" | "bill") {
             "none"
@@ -676,7 +694,7 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
             r.pick(
                 1112,
                 2,
-                &[("safety", 1), ("stitched", 1), ("felt", 1), ("none", 1)],
+                &[("safety", 1), ("stitched", 1), ("felt", 1), (no_nose, 1)],
                 0,
             )
         },
@@ -719,10 +737,10 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
     };
 
     // A toy carries three standout traits at most. Odd anatomy is always
-    // kept and counts first, then a frill, a ram's horns or tufts; what is
+    // kept and counts first, then a frill or a ram's horns; what is
     // left is spent in a fixed order: a crown part, a tail, stripes, spots,
     // a patch.
-    let mut room = 3_i32 - odd as i32 - i32::from(matches!(x.kind, "frill" | "ram" | "tufts"));
+    let mut room = 3_i32 - odd as i32 - i32::from(matches!(x.kind, "frill" | "ram"));
     room = room.max(0);
     let mut spend = |on: bool| {
         if !on {
@@ -872,7 +890,7 @@ pub fn decode(bytes: &[u8; 16_384]) -> Traits {
     if pt.spots == "spots" {
         pt.spot_layout = r.u(1191, 3);
     }
-    if pt.mend == "mend" || pt.mend == "heart" {
+    if pt.mend == "heart" {
         pt.mend_side = if r.bit(1193) { 1.0 } else { -1.0 };
     }
 
