@@ -10,14 +10,36 @@
 //!
 //! # Space and units
 //!
-//! Model space follows the motion conventions: +y is up, the floor is
-//! y = 0, x is the 2D x unmirrored as seen from the front, and the face looks
-//! along +z. One [`UNIT`] converts robot units, the units the 2D hulls are
-//! built in, to model units. A point (x, y) of a 2D drawing frame whose
-//! ground offset is `oy` (the frame's y plus `oy` is the 2D ground y, which
-//! grows downward from the floor at 0) becomes the model point
+//! Model space has +y up, the floor at y = 0 and the face looking along
+//! +z. x is the 2D x unmirrored as seen from the front, so a name ending in
+//! `.L` is on the viewer's left (−x) and `.R` on the right (+x). One model
+//! unit is 100 robot units, the units the 2D hulls are built in: about one
+//! body width ([`UNIT`]). A point (x, y) of a 2D drawing frame whose ground
+//! offset is `oy` (the frame's y plus `oy` is the 2D ground y, which grows
+//! downward from the floor at 0) becomes the model point
 //! `UNIT · (x, −(y + oy), z)`; [`to_model`] states it once. The 2D picture
 //! fit is never applied, so robots keep their relative sizes.
+//!
+//! # Bones
+//!
+//! Every robot has `root` at the floor under the middle of its base (it
+//! moves only to leave the ground), `body` at the base of the lowest hull
+//! (the trunk's pivot) and `head` at the head's base (its pivot in the 2D
+//! drawing; on a pod, which has no neck, it sits at the body's joint). The
+//! rest are present with their parts:
+//!
+//! - `neck` at the neck's base;
+//! - `upperarm.X`, `forearm.X` and `wrist.X` at the shoulder, elbow and
+//!   wrist, and `grip.X` at the wrist for a hand's jaws;
+//! - `antenna.N` at each antenna's socket, and `stalk.L`, `stalk.R` at each
+//!   eye stalk's base;
+//! - `needle` at a chest gauge's centre, and `cable` or `pipe` at the mount
+//!   of what trails behind;
+//! - `leg.X` at each hip and `foot.X` at its ankle, where X is `L`, `R`, `M`
+//!   for a middle leg, or `L1`, `R1`, `L2`… for splayed pairs from the
+//!   front; `spring.0` for a pogo spring; `wheel.L`, `wheel.R`, `wheel.M`,
+//!   or `wheel.0`, `wheel.1`… for a track's road wheels; and `jet.0` at a
+//!   hover nozzle's mount.
 //!
 //! # Parts, bones and skinning
 //!
@@ -62,8 +84,8 @@ use avatar_small_robots::{Mood, GENOME_LEN};
 
 use crate::mesh::Mesh;
 
-/// Model units (the motion conventions' units) per robot unit: 100 robot
-/// units, about one body width, make one model unit.
+/// Model units per robot unit: 100 robot units, about one body width, make
+/// one model unit.
 pub const UNIT: f64 = 0.01;
 
 /// The edge of every texture in pixels.
@@ -107,7 +129,8 @@ pub struct Robot {
     pub textures: Vec<Texture>,
     /// The three-quarter stage camera that frames this robot.
     pub camera: Camera,
-    /// Solids the mesh kit refused for this genome's numbers, each replaced
+    /// Solids the [`crate::mesh`] module refused for this genome's numbers,
+    /// each replaced
     /// by a simpler stand-in so that building never fails. Empty for every
     /// genome the tests build.
     pub stand_ins: Vec<&'static str>,
@@ -220,7 +243,8 @@ pub enum Skin {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct Bone {
-    /// The bone's name from the motion conventions, such as `head` or
+    /// The bone's name, from the list in this module's documentation, such
+    /// as `head` or
     /// `upperarm.L` (`.L` is −x).
     pub name: String,
     /// Index of the parent bone; `None` only for `root`.

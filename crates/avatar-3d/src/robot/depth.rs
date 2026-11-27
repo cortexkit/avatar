@@ -13,9 +13,9 @@ pub const LAST_BYTE: usize = 6153;
 pub const BACK_KINDS: [&str; 4] = ["hatch", "vents", "plate", "grille"];
 
 /// The decoded depth traits. Each is read from a bit field of one depth
-/// byte and spread evenly over its range, as the experimental browser
-/// renderer the 3D robots were first drawn in reads them, so a genome keeps
-/// its depth between the two.
+/// byte and spread evenly over its range: a field of n bits holding k gives
+/// `low + (high − low) · k / (2ⁿ − 1)`. Fields that no part reads are
+/// decoded anyway, so every byte's layout is fixed.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct Depth {

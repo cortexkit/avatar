@@ -7,7 +7,7 @@ use super::solids::V3;
 use super::{Anchor, Bone, UNIT};
 
 /// The extra height of `headTop` above the highest rest point, in model
-/// units (the motion conventions' value).
+/// units: a little headroom for a label or mark drawn there.
 pub const HEAD_TOP_CLEARANCE: f64 = 0.06;
 
 /// Adds `root` at the contact point, `body` at the base of the lowest hull,

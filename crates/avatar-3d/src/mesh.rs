@@ -1,4 +1,4 @@
-//! A kit of deterministic solids: extrusions of a 2D outline with bevelled
+//! Deterministic solids: extrusions of a 2D outline with bevelled
 //! edges, lathes of a half outline, and cylinders, capsules, tubes along a
 //! path, domes, spheres, tori and belts.
 //!

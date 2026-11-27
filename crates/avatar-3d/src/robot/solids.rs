@@ -1,4 +1,4 @@
-//! Placing the mesh kit's solids in robot space: robot units with +y up, the
+//! Placing the `mesh` module's solids in robot space: robot units with +y up, the
 //! floor at y = 0 and the front toward +z. Model space is robot space scaled
 //! by [`UNIT`](super::UNIT), applied once when a part is finished.
 
@@ -155,7 +155,7 @@ pub(super) fn merge(meshes: Vec<Mesh>) -> Mesh {
 /// is recorded ([`stand_in`]).
 pub(super) fn or_ball(result: Result<Mesh, MeshError>, centre: V3, radius: f64) -> Mesh {
     result.unwrap_or_else(|_| {
-        stand_in("a ball for a solid the kit refused");
+        stand_in("a ball for a solid the mesh module refused");
         ball(centre, radius.max(0.5))
     })
 }
@@ -164,7 +164,8 @@ thread_local! {
     static STAND_INS: std::cell::RefCell<Vec<&'static str>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Records that a simpler solid stood in for one the kit refused.
+/// Records that a simpler solid stood in for one the `mesh` module
+/// refused.
 pub(super) fn stand_in(what: &'static str) {
     STAND_INS.with(|s| s.borrow_mut().push(what));
 }
@@ -177,13 +178,14 @@ pub(super) fn take_stand_ins() -> Vec<&'static str> {
 /// A sphere.
 pub(super) fn ball(centre: V3, radius: f64) -> Mesh {
     let mesh = mesh::sphere(radius.max(0.05), ROUND, ROUND / 2)
-        .expect("a sphere of positive radius is in the kit's domain");
+        .expect("a sphere of positive radius is in the mesh module's domain");
     transform(mesh, &Affine::translate(centre))
 }
 
 /// An ellipsoid: a unit sphere scaled by its three radii.
 pub(super) fn ellipsoid(centre: V3, radii: V3) -> Mesh {
-    let mesh = mesh::sphere(1.0, ROUND, ROUND / 2).expect("the unit sphere is in the kit's domain");
+    let mesh = mesh::sphere(1.0, ROUND, ROUND / 2)
+        .expect("the unit sphere is in the mesh module's domain");
     transform(
         mesh,
         &Affine::scale(radii.map(|r| r.max(0.05))).then(Affine::translate(centre)),
@@ -241,7 +243,7 @@ pub(super) fn block(frame: Affine, half: V3, bevel: f64) -> Mesh {
     let flat = mesh::Extrusion { bevel: 0.0, ..spec };
     let mesh = mesh::extrude(&outline, &spec)
         .or_else(|_| mesh::extrude(&outline, &flat))
-        .expect("an unbevelled box is in the kit's domain");
+        .expect("an unbevelled box is in the mesh module's domain");
     transform(mesh, &frame)
 }
 

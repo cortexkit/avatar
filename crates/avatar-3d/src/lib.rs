@@ -7,7 +7,7 @@
 //! the portable sine and cosine of [`avatar_svg::wild::math`], so the same
 //! inputs give the same bytes everywhere.
 //!
-//! [`mesh`] is the kit of solids the creatures are built from; [`robot`]
+//! [`mesh`] makes the solids the creatures are built from; [`robot`]
 //! builds the small robots from their 2D type.
 
 pub mod mesh;

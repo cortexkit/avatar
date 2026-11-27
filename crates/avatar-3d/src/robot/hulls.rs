@@ -231,10 +231,10 @@ fn extrusion(
     }
 }
 
-/// The outline's bounding box extruded: the stand-in for an outline the kit
-/// cannot take.
+/// The outline's bounding box extruded: the stand-in for an outline the
+/// `mesh` module cannot take.
 fn boxed(pts: &[[f64; 2]], depth: f64) -> Made {
-    solids::stand_in("a box for a hull outline the kit refused");
+    solids::stand_in("a box for a hull outline the mesh module refused");
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
     for p in pts {
         for k in 0..2 {
@@ -257,7 +257,7 @@ fn boxed(pts: &[[f64; 2]], depth: f64) -> Made {
             bevel_steps: 1,
         },
     )
-    .expect("an unbevelled rectangle is in the kit's domain");
+    .expect("an unbevelled rectangle is in the mesh module's domain");
     Made {
         mesh,
         half_depth: 0.5 * depth,

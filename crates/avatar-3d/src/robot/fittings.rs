@@ -252,7 +252,7 @@ fn stalk_eye(s: &StalkLayout, housing: f64) -> Mesh {
     let r = s.radii[0].max(s.radii[1]);
     let depth = 2.0 * r * (0.5 + housing);
     let Ok(outline) = Outline::new(&pts) else {
-        solids::stand_in("an ellipsoid for a stalk eye the kit refused");
+        solids::stand_in("an ellipsoid for a stalk eye the mesh module refused");
         let c = s.rest.eye_centre;
         return ellipsoid([c[0], c[1], 0.0], [s.radii[0], s.radii[1], 0.5 * depth]);
     };
@@ -275,7 +275,7 @@ fn stalk_eye(s: &StalkLayout, housing: f64) -> Mesh {
             },
         )
     })
-    .expect("an unbevelled rounded rectangle is in the kit's domain")
+    .expect("an unbevelled rounded rectangle is in the mesh module's domain")
 }
 
 /// Antennae: each mast on its own bone at its socket, leaning toward or

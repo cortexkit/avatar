@@ -7,7 +7,7 @@
 //! named `component` are not catalogues: they are the members assemblies are
 //! made of.
 
-/// The kit solid a drawable entry is built from.
+/// The [`crate::mesh`] solid a drawable entry is built from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Solid {

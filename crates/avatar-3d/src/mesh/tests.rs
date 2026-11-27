@@ -1,4 +1,4 @@
-//! Checks of the mesh kit: closed and open solids, areas, normals, the
+//! Checks of the `mesh` module: closed and open solids, areas, normals, the
 //! footprint of concave extrusions, lathe radii, textured-front tags,
 //! projection coordinates, domain errors and pinned digests.
 
