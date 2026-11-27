@@ -61,7 +61,7 @@ impl Creature {
 pub fn decode(bytes: &[u8; GENOME_LEN]) -> Creature {
     let g = Genes::new(bytes);
     let palette = build_palette(&g);
-    let head = make_head(&g);
+    let head = make_head(&g, palette.hair_style);
     let face = layout_face(&g, &head);
     let eyes = make_eyes(&g, &head, &face);
     let brows = make_brows(&g, &eyes, head.size);

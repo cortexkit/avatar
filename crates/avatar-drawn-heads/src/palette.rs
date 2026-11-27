@@ -213,7 +213,14 @@ pub fn build_palette(g: &Genes) -> Palette {
     let (hair_hsl, hair_name) = if !skin_is_body {
         ([h, rc.body[0], rc.body[1]], "body colour".to_owned())
     } else {
-        let turn = g.raw(dna::COLOUR, 0, 3) as usize;
+        let mut turn = g.raw(dna::COLOUR, 0, 3) as usize;
+        // A sparse style leaves only small patches of hair, single hairs and
+        // facial hair. In a hue far from the skin's, such a patch at the
+        // temple reads as an earmuff and a beard as a bib, so those heads
+        // take the hue nearer the body colour that the far one stands in for.
+        if sparse(style) && (3..=5).contains(&turn) {
+            turn -= 3;
+        }
         let tone = g.raw(dna::COLOUR, 3, 2) as usize;
         match turn {
             6 => (

@@ -680,7 +680,8 @@ fn side_hair(k: &mut Kit) {
     let a1 = max(22.0, ear_top + 3.0 - lerp(34.0, 48.0, k.fore()));
     let widest = ear_top - 6.0;
     let a2 = ear_top + 15.0;
-    let wide = lerp(9.0, 14.0, k.vol()) * sz;
+    // Kept slim: a wide wedge over the ear reads as an earmuff.
+    let wide = lerp(5.0, 9.0, k.vol()) * sz;
     let hang = lerp(8.0, 14.0, k.line_kind() as f64 / 3.0);
     // How far the wedge stands out past the skull at an angle.
     let reach = |a: f64| {
@@ -716,7 +717,7 @@ fn side_hair(k: &mut Kit) {
             let rb = hd.at(sd * (a + half), 0.55 * reach(a + half) - 1.5);
             let tip = hd.at(
                 sd * (a + hang + k.lock_lean(gi) * 3.0),
-                reach(a) * lerp(0.95, 1.5, k.lock_len(gi)) + 2.0 * sz,
+                reach(a) * lerp(0.95, 1.25, k.lock_len(gi)) + 2.0 * sz,
             );
             let m = mix(ra, rb, 0.5);
             k.lock_in(ra, rb, tip, Edge::Thick, 0.14, Which::Back);
@@ -1302,7 +1303,9 @@ fn curls(k: &mut Kit) {
         -(ear_top + 6.0),
         ear_top + 6.0,
         28,
-        &|_| 1.6,
+        // Under an afro the cap reaches past the head's outline, which would
+        // otherwise show through the cloud as an arc round the skull.
+        &|_| if afro { 5.0 } else { 1.6 },
         &depth,
         CapRim::None,
     );
@@ -1492,9 +1495,13 @@ fn long_hair(k: &mut Kit, c: &HairInputs) {
     }) * sz;
     let t_end = k.ear_top - 2.0;
     let side = lerp(10.0, 24.0, k.fore()) * sz;
-    // The bare forehead under the parting is never taller than 32% of the head.
-    let deepest = max(3.0, k.mid(1.0, 1.0) - 0.32 * hd.h);
-    let side_deep = max(side, deepest + lerp(3.0, 8.0, k.fore()) * sz);
+    // The bare forehead under the parting is never taller than 20% of the
+    // head: a taller one leaves a thin band of hair over the crown, which
+    // reads as a hood.
+    let deepest = max(3.0, k.mid(1.0, 1.0) - 0.2 * hd.h);
+    // Beside the parting the hairline comes a little lower, so that it runs
+    // down from the parting towards the temples.
+    let side_deep = max(side, deepest + lerp(6.0, 12.0, k.fore()) * sz);
     // Over the top the hair is at least a round dome standing on straight sides.
     let dome_r = hd.at(90.0, v1).x;
     let dome_up = hd.rim(0.0) + v0 - dome_r;
@@ -1530,12 +1537,33 @@ fn long_hair(k: &mut Kit, c: &HairInputs) {
             max(lie, if a < 90.0 { dome(deg) } else { 0.0 }) - 0.4 * v0 * hump(deg, part, 6.0),
         )
     };
-    let depth = |deg: f64| {
+    let line = |deg: f64| {
         max(
             1.0,
-            lerp(deepest, side_deep, step(0.0, 40.0, (deg - part).abs()))
+            lerp(deepest, side_deep, step(0.0, 30.0, (deg - part).abs()))
                 * (1.0 - 0.92 * step(t_end - 26.0, t_end, deg.abs())),
         )
+    };
+    // A hairline this deep lies near the middle of the head, where the rays
+    // that place it by angle draw close together, so on a short wide head it
+    // would turn back in on its way down from the parting and pinch the bare
+    // forehead into a keyhole. Going out from the parting to either side,
+    // each point of the hairline therefore lies at least as far out sideways
+    // as every point before it.
+    let depth = |deg: f64| {
+        let d = line(deg);
+        let s = if deg >= part { 1.0 } else { -1.0 };
+        let mut widest = s * hd.at(part, -line(part)).x;
+        let mut a = part + s * 2.0;
+        while s * (deg - a) > 0.0 {
+            widest = max(widest, s * hd.at(a, -line(a)).x);
+            a += s * 2.0;
+        }
+        let u = up_dir(deg);
+        if s * hd.at(deg, -d).x >= widest || s * u.0 <= 0.0 {
+            return d;
+        }
+        max(1.0, hd.rim(deg) - widest / (s * u.0))
     };
     k.cap(-t_end, t_end, 40, &out, &depth, CapRim::Hairline);
     let at = within(hd, k.clear, &out, &depth);
