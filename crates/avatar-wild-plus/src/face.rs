@@ -46,7 +46,9 @@ pub const EYE_OUTER: [[f64; 3]; 13] = [
     [0.0, 1.1, 1.1],
     [0.0, 1.0, 1.0],
     [0.0, 1.12, 1.12],
-    [0.0, 0.5, 0.5],
+    // A bead is a small dark eye, but under seven tenths of the eye radius
+    // it shrinks to a dot that does not read as an eye at small sizes.
+    [0.0, 0.7, 0.7],
     [0.0, 1.0, 1.0],
 ];
 /// Room the mouth needs below the eye line, in eye radii: how far down, how
@@ -683,7 +685,9 @@ pub fn build_face(r: &Reader, w: &Wild, c: &FaceInput) -> Face {
     let brow_tilt = r.sgn(2542) * 0.14;
 
     // ---- markings around the eyes ----
-    let mut marking = if eye_plan == 5 {
+    // A patch round a single eye reads as a mask or a visor, and a streak
+    // under it has no twin, so a one-eyed face has neither.
+    let mut marking = if eye_plan == 5 || eye_plan == 1 {
         0
     } else {
         [0, 1, 4][r.pick(2416, &[12.0, 4.0, 2.0])]

@@ -366,12 +366,14 @@ pub fn render(c: &Built, mood: Mood) -> RenderTree {
         None,
         "wp-body",
     );
+    // The nose and mouth lie under the eyes, so a beak that reaches up to an
+    // eye tucks under it instead of covering it.
     let mut face_group = Vec::new();
+    face_group.extend(face.nose);
+    face_group.extend(face.mouth);
     face_group.extend(face.eyes);
     face_group.extend(face.lids);
     face_group.extend(face.brows);
-    face_group.extend(face.nose);
-    face_group.extend(face.mouth);
     face_group.extend(face.extra);
 
     // The shadow lies under the body, as wide as a share of the silhouette.

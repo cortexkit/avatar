@@ -5,8 +5,8 @@ use avatar_svg::wild::math::{cos, sin};
 use crate::body::Body;
 use crate::genes::{Ext, Reader, Wild};
 use crate::geom::{
-    bbox_of, circle_shape, clamp, dist, ellipse_poly, fluff_poly, js_round, lerp, max, min, or,
-    poly_sdf, poly_shape, ray_hit, rot, span_through, spline_open, thin, unit, WShape, P,
+    bbox_of, circle_shape, clamp, dist, ellipse_poly, field, fluff_poly, js_round, lerp, max, min,
+    or, poly_sdf, poly_shape, ray_hit, rot, span_through, spline_open, thin, unit, WShape, P,
 };
 use crate::parts::{
     build_limb, curl_cap, limb_shape, mirror_part, part_points, reach_scale, scale_part, Eye,
@@ -513,9 +513,12 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
             }
             sway = 1.0;
         } else if crest == 5 {
-            // comb: round lobes along the crown, as on a rooster
+            // comb: round lobes along the crown, as on a rooster. Pale, low
+            // lobes across the crown read as a shower cap, so a comb is a
+            // deeper shade and its lobes stand taller than they are wide.
             let lobes = 3 + (cnt % 3) as usize;
             let half = lerp(0.25, 0.6, spr);
+            let comb_shade = if shade == "toneUp" { "toneDown" } else { shade };
             let mut polys = Vec::with_capacity(lobes);
             for j in 0..lobes {
                 let uu = j as f64 / (lobes as f64 - 1.0) * 2.0 - 1.0;
@@ -530,12 +533,12 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
                     d[0] * (hit + rr * 0.35),
                     d[1] * (hit + rr * 0.35),
                     rr,
-                    rr * lerp(1.0, 1.5, tall),
+                    rr * lerp(1.3, 1.8, tall),
                     [d[1], -d[0]],
                     16,
                 ));
             }
-            layers.push(Layer::set(polys, shade, "comb"));
+            layers.push(Layer::set(polys, comb_shade, "comb"));
             sway = 0.5;
         } else if crest == 6 {
             // sail: a fin standing on the crown
@@ -615,10 +618,12 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
             let d = [cos(e.theta), sin(e.theta)];
             let own = if d[0] >= 0.0 { 1.0 } else { -1.0 };
             let fan = kind == 6 || kind == 11;
+            // A limb keeps clear of the axis, so the two of a pair never
+            // meet there: two limbs that meet on the crown read as a bow.
             let clear = if fan {
                 max(u * 0.04, cw * 0.3)
             } else {
-                u * 0.04
+                u * 0.1
             };
             let mut pose = Pose {
                 i,
@@ -837,13 +842,26 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
                 o.right.root[1],
             ) < 0.15 * cw
         };
+        // Ears come in one pair: more round ears round the head read as
+        // curlers or a pair of earmuffs, so only the highest pair is drawn,
+        // and only if it is rooted in the upper 35% of the head's height;
+        // lower down, beside the eyes, round ears read as earmuffs.
+        let top_ear = slots
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.kind == 4)
+            .min_by(|(_, a), (_, b)| a.right.root[1].total_cmp(&b.right.root[1]))
+            .filter(|(_, s)| s.right.root[1] < b.ct + ch * 0.35)
+            .map(|(i, _)| i);
         let skip: Vec<bool> = slots
             .iter()
-            .map(|s| {
-                bladed(s.kind)
-                    && slots
-                        .iter()
-                        .any(|o| ear_or_horn(o.kind) && !o.weld_it && at_root_of(s, o))
+            .enumerate()
+            .map(|(i, s)| {
+                (s.kind == 4 && Some(i) != top_ear)
+                    || (bladed(s.kind)
+                        && slots
+                            .iter()
+                            .any(|o| ear_or_horn(o.kind) && !o.weld_it && at_root_of(s, o)))
             })
             .collect();
         for (s, skipped) in slots.into_iter().zip(skip) {
@@ -977,11 +995,23 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
         let one = |_: f64| 1.0;
         if kind == 0 {
             let curl_at = |t: f64| 0.3 + 1.7 * t;
-            let s = limb_shape(
-                &LimbOpts::new(root, dir, len * 1.2, curl * 1.4, 0.0, &one)
-                    .curl_at(&curl_at)
-                    .steps(18),
-            );
+            let curled = |ease: f64| {
+                limb_shape(
+                    &LimbOpts::new(root, dir, len * 1.2, curl * 1.4 * ease, 0.0, &one)
+                        .curl_at(&curl_at)
+                        .steps(18),
+                )
+            };
+            // A curl whose end runs back behind the body joins the body at
+            // both ends and reads as the handle of a mug, so the curl is
+            // eased until the end stands clear of the body.
+            let mut s = curled(1.0);
+            for ease in [0.75, 0.55, 0.4] {
+                if field(&b.shapes, s.tip[0], s.tip[1]) > tw {
+                    break;
+                }
+                s = curled(ease);
+            }
             layers.push(Layer::tube(s.spine, tw * 0.55, fill, "tail"));
         } else if kind == 1 {
             let prof = |t: f64| 1.0 - 0.85 * t;
@@ -1083,7 +1113,14 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
             let frx = cw * r.lin(1282, 0.16, 0.32);
             let fry = frx * r.lin(1283, 0.45, 0.75);
             let tint = r.u8(1284);
-            let fill = ["toneDown", "dark", "body", "toneUp"][usize::from(tint % 4)];
+            // A plain oval foot much paler or darker than the body reads as a
+            // slipper or a shoe, so it is the body's colour or its shade;
+            // toes or claws make a foot of any shade read as a foot.
+            let fill = if kind == 1 {
+                ["toneDown", "toneDown", "body", "body"][usize::from(tint % 4)]
+            } else {
+                ["toneDown", "dark", "body", "toneUp"][usize::from(tint % 4)]
+            };
             let gy = b.ground;
             for side in [1.0, -1.0] {
                 let mut polys = vec![ellipse_poly(
@@ -1139,6 +1176,16 @@ pub fn compose_anatomy(r: &Reader, w: &Wild, b: &mut Body, eye_plan: usize, spre
                 }
                 .to_owned(),
             );
+        }
+    }
+
+    // A head whose eyes stand on stalks has no eyes of its own, and the
+    // inner discs of welded round ears on it read as a pair of eyes, so
+    // there they are not drawn.
+    if eye_plan == 5 {
+        for part in b.parts.iter_mut().filter(|p| p.over) {
+            part.layers
+                .retain(|l| !(l.cls == "inner" && matches!(l.shape, Shape::Disc { .. })));
         }
     }
 

@@ -570,7 +570,13 @@ pub fn build_limb(
             // horn: a pointed cone with ridges
             let l = len * lerp(0.8, 1.35, len_gain);
             let curl = e.curl * 0.7;
-            let base_w = min(e.width * u * lerp(0.9, 1.5, wid_gain), curl_cap(l, curl));
+            // A horn whose base is wider than two fifths of its length is a
+            // squat triangle, and a pair of them reads as a bow. (`base_w` is
+            // the half-width.)
+            let base_w = min(
+                min(e.width * u * lerp(0.9, 1.5, wid_gain), curl_cap(l, curl)),
+                l * 0.2,
+            );
             // A chipped horn stops short.
             let cut = if quirk >= 0.0 {
                 lerp(0.5, 0.8, quirk)
