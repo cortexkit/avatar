@@ -70,14 +70,44 @@ fn mood_index(mood: Mood) -> usize {
 /// what the drawing keeps: at 100 px and up every stitch, from 56 px the
 /// rows as grooves, and below that plain yarn with thicker embroidery.
 /// Line widths have a floor of about a screen pixel, and an eye a least
-/// size below 40 px. `None` draws what the toy shows at 256 px.
+/// size below 40 px. `None` draws what the toy shows at 256 px, and so does
+/// `Some(0)`.
 pub fn render_tree(genome: &[u8; 16_384], mood: Mood, detail_px: Option<u32>) -> RenderTree {
     let toy = build::build(decode(genome));
+    // A drawing 0 pixels wide has no pixel to size lines by: a screen pixel
+    // would be infinitely many frame units, which overflows when a length
+    // is stored. It is drawn at full detail instead, as `None` is.
+    let detail_px = detail_px.filter(|&px| px != 0);
     let px = f64::from(detail_px.unwrap_or(DEFAULT_DETAIL_PX));
     RenderTree {
         canvas: CANVAS,
         background: None,
         pixel_grid: None,
         primitives: draw::draw(&toy, mood_index(mood), px),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_detail_size_of_0_draws_what_no_size_draws() {
+        let genome = [7_u8; 16_384];
+        for mood in [
+            Mood::Neutral,
+            Mood::Working,
+            Mood::Happy,
+            Mood::Waiting,
+            Mood::Blocked,
+            Mood::Sad,
+            Mood::Sleepy,
+        ] {
+            assert_eq!(
+                render_tree(&genome, mood, Some(0)),
+                render_tree(&genome, mood, None),
+                "{mood:?}"
+            );
+        }
     }
 }

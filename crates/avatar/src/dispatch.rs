@@ -17,9 +17,38 @@ pub const CLASSIC: &str = "creature.classic";
 /// The stable registry type for the wild creature representation.
 pub const WILD: &str = "creature.wild";
 
+/// The stable registry type for wild-plus: the wild body with more masses,
+/// limbs, a coat and a hide pattern, drawn by `avatar_wild_plus`.
+pub const WILD_PLUS: &str = "creature.wild-plus";
+
+/// The stable registry type for sprouts: small plant creatures, drawn by
+/// `avatar_sprouts`.
+pub const SPROUTS: &str = "creature.sprouts";
+
+/// The stable registry type for pixel critters: pixel-art creatures on a
+/// 24 by 24 grid, drawn by `avatar_pixel_critters`.
+pub const PIXEL_CRITTERS: &str = "creature.pixel-critters";
+
+/// The stable registry type for knitted toys: crocheted plush creatures,
+/// drawn by `avatar_knitted_toys`.
+pub const KNITTED_TOYS: &str = "creature.knitted-toys";
+
+/// The stable registry type for small robots: little machines, drawn by
+/// `avatar_small_robots`.
+pub const SMALL_ROBOTS: &str = "creature.small-robots";
+
+/// The stable registry type for drawn heads: flat, front-facing heads drawn
+/// in ink, drawn by `avatar_drawn_heads`.
+pub const DRAWN_HEADS: &str = "creature.drawn-heads";
+
 const CLASSIC_VERSION: u32 = 2;
 const CLASSIC_GENOME_BYTES: usize = 1_024;
 const CLASSIC_CANVAS: u32 = 10_000;
+
+/// The genome length of the six types that read the stored genome wild
+/// reads: the same 16,384 bytes, so a row can change between these types
+/// and wild without a new genome.
+const WILD_GENOME_BYTES: usize = wild::GENOME_LEN;
 
 /// Why a stored avatar could not be rendered.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,9 +151,15 @@ pub fn render_tree_for_bytes(
 ///
 /// A type may draw less detail at small sizes, by design, so that a creature
 /// the size of a dock icon stays legible. [`render_tree_for_bytes`] always
-/// draws full detail. Classic and wild draw the same tree at every size, so
-/// for them the result equals [`render_tree_for_bytes`]. The checks, and
+/// draws full detail. Knitted toys, small robots and drawn heads draw less
+/// detail, and lines a screen pixel wide, at small sizes. Classic, wild,
+/// wild-plus, sprouts and pixel critters draw the same tree at every size,
+/// so for them the result equals [`render_tree_for_bytes`]. The checks, and
 /// their order, are the same as there.
+///
+/// A `detail_px` of 0 names no drawable size, so every type draws full
+/// detail for it: the result equals [`render_tree_for_bytes`]. Every other
+/// `u32` is accepted.
 pub fn render_tree_for_bytes_at(
     genome_bytes: &[u8],
     avatar_type: &str,
@@ -132,7 +167,8 @@ pub fn render_tree_for_bytes_at(
     mood: Mood,
     detail_px: u32,
 ) -> Result<RenderTree, DispatchError> {
-    route(genome_bytes, avatar_type, version)?.render(mood, Some(detail_px))
+    let detail_px = (detail_px != 0).then_some(detail_px);
+    route(genome_bytes, avatar_type, version)?.render(mood, detail_px)
 }
 
 /// Draws a stored avatar as a finished square image `size_px` pixels wide.
@@ -188,6 +224,12 @@ pub fn render_image(
 enum Route<'a> {
     ClassicV2(&'a [u8; CLASSIC_GENOME_BYTES]),
     Wild(&'a [u8; wild::GENOME_LEN], Generation),
+    WildPlusV1(&'a [u8; WILD_GENOME_BYTES]),
+    SproutsV1(&'a [u8; WILD_GENOME_BYTES]),
+    PixelCrittersV1(&'a [u8; WILD_GENOME_BYTES]),
+    KnittedToysV1(&'a [u8; WILD_GENOME_BYTES]),
+    SmallRobotsV1(&'a [u8; WILD_GENOME_BYTES]),
+    DrawnHeadsV1(&'a [u8; WILD_GENOME_BYTES]),
 }
 
 /// Accepts or refuses a stored row, checking type, then version, then the
@@ -220,9 +262,44 @@ fn route<'a>(
                 requested,
             }),
         },
+        // Each of these types has shipped one generation. A fix to how one
+        // draws is a new version with its own arm beside version 1, never an
+        // edit to the generator version 1 calls.
+        WILD_PLUS => match version {
+            1 => Ok(Route::WildPlusV1(genome_layout(genome_bytes)?)),
+            requested => Err(unsupported_version(avatar_type, requested)),
+        },
+        SPROUTS => match version {
+            1 => Ok(Route::SproutsV1(genome_layout(genome_bytes)?)),
+            requested => Err(unsupported_version(avatar_type, requested)),
+        },
+        PIXEL_CRITTERS => match version {
+            1 => Ok(Route::PixelCrittersV1(genome_layout(genome_bytes)?)),
+            requested => Err(unsupported_version(avatar_type, requested)),
+        },
+        KNITTED_TOYS => match version {
+            1 => Ok(Route::KnittedToysV1(genome_layout(genome_bytes)?)),
+            requested => Err(unsupported_version(avatar_type, requested)),
+        },
+        SMALL_ROBOTS => match version {
+            1 => Ok(Route::SmallRobotsV1(genome_layout(genome_bytes)?)),
+            requested => Err(unsupported_version(avatar_type, requested)),
+        },
+        DRAWN_HEADS => match version {
+            1 => Ok(Route::DrawnHeadsV1(genome_layout(genome_bytes)?)),
+            requested => Err(unsupported_version(avatar_type, requested)),
+        },
         requested => Err(DispatchError::UnsupportedType {
             requested: requested.to_owned(),
         }),
+    }
+}
+
+/// The refusal for a known type stored at a version this build did not ship.
+fn unsupported_version(avatar_type: &str, requested: u32) -> DispatchError {
+    DispatchError::UnsupportedVersion {
+        avatar_type: avatar_type.to_owned(),
+        requested,
     }
 }
 
@@ -239,13 +316,25 @@ fn genome_layout<const LEN: usize>(genome_bytes: &[u8]) -> Result<&[u8; LEN], Di
 
 impl Route<'_> {
     /// Draws the accepted row in `mood`. `detail_px` is the width in pixels
-    /// the tree will be drawn at, or `None` for full detail. Classic and wild
-    /// draw the same tree at every size, so neither reads it; a type that
-    /// draws less detail at small sizes does.
-    fn render(self, mood: Mood, _detail_px: Option<u32>) -> Result<RenderTree, DispatchError> {
+    /// the tree will be drawn at, or `None` for full detail. Only the types
+    /// that draw less detail at small sizes read it; the generators of
+    /// sprouts and pixel critters take no size at all.
+    fn render(self, mood: Mood, detail_px: Option<u32>) -> Result<RenderTree, DispatchError> {
         match self {
             Self::ClassicV2(bytes) => render_classic_v2(bytes, mood),
             Self::Wild(bytes, generation) => Ok(wild::render_tree(bytes, mood, generation)),
+            Self::WildPlusV1(bytes) => Ok(avatar_wild_plus::render_tree(bytes, mood, detail_px)),
+            Self::SproutsV1(bytes) => Ok(avatar_sprouts::render_tree(bytes, mood)),
+            Self::PixelCrittersV1(bytes) => Ok(avatar_pixel_critters::render_tree(bytes, mood)),
+            Self::KnittedToysV1(bytes) => {
+                Ok(avatar_knitted_toys::render_tree(bytes, mood, detail_px))
+            }
+            Self::SmallRobotsV1(bytes) => {
+                Ok(avatar_small_robots::render_tree(bytes, mood, detail_px))
+            }
+            Self::DrawnHeadsV1(bytes) => {
+                Ok(avatar_drawn_heads::render_tree(bytes, mood, detail_px))
+            }
         }
     }
 }
@@ -390,8 +479,218 @@ mod tests {
         }
     }
 
-    /// Rows that cover every route: the classic generation and both wild
-    /// generations, each with a genome of the length it requires.
+    /// A generator as dispatch calls it: the genome, the mood and the size
+    /// the tree will be drawn at, `None` meaning full detail.
+    type Generator = fn(&[u8; WILD_GENOME_BYTES], Mood, Option<u32>) -> RenderTree;
+
+    /// The six types registered at version 1, each with the generator that
+    /// version must call. Sprouts and pixel critters draw the same tree at
+    /// every size, so their generators take no size.
+    fn new_types() -> [(&'static str, Generator); 6] {
+        [
+            (WILD_PLUS, avatar_wild_plus::render_tree),
+            (SPROUTS, |bytes, mood, _| {
+                avatar_sprouts::render_tree(bytes, mood)
+            }),
+            (PIXEL_CRITTERS, |bytes, mood, _| {
+                avatar_pixel_critters::render_tree(bytes, mood)
+            }),
+            (KNITTED_TOYS, avatar_knitted_toys::render_tree),
+            (SMALL_ROBOTS, avatar_small_robots::render_tree),
+            (DRAWN_HEADS, avatar_drawn_heads::render_tree),
+        ]
+    }
+
+    #[test]
+    fn new_type_names_are_the_names_their_crates_draw() {
+        assert_eq!(
+            new_types().map(|(avatar_type, _)| avatar_type),
+            [
+                "creature.wild-plus",
+                "creature.sprouts",
+                "creature.pixel-critters",
+                "creature.knitted-toys",
+                "creature.small-robots",
+                "creature.drawn-heads",
+            ]
+        );
+        // Where a generator crate names its own type, the registry uses
+        // that name.
+        assert_eq!(SPROUTS, avatar_sprouts::TYPE);
+        assert_eq!(PIXEL_CRITTERS, avatar_pixel_critters::TYPE);
+        assert_eq!(avatar_pixel_critters::VERSION, 1);
+        assert_eq!(DRAWN_HEADS, avatar_drawn_heads::CREATURE_TYPE);
+    }
+
+    #[test]
+    fn new_types_render_version_1_through_their_own_generator() {
+        let bytes = wild::probe_genome(0);
+        let mut neutral = Vec::new();
+        for (avatar_type, generator) in new_types() {
+            for mood in wild::mood::ALL {
+                let tree = render_tree_for_bytes(&bytes, avatar_type, 1, mood)
+                    .unwrap_or_else(|error| panic!("{avatar_type} in {mood:?}: {error}"));
+                assert!(!tree.primitives.is_empty(), "{avatar_type} in {mood:?}");
+                assert_eq!(
+                    tree,
+                    generator(&bytes, mood, None),
+                    "{avatar_type} in {mood:?}"
+                );
+            }
+            neutral.push(generator(&bytes, Mood::Neutral, None));
+        }
+        // Every type draws the genome differently, so a route that called
+        // another type's generator could not pass the comparison above.
+        for (index, tree) in neutral.iter().enumerate() {
+            assert!(!neutral[index + 1..].contains(tree));
+        }
+    }
+
+    #[test]
+    fn new_types_draw_the_detail_their_generator_draws_at_each_size() {
+        let bytes = wild::probe_genome(0);
+        for (avatar_type, generator) in new_types() {
+            for detail_px in [1, 16, 48, 56, 96, 100, 256, 1_080, 2_048, u32::MAX] {
+                assert_eq!(
+                    render_tree_for_bytes_at(&bytes, avatar_type, 1, Mood::Sleepy, detail_px),
+                    Ok(generator(&bytes, Mood::Sleepy, Some(detail_px))),
+                    "{avatar_type} at {detail_px} px"
+                );
+            }
+            // Three of the types leave detail out at small sizes, so the
+            // comparison above fails if dispatch drops the size.
+            let small = render_tree_for_bytes_at(&bytes, avatar_type, 1, Mood::Sleepy, 48);
+            let full = render_tree_for_bytes(&bytes, avatar_type, 1, Mood::Sleepy);
+            assert_eq!(
+                small != full,
+                [KNITTED_TOYS, SMALL_ROBOTS, DRAWN_HEADS].contains(&avatar_type),
+                "{avatar_type} at 48 px against full detail"
+            );
+        }
+    }
+
+    #[test]
+    fn every_type_draws_full_detail_at_0_px_and_accepts_the_extreme_sizes() {
+        let wild_bytes = wild::probe_genome(0).to_vec();
+        let rows = accepted_rows()
+            .into_iter()
+            .chain(new_types().map(|(avatar_type, _)| (wild_bytes.clone(), avatar_type, 1)));
+        for (bytes, avatar_type, version) in rows {
+            for mood in wild::mood::ALL {
+                let label = format!("{avatar_type} version {version} in {mood:?}");
+                let full = render_tree_for_bytes(&bytes, avatar_type, version, mood)
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
+                assert_eq!(
+                    render_tree_for_bytes_at(&bytes, avatar_type, version, mood, 0),
+                    Ok(full),
+                    "{label} at 0 px"
+                );
+                for detail_px in [1, u32::MAX] {
+                    let tree =
+                        render_tree_for_bytes_at(&bytes, avatar_type, version, mood, detail_px)
+                            .unwrap_or_else(|error| panic!("{label} at {detail_px} px: {error}"));
+                    assert!(!tree.primitives.is_empty(), "{label} at {detail_px} px");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn new_types_check_type_then_version_then_length() {
+        for length in [0, 1_024, 16_383, 16_384, 16_385] {
+            let bytes = vec![0; length];
+            // A near miss of a registered name is another, unknown type.
+            for requested in [
+                "creature.wild_plus",
+                "creature.Sprouts",
+                "pixel-critters",
+                "creature.knitted-toys ",
+                "creature.small-robots\0",
+                "creature.drawn-head",
+            ] {
+                assert_eq!(
+                    render_tree_for_bytes(&bytes, requested, 1, Mood::Neutral),
+                    Err(DispatchError::UnsupportedType {
+                        requested: requested.into()
+                    })
+                );
+            }
+            for (avatar_type, _) in new_types() {
+                for version in [0, 2, 3, u32::MAX] {
+                    assert_eq!(
+                        render_tree_for_bytes(&bytes, avatar_type, version, Mood::Neutral),
+                        Err(DispatchError::UnsupportedVersion {
+                            avatar_type: avatar_type.into(),
+                            requested: version
+                        }),
+                        "{avatar_type} version {version}, {length} bytes"
+                    );
+                }
+                if length != WILD_GENOME_BYTES {
+                    assert_eq!(
+                        render_tree_for_bytes(&bytes, avatar_type, 1, Mood::Neutral),
+                        Err(DispatchError::GenomeLength {
+                            expected: WILD_GENOME_BYTES,
+                            actual: length
+                        }),
+                        "{avatar_type}, {length} bytes"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn new_type_images_rasterize_the_tree_drawn_for_their_size() {
+        let bytes = wild::probe_genome(0);
+        for (avatar_type, _) in new_types() {
+            for size_px in [0, 2_049, u32::MAX] {
+                assert_eq!(
+                    render_image(
+                        &bytes,
+                        avatar_type,
+                        1,
+                        Mood::Neutral,
+                        size_px,
+                        &ImageOptions::default()
+                    ),
+                    Err(DispatchError::ImageSize { requested: size_px }),
+                    "{avatar_type}"
+                );
+            }
+
+            let tree = render_tree_for_bytes_at(&bytes, avatar_type, 1, Mood::Happy, 64)
+                .expect("an accepted row renders");
+            let mut images = Vec::new();
+            for options in all_options() {
+                let expected = rasterize_tree(&tree, 64, &options).expect("the tree rasterizes");
+                assert_eq!(
+                    render_image(&bytes, avatar_type, 1, Mood::Happy, 64, &options).as_ref(),
+                    Ok(&expected),
+                    "{avatar_type} with {options:?}"
+                );
+                images.push(expected.pixels);
+            }
+            // Dropping the ground shadow changes the image exactly for the
+            // types whose creature stands on one. The first and third option
+            // sets differ only in the shadow.
+            let shadow = tree
+                .primitives
+                .iter()
+                .any(|primitive| primitive.role == Some(avatar_svg::Role::GroundShadow));
+            assert_eq!(
+                shadow,
+                [WILD_PLUS, SPROUTS, KNITTED_TOYS, SMALL_ROBOTS].contains(&avatar_type),
+                "{avatar_type} ground shadow"
+            );
+            assert_eq!(images[0] != images[2], shadow, "{avatar_type}");
+        }
+    }
+
+    /// Rows that cover the classic generation and both wild generations,
+    /// each with a genome of the length it requires. The six newer types
+    /// have their own tests below, because some of them draw less detail at
+    /// small sizes.
     fn accepted_rows() -> [(Vec<u8>, &'static str, u32); 3] {
         let wild_bytes = wild::probe_genome(0).to_vec();
         [
@@ -434,20 +733,28 @@ mod tests {
 
     #[test]
     fn tree_at_a_size_and_image_refuse_rows_exactly_as_the_tree_call_does() {
+        let checked_rows =
+            [
+                ("creature.unknown", 1),
+                (CLASSIC, 1),
+                (CLASSIC, CLASSIC_VERSION),
+                (WILD, 0),
+                (WILD, 1),
+                (WILD, 2),
+                (WILD, 3),
+                (WILD, u32::MAX),
+            ]
+            .into_iter()
+            .chain(new_types().into_iter().flat_map(|(avatar_type, _)| {
+                [(avatar_type, 0), (avatar_type, 1), (avatar_type, 2)]
+            }))
+            .collect::<Vec<_>>();
         let refused_rows = [0, 1, 1_024, 16_383, 16_384, 16_385]
             .into_iter()
             .flat_map(|length| {
-                [
-                    ("creature.unknown", 1),
-                    (CLASSIC, 1),
-                    (CLASSIC, CLASSIC_VERSION),
-                    (WILD, 0),
-                    (WILD, 1),
-                    (WILD, 2),
-                    (WILD, 3),
-                    (WILD, u32::MAX),
-                ]
-                .map(|(avatar_type, version)| (vec![0; length], avatar_type, version))
+                checked_rows
+                    .iter()
+                    .map(move |&(avatar_type, version)| (vec![0; length], avatar_type, version))
             })
             .filter_map(|(bytes, avatar_type, version)| {
                 render_tree_for_bytes(&bytes, avatar_type, version, Mood::Neutral)

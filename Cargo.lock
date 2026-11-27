@@ -144,10 +144,16 @@ dependencies = [
 name = "cortexkit-avatar"
 version = "0.1.0"
 dependencies = [
+ "cortexkit-avatar-drawn-heads",
  "cortexkit-avatar-genome",
+ "cortexkit-avatar-knitted-toys",
  "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-pixel-critters",
  "cortexkit-avatar-raster",
+ "cortexkit-avatar-small-robots",
+ "cortexkit-avatar-sprouts",
  "cortexkit-avatar-svg",
+ "cortexkit-avatar-wild-plus",
 ]
 
 [[package]]

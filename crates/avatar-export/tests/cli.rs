@@ -341,3 +341,100 @@ fn cli_rejects_retired_backfill_options() {
         assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
     }
 }
+
+/// The six types that draw the wild genome in other styles, with the
+/// directory under `vectors/` that holds each one's golden trees.
+const NEW_TYPES: [(&str, &str); 6] = [
+    ("creature.wild-plus", "wild-plus"),
+    ("creature.sprouts", "sprouts"),
+    ("creature.pixel-critters", "pixel-critters"),
+    ("creature.knitted-toys", "knitted-toys"),
+    ("creature.small-robots", "small-robots"),
+    ("creature.drawn-heads", "drawn-heads"),
+];
+
+#[test]
+fn new_types_export_stored_genomes_at_version_1() {
+    let genome = GenomeFile::new(WILD_HEX.trim());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (type_name, stem) in NEW_TYPES {
+        // Without --version a stored genome renders at version 1, the only
+        // one these types have.
+        let dir = ExportDir::new();
+        let output = dir.run(&[
+            "--genome-file",
+            &genome.path,
+            "--type",
+            type_name,
+            "--mood",
+            "happy",
+            "--out",
+            "tree.json",
+        ]);
+        assert!(output.status.success(), "{type_name}: {output:?}");
+        assert_eq!(
+            std::fs::read(dir.0.join("tree.json")).unwrap(),
+            std::fs::read(root.join(format!("vectors/{stem}/tree/wild-port-0005__happy.json")))
+                .unwrap(),
+            "{type_name}"
+        );
+
+        let dir = ExportDir::new();
+        let output = dir.run(&[
+            "--genome-file",
+            &genome.path,
+            "--type",
+            type_name,
+            "--version",
+            "1",
+            "--size",
+            "64",
+            "--out",
+            "image.png",
+        ]);
+        assert!(output.status.success(), "{type_name}: {output:?}");
+        let png = std::fs::read(dir.0.join("image.png")).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "{type_name}");
+        assert_eq!(&png[16..24], &[0, 0, 0, 64, 0, 0, 0, 64], "{type_name}");
+
+        let dir = ExportDir::new();
+        let output = dir.run(&[
+            "--genome-file",
+            &genome.path,
+            "--type",
+            type_name,
+            "--version",
+            "2",
+            "--out",
+            "tree.json",
+        ]);
+        assert_eq!(output.status.code(), Some(1), "{type_name}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("unsupported version 2"),
+            "{type_name}: {output:?}"
+        );
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn new_types_mint_genomes_at_version_1() {
+    let dir = ExportDir::new();
+    let wild = dir.run(&["--mint-genomes", "agent_x", "--type", "creature.wild"]);
+    assert!(wild.status.success(), "{wild:?}");
+    let wild: Vec<serde_json::Value> = serde_json::from_slice(&wild.stdout).unwrap();
+    for (type_name, _) in NEW_TYPES {
+        let output = dir.run(&["--mint-genomes", "agent_x", "--type", type_name]);
+        assert!(output.status.success(), "{type_name}: {output:?}");
+        let records: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(records.len(), 1, "{type_name}");
+        assert_eq!(records[0]["agent_id"], "agent_x");
+        assert_eq!(records[0]["avatar_type"], type_name);
+        assert_eq!(records[0]["avatar_version"], 1, "{type_name}");
+        // The same seat mints the same 16,384 bytes it mints under wild.
+        assert_eq!(
+            records[0]["avatar_genome"], wild[0]["avatar_genome"],
+            "{type_name}"
+        );
+    }
+}

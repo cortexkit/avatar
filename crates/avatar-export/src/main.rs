@@ -3,8 +3,8 @@
 //! Image exports take a stored genome with its type and generation version,
 //! so they depict the current creature even after its genome has been re-rolled.
 //!
-//! Classic renders through its legacy SVG renderer; wild renders through
-//! the render tree serializer. Both rasterize with resvg (pure Rust, with
+//! Classic renders through its legacy SVG renderer; every other type renders
+//! through the render tree serializer. Both rasterize with resvg (pure Rust, with
 //! no system fonts needed because the SVG contains no text). Consumers
 //! re-run exports when an agent's stored genome, type or version changes;
 //! this tool keeps no cache.
@@ -27,7 +27,10 @@
 //!     With @file, reads one agent ID per line, ignoring blank lines and # comments.
 //!     Writes a JSON genome manifest, to standard output if --out is absent.
 
-use avatar::{render_tree_for_bytes, serialize_tree, serialize_tree_json, Mood};
+use avatar::{
+    render_tree_for_bytes, serialize_tree, serialize_tree_json, Mood, DRAWN_HEADS, KNITTED_TOYS,
+    PIXEL_CRITTERS, SMALL_ROBOTS, SPROUTS, WILD_PLUS,
+};
 use avatar_genome::{decode, derive_genome_bytes, Genome, SeatIdentity};
 // Classic SVG and PNG exports keep avatar-svg's direct classic renderer,
 // whose bytes differ from the generic tree serializer's.
@@ -237,6 +240,14 @@ const MINTABLE: &[(&str, usize, &[u32])] = &[
     // Version 2 puts mood lids and squints on aspect-scaled eyes; version 1
     // drew them beside the eye and stays for rows that still store it.
     ("creature.wild", 16_384, &[1, 2]),
+    // Six more styles of the same 16,384-byte genome wild reads, so a seat
+    // minted for any of them has the same genome it has under wild.
+    (WILD_PLUS, 16_384, &[1]),
+    (SPROUTS, 16_384, &[1]),
+    (PIXEL_CRITTERS, 16_384, &[1]),
+    (KNITTED_TOYS, 16_384, &[1]),
+    (SMALL_ROBOTS, 16_384, &[1]),
+    (DRAWN_HEADS, 16_384, &[1]),
 ];
 
 fn mintable(type_name: &str) -> Option<(&'static str, usize, &'static [u32])> {
@@ -471,9 +482,11 @@ fn main() {
         return;
     }
 
-    input_error(
-        "usage: avatar-export (--genome <hex> | --genome-file <path|->) [--type creature.classic|creature.wild] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; the newest version of the type (2 for classic, 2 for wild)\n       avatar-export --mint-genomes <id,id,...|@file> [--type creature.classic|creature.wild] [--out <file>]"
-    );
+    let types: Vec<&str> = MINTABLE.iter().map(|(t, _, _)| *t).collect();
+    input_error(&format!(
+        "usage: avatar-export (--genome <hex> | --genome-file <path|->) [--type <type>] [--version N] [--out f.png|f.svg|f.json]\n       options: --size N (default 400, PNG only), --mood neutral|working|happy|waiting|blocked|sad|sleepy\n       stored-genome defaults: creature.classic; the newest version of the type (2 for classic, 2 for wild, 1 for the others)\n       avatar-export --mint-genomes <id,id,...|@file> [--type <type>] [--out <file>]\n       types: {}",
+        types.join(", ")
+    ));
 }
 
 #[cfg(test)]
@@ -644,6 +657,107 @@ mod tests {
                 std::fs::read(golden).unwrap(),
                 "version 2 tree JSON for {name}"
             );
+        }
+    }
+
+    /// The six types that draw the wild genome in other styles, with the
+    /// directory under `vectors/` that holds each one's golden trees.
+    const NEW_TYPES: [(&str, &str); 6] = [
+        (WILD_PLUS, "wild-plus"),
+        (SPROUTS, "sprouts"),
+        (PIXEL_CRITTERS, "pixel-critters"),
+        (KNITTED_TOYS, "knitted-toys"),
+        (SMALL_ROBOTS, "small-robots"),
+        (DRAWN_HEADS, "drawn-heads"),
+    ];
+
+    #[test]
+    fn new_type_svg_and_tree_json_exports_match_their_golden_corpus() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (type_name, stem) in NEW_TYPES {
+            for (mood, name) in [
+                (Mood::Neutral, "neutral"),
+                (Mood::Working, "working"),
+                (Mood::Happy, "happy"),
+                (Mood::Waiting, "waiting"),
+                (Mood::Blocked, "blocked"),
+                (Mood::Sad, "sad"),
+                (Mood::Sleepy, "sleepy"),
+            ] {
+                let svg =
+                    export_from_hex(WILD_HEX, type_name, 1, mood, 64, |svg, _| Ok(svg.to_vec()))
+                        .unwrap();
+                let golden = root.join(format!(
+                    "vectors/{stem}/tree-svg/wild-port-0005__{name}.svg"
+                ));
+                assert_eq!(
+                    svg,
+                    std::fs::read(golden).unwrap(),
+                    "{type_name} SVG for {name}"
+                );
+                let json = tree_json_from_hex(WILD_HEX, type_name, 1, mood).unwrap();
+                let golden = root.join(format!("vectors/{stem}/tree/wild-port-0005__{name}.json"));
+                assert_eq!(
+                    json,
+                    std::fs::read(golden).unwrap(),
+                    "{type_name} tree JSON for {name}"
+                );
+            }
+            let png = export_from_hex(WILD_HEX, type_name, 1, Mood::Happy, 64, rasterize).unwrap();
+            assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "{type_name}");
+            // A stored-genome export without --version draws version 1.
+            let (_, len, versions) = mintable(type_name).expect("the type is mintable");
+            assert_eq!((len, current_version(versions)), (16_384, 1), "{type_name}");
+        }
+    }
+
+    #[test]
+    fn new_types_refuse_other_versions_and_lengths_before_rendering() {
+        let classic_hex = "00".repeat(1_024);
+        let invalid_hex = "gg".repeat(16_384);
+        for (type_name, _) in NEW_TYPES {
+            for (hex, version, error) in [
+                (WILD_HEX, 0, "unsupported version"),
+                (WILD_HEX, 2, "unsupported version"),
+                ("", 2, "unsupported version"),
+                (classic_hex.as_str(), 1, "expected 32768 hex characters"),
+                (invalid_hex.as_str(), 1, "invalid hex"),
+            ] {
+                let result = export_from_hex(hex, type_name, version, Mood::Neutral, 64, |_, _| {
+                    panic!("invalid input reached the rasterizer")
+                });
+                assert!(result.unwrap_err().contains(error), "{type_name}");
+                let json = tree_json_from_hex(hex, type_name, version, Mood::Neutral);
+                assert!(json.unwrap_err().contains(error), "{type_name}");
+            }
+        }
+    }
+
+    #[test]
+    fn new_types_mint_the_wild_genome_at_version_1() {
+        let ids: Vec<String> = ["agent_aaa", "agent_bbb"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let wild = mint_manifest(&ids, "creature.wild");
+        for (type_name, _) in NEW_TYPES {
+            // Every type reads the genome wild reads, so a seat mints the same
+            // bytes under each; only the type and the version differ.
+            let expected = wild
+                .replace(
+                    "\"avatar_type\":\"creature.wild\"",
+                    &format!("\"avatar_type\":\"{type_name}\""),
+                )
+                .replace("\"avatar_version\":2", "\"avatar_version\":1");
+            // Both replacements must have matched every record.
+            assert_eq!(expected.matches("\"avatar_version\":1").count(), ids.len());
+            assert_eq!(
+                expected
+                    .matches(&format!("\"avatar_type\":\"{type_name}\""))
+                    .count(),
+                ids.len()
+            );
+            assert_eq!(mint_manifest(&ids, type_name), expected, "{type_name}");
         }
     }
 

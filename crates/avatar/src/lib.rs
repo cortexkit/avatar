@@ -1,12 +1,18 @@
 //! Render a stored avatar.
 //!
 //! This is the one crate a Rust host depends on. A registry row stores an
-//! avatar's genome bytes, its type (such as [`WILD`] or [`CLASSIC`]) and the
-//! generation version that produced it. [`render_image`] draws that row as a
-//! finished RGBA [`Image`]. [`render_tree_for_bytes`] instead routes the row
-//! to the generator that draws it and returns the generic [`RenderTree`];
-//! [`serialize_tree`] turns the tree into SVG and [`serialize_tree_json`] into
-//! its canonical JSON.
+//! avatar's genome bytes, its type (such as [`WILD`], [`CLASSIC`] or
+//! [`KNITTED_TOYS`]) and the generation version that produced it.
+//! [`render_image`] draws that row as a finished RGBA [`Image`].
+//! [`render_tree_for_bytes`] instead routes the row to the generator that
+//! draws it and returns the generic [`RenderTree`]; [`serialize_tree`] turns
+//! the tree into SVG and [`serialize_tree_json`] into its canonical JSON.
+//!
+//! Registered types and the versions this build draws: [`CLASSIC`] 2 (a
+//! 1,024-byte genome); [`WILD`] 1 and 2; and [`WILD_PLUS`], [`SPROUTS`],
+//! [`PIXEL_CRITTERS`], [`KNITTED_TOYS`], [`SMALL_ROBOTS`] and [`DRAWN_HEADS`]
+//! at 1. Wild and the six newer types read the same 16,384-byte genome, so
+//! the type alone selects the look.
 //!
 //! Dispatch and [`render_image`] are implemented here. Every other item is
 //! re-exported unchanged from the crate that implements it, so a value from
@@ -57,5 +63,5 @@ pub use avatar_svg::{
 pub use avatar_svg::{Bam16, Mood, RenderError, Rgb, Q32};
 pub use dispatch::{
     render_image, render_tree_for, render_tree_for_bytes, render_tree_for_bytes_at, DispatchError,
-    CLASSIC, WILD,
+    CLASSIC, DRAWN_HEADS, KNITTED_TOYS, PIXEL_CRITTERS, SMALL_ROBOTS, SPROUTS, WILD, WILD_PLUS,
 };
