@@ -13,12 +13,13 @@
 use std::time::{Duration, Instant};
 
 use avatar::{
-    render_image, Alpha, DispatchError, GroundShadow, Image, ImageOptions, CLASSIC, WILD,
+    render_image, Alpha, DispatchError, GroundShadow, Image, ImageOptions, Role, CLASSIC,
+    DRAWN_HEADS, KNITTED_TOYS, PIXEL_CRITTERS, SMALL_ROBOTS, SPROUTS, WILD, WILD_PLUS,
 };
 use avatar_raster::rasterize_tree;
 use serde::Serialize;
 
-use super::wild::{frozen_vectors, genome_path, read_genome, WildVector};
+use super::wild::{frozen_vectors, genome_path, parse_corpus, read_genome, WildVector};
 use super::*;
 
 const IMAGE_DIRECTORY: &str = "image";
@@ -30,6 +31,24 @@ const CASE_SIZE_PX: u32 = 256;
 const WILD_VERSION_2_GENOME: &str = "wild-port-0022";
 /// Version 2 is the only classic version.
 const CLASSIC_VERSION: u32 = 2;
+/// The six types that read the stored genome wild reads, in manifest order.
+/// Each commits its golden trees in `vectors/<stem>/tree`.
+const NEWER_TYPES: [&str; 6] = [
+    WILD_PLUS,
+    SPROUTS,
+    PIXEL_CRITTERS,
+    KNITTED_TOYS,
+    SMALL_ROBOTS,
+    DRAWN_HEADS,
+];
+/// The newer types whose reference draws a ground shadow under the creature.
+/// Pixel critters and drawn heads draw none.
+const GROUND_SHADOW_TYPES: [&str; 4] = [WILD_PLUS, SPROUTS, KNITTED_TOYS, SMALL_ROBOTS];
+/// Version 1 is the only version of each newer type.
+const NEWER_TYPE_VERSION: u32 = 1;
+/// The corpus genome each newer type draws under every combination of
+/// options. It is the corpus row whose trees are committed in every mood.
+const NEWER_TYPE_OPTIONS_GENOME: &str = "wild-port-0005";
 const MINT_COMMAND: &str = "UPDATE_IMAGE_GOLDEN=1 cargo test -p avatar-vectors tests::image::mint_images -- --exact --nocapture --ignored";
 
 /// One image in the golden matrix.
@@ -84,6 +103,28 @@ impl Cell {
         }
     }
 
+    /// A newer type's neutral image of one genome from its corpus, minted
+    /// from the type's own golden tree. The genome is the wild genome the
+    /// corpus row names.
+    fn newer_type(avatar_type: &'static str, row: &WildVector, options: ImageOptions) -> Self {
+        let mood = Mood::Neutral;
+        Self {
+            avatar_type,
+            genome: row.project_id.clone(),
+            version: row.version,
+            mood,
+            size_px: CASE_SIZE_PX,
+            options,
+            genome_hex: relative_to_corpus(&genome_path(&row.project_id)),
+            tree: format!(
+                "{}/tree/{}__{}.json",
+                stem(avatar_type),
+                row.project_id,
+                mood_name(mood)
+            ),
+        }
+    }
+
     fn entry(&self) -> ManifestEntry {
         ManifestEntry {
             avatar_type: self.avatar_type,
@@ -101,12 +142,9 @@ impl Cell {
 
     /// The type's stem, then every key field, so each key has its own file.
     fn file_name(&self) -> String {
-        let stem = self
-            .avatar_type
-            .strip_prefix("creature.")
-            .expect("avatar types start with creature.");
         format!(
-            "{stem}__{}__v{}__{}__{}px__{}__{}.png",
+            "{}__{}__v{}__{}__{}px__{}__{}.png",
+            stem(self.avatar_type),
             self.genome,
             self.version,
             mood_name(self.mood),
@@ -122,7 +160,10 @@ impl Cell {
 
     fn genome_bytes(&self) -> Vec<u8> {
         match self.avatar_type {
-            WILD => read_genome(&self.genome).to_vec(),
+            // The newer types read the same 16,384-byte genome as wild.
+            avatar_type if avatar_type == WILD || NEWER_TYPES.contains(&avatar_type) => {
+                read_genome(&self.genome).to_vec()
+            }
             CLASSIC => {
                 let hex = fs::read_to_string(corpus_root().join(&self.genome_hex))
                     .unwrap_or_else(|error| panic!("read {}: {error}", self.genome_hex));
@@ -148,13 +189,46 @@ impl Cell {
 
     /// The golden's expected pixels: the committed tree, rasterized.
     fn rasterize_committed_tree(&self) -> Image {
-        let name = self
-            .tree
-            .strip_prefix("tree/")
-            .expect("golden trees live in vectors/tree");
-        rasterize_tree(&read_tree_fixture(name), self.size_px, &self.options)
+        rasterize_tree(&self.committed_tree(), self.size_px, &self.options)
             .unwrap_or_else(|error| panic!("rasterize {}: {error}", self.tree))
     }
+
+    /// The committed golden tree, read through the tree fixture reader.
+    fn committed_tree(&self) -> avatar_svg::RenderTree {
+        let bytes = fs::read(corpus_root().join(&self.tree))
+            .unwrap_or_else(|error| panic!("read vectors/{}: {error}", self.tree));
+        crate::tree_fixture::decode_tree_fixture(&bytes)
+            .unwrap_or_else(|error| panic!("parse vectors/{}: {error}", self.tree))
+    }
+}
+
+/// A type's name without `creature.`, which names its golden directory.
+fn stem(avatar_type: &str) -> &str {
+    avatar_type
+        .strip_prefix("creature.")
+        .expect("avatar types start with creature.")
+}
+
+/// The rows of a newer type's `vectors/<stem>/corpus.tsv`.
+fn newer_type_corpus(avatar_type: &str) -> Vec<WildVector> {
+    let path = corpus_root().join(stem(avatar_type)).join("corpus.tsv");
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    parse_corpus(&text)
+}
+
+/// Every combination of the two options, with the defaults first.
+fn every_option_combination() -> Vec<ImageOptions> {
+    let mut combinations = Vec::new();
+    for ground_shadow in [GroundShadow::Keep, GroundShadow::Drop] {
+        for alpha in [Alpha::Premultiplied, Alpha::Straight] {
+            combinations.push(ImageOptions {
+                ground_shadow,
+                alpha,
+            });
+        }
+    }
+    combinations
 }
 
 /// The golden matrix, in manifest order.
@@ -186,14 +260,8 @@ fn matrix() -> Vec<Cell> {
     for &mood in ALL_MOODS {
         cells.push(Cell::wild(version_2, mood, CASE_SIZE_PX, default));
     }
-    for ground_shadow in [GroundShadow::Keep, GroundShadow::Drop] {
-        for alpha in [Alpha::Premultiplied, Alpha::Straight] {
-            let options = ImageOptions {
-                ground_shadow,
-                alpha,
-            };
-            cells.push(Cell::wild(version_2, Mood::Neutral, CASE_SIZE_PX, options));
-        }
+    for options in every_option_combination() {
+        cells.push(Cell::wild(version_2, Mood::Neutral, CASE_SIZE_PX, options));
     }
 
     // The first classic vector, neutral.
@@ -213,6 +281,33 @@ fn matrix() -> Vec<Cell> {
         size_px: CASE_SIZE_PX,
         options: default,
     });
+
+    // Each newer type: its twelve corpus genomes at version 1, neutral, then
+    // one of them in neutral under every combination of options.
+    for avatar_type in NEWER_TYPES {
+        let rows = newer_type_corpus(avatar_type);
+        assert_eq!(
+            rows.len(),
+            12,
+            "the {avatar_type} corpus has twelve genomes"
+        );
+        for row in &rows {
+            assert_eq!(
+                row.version, NEWER_TYPE_VERSION,
+                "{avatar_type} {}: corpus version",
+                row.project_id
+            );
+            assert!(row.moods.iter().any(|mood| mood == "neutral"));
+            cells.push(Cell::newer_type(avatar_type, row, default));
+        }
+        let options_row = rows
+            .iter()
+            .find(|row| row.project_id == NEWER_TYPE_OPTIONS_GENOME)
+            .unwrap_or_else(|| panic!("the {avatar_type} corpus has {NEWER_TYPE_OPTIONS_GENOME}"));
+        for options in every_option_combination() {
+            cells.push(Cell::newer_type(avatar_type, options_row, options));
+        }
+    }
 
     // A key listed twice, such as version 2 neutral with the default
     // options, keeps its first place only.
@@ -367,8 +462,10 @@ fn image_manifest_lists_the_matrix_and_the_directory_holds_exactly_it() {
     assert_current(&image_manifest_path(), &image_manifest_bytes());
 
     let cells = matrix();
-    // 12 genomes at 3 sizes, 7 moods, 3 more option combinations, 1 classic.
-    assert_eq!(cells.len(), 36 + 7 + 3 + 1);
+    // Wild: 12 genomes at 3 sizes, 7 moods, 3 more option combinations; then
+    // 1 classic; then for each newer type 12 genomes and 3 more option
+    // combinations.
+    assert_eq!(cells.len(), 36 + 7 + 3 + 1 + NEWER_TYPES.len() * (12 + 3));
     let keys = cells
         .iter()
         .map(|cell| {
@@ -439,6 +536,62 @@ fn render_image_equals_every_golden_image() {
         );
     }
     println!("render_image matched {} golden images", cells.len());
+}
+
+/// A newer type tags its reference's ground shadow, if the reference draws
+/// one, and nothing else. So dropping the shadow must change the images of
+/// exactly the types whose reference draws one, in both alpha forms. For the
+/// other types nothing is dropped and the images stay equal.
+#[test]
+fn dropping_the_ground_shadow_changes_the_images_of_exactly_the_shadowed_types() {
+    if update_golden_enabled() {
+        return;
+    }
+    let cells = matrix();
+    let golden = |avatar_type: &str, options: ImageOptions| {
+        let cell = cells
+            .iter()
+            .find(|cell| {
+                cell.avatar_type == avatar_type
+                    && cell.genome == NEWER_TYPE_OPTIONS_GENOME
+                    && cell.mood == Mood::Neutral
+                    && cell.options == options
+            })
+            .unwrap_or_else(|| {
+                panic!("no {avatar_type} {NEWER_TYPE_OPTIONS_GENOME} image with {options:?}")
+            });
+        (cell, read_golden(cell))
+    };
+    for avatar_type in NEWER_TYPES {
+        let draws_shadow = GROUND_SHADOW_TYPES.contains(&avatar_type);
+        for alpha in [Alpha::Premultiplied, Alpha::Straight] {
+            let keep = ImageOptions {
+                ground_shadow: GroundShadow::Keep,
+                alpha,
+            };
+            let drop = ImageOptions {
+                ground_shadow: GroundShadow::Drop,
+                ..keep
+            };
+            let (kept_cell, kept) = golden(avatar_type, keep);
+            let (_, dropped) = golden(avatar_type, drop);
+            let tagged = kept_cell
+                .committed_tree()
+                .primitives
+                .iter()
+                .any(|primitive| primitive.role == Some(Role::GroundShadow));
+            assert_eq!(
+                tagged, draws_shadow,
+                "{}: a ground shadow is tagged exactly when the reference draws one",
+                kept_cell.tree
+            );
+            assert_eq!(
+                kept.pixels != dropped.pixels,
+                draws_shadow,
+                "{avatar_type} {alpha:?}: dropping the ground shadow changes the image exactly when the reference draws one"
+            );
+        }
+    }
 }
 
 #[test]

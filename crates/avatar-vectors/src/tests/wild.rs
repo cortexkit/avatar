@@ -381,19 +381,25 @@ pub(super) fn mint_corpus() {
 }
 
 pub(super) fn frozen_vectors() -> Vec<WildVector> {
-    FROZEN_CORPUS
-        .lines()
+    parse_corpus(FROZEN_CORPUS)
+}
+
+/// Reads the rows of a `corpus.tsv`: `project_id TAB moods TAB version`,
+/// skipping comment lines. The wild corpus and the corpus of each newer
+/// creature type share this format.
+pub(super) fn parse_corpus(text: &str) -> Vec<WildVector> {
+    text.lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .map(|line| {
             let fields: Vec<&str> = line.split('\t').collect();
             let [project_id, moods, version] = fields[..] else {
-                panic!("frozen corpus row is not project_id, moods and version: {line:?}")
+                panic!("corpus row is not project_id, moods and version: {line:?}")
             };
             WildVector {
                 project_id: project_id.to_owned(),
                 version: version
                     .parse()
-                    .unwrap_or_else(|_| panic!("frozen corpus row has no version: {line:?}")),
+                    .unwrap_or_else(|_| panic!("corpus row has no version: {line:?}")),
                 moods: moods.split(',').map(str::to_owned).collect(),
             }
         })
