@@ -6,8 +6,10 @@
 //! machine has. The hull takes the body colour the genome's `creature.wild`
 //! has. Each mood poses the same machine again.
 //!
-//! This crate is a port of the approved JavaScript reference generator. It
-//! reads the same genes, builds the same parts and draws the same shapes.
+//! This is a port of a JavaScript design ("the reference" in this crate's
+//! comments), which lives in the authors' private experiments repository;
+//! `scripts/fidelity/` compares the two drawing by drawing. The port reads
+//! the same genes, builds the same parts and draws the same shapes.
 //! Generation uses only arithmetic, `sqrt`, `floor` and rounding, with sine
 //! and cosine from `avatar_svg::wild::math`, so every platform draws the
 //! same tree.
