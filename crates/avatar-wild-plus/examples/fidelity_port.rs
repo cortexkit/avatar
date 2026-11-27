@@ -22,8 +22,8 @@ use avatar_wild_plus::{
 };
 use serde_json::{json, Map, Value};
 
-/// The notes the body builder writes for each plan, by plan index. A blob
-/// writes none.
+/// The notes the body builder writes for each plan, by plan index. Plan 0,
+/// the blob, writes none.
 fn body_notes(plan: usize) -> Vec<String> {
     match plan {
         0 => vec!["none".into()],
@@ -51,9 +51,10 @@ fn body_notes(plan: usize) -> Vec<String> {
 const FEET: [&str; 3] = ["feet", "toed feet", "clawed feet"];
 const BELLIES: [&str; 3] = ["plated belly", "wide belly", "belly spot"];
 
-/// The anatomy read back from the creature's notes, as the reference's shim
-/// reads it: the body plan's masses, crest, arms, tail, feet and the number
-/// of slots each limb kind takes.
+/// The anatomy read back from the creature's notes, as
+/// `scripts/fidelity/wild-plus.js` reads the reference's notes: the body
+/// plan's masses, crest, arms, tail, feet and the number of slots each limb
+/// kind takes.
 struct Anatomy {
     body: String,
     crest: String,

@@ -1,9 +1,9 @@
 //! A review sheet for `creature.wild-plus`: drawings composited over white,
 //! tiled into one PNG for a person to look at full size.
 //!
-//! The sheet draws the base fidelity manifest's fleet-shaped genomes
-//! (`fleet-*`) and random genomes (`random-*`) in neutral, one row of eight
-//! after another, then six genomes in every mood, one genome per row with
+//! The sheet draws the fleet-shaped genomes (`fleet-*`) and random genomes
+//! (`random-*`) of the base manifest `scripts/fidelity/` writes, in neutral,
+//! eight to a row, then six genomes in every mood, one genome per row with
 //! the moods in the order neutral, working, happy, waiting, blocked, sad,
 //! sleepy. Each tile is the finished image `rasterize_tree` draws, so the
 //! pixels reviewed are the pixels shipped.

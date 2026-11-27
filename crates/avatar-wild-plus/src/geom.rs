@@ -1,7 +1,7 @@
 //! Geometry kernels: polygons, splines, signed distances and the marching
 //! squares tracer that welds masses into one mirror-symmetric silhouette.
 //!
-//! Every function mirrors the reference generator's arithmetic in the same
+//! Every function mirrors the reference's arithmetic in the same
 //! order, so the outlines agree to the last bit wherever the maths allows.
 
 use avatar_svg::wild::math::{cos, sin};

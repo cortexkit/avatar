@@ -10,7 +10,7 @@ use super::*;
 /// The frozen list of genomes and moods the golden trees are drawn from.
 const CORPUS: &str = include_str!("../../../vectors/wild-plus/corpus.tsv");
 
-/// Each golden tree's name, JSON length and BLAKE3 hash, as the mint
+/// Each golden tree's name, JSON length and BLAKE3 hash, as `tests::mint`
 /// printed them. A change to what the type draws shows up here as well as in
 /// the files, so it cannot pass review as a refreshed fixture alone.
 const TREE_PINS: &[(&str, usize, &str)] = &[
