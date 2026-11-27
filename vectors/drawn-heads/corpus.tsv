@@ -1,0 +1,13 @@
+# project_id	moods	version (version 1: neutral for all, seven moods for the first row; each genome is read from vectors/wild/<project_id>.hex)
+wild-port-0005	neutral,working,happy,waiting,blocked,sad,sleepy	1
+wild-port-0031	neutral	1
+wild-port-0009	neutral	1
+wild-port-0022	neutral	1
+wild-port-0077	neutral	1
+wild-port-0043	neutral	1
+wild-port-0016	neutral	1
+wild-port-0021	neutral	1
+wild-port-0000	neutral	1
+wild-port-0001	neutral	1
+wild-port-0002	neutral	1
+wild-port-0007	neutral	1

@@ -386,14 +386,20 @@ mod tests {
         let expected_root = BTreeSet::from([
             "contact-sheet.html".to_owned(),
             "dna".to_owned(),
+            "drawn-heads".to_owned(),
             "image".to_owned(),
+            "knitted-toys".to_owned(),
             "manifest.json".to_owned(),
             "phenotype".to_owned(),
+            "pixel-critters".to_owned(),
+            "small-robots".to_owned(),
+            "sprouts".to_owned(),
             "svg".to_owned(),
             "tree".to_owned(),
             "tree-features".to_owned(),
             "tree-svg".to_owned(),
             "wild".to_owned(),
+            "wild-plus".to_owned(),
         ]);
         assert_directory_entry_names("vectors", &expected_root);
         assert!(
