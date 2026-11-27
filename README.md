@@ -8,13 +8,25 @@
 Deterministic creatures for software agents.
 
 <p>
-<img src="vectors/tree-svg/wild-port-0022__v2__neutral.svg" width="88" alt="a wild creature, neutral">
-<img src="vectors/tree-svg/wild-port-0022__v2__happy.svg" width="88" alt="the same creature, happy">
-<img src="vectors/tree-svg/wild-port-0022__v2__sleepy.svg" width="88" alt="the same creature, sleepy">
-<img src="vectors/tree-svg/wild-port-0005__working.svg" width="88" alt="another wild creature, working">
-<img src="vectors/tree-svg/wild-port-0016__neutral.svg" width="88" alt="a third wild creature">
-<img src="vectors/tree-svg/pattern_3__happy.svg" width="88" alt="a classic creature, happy">
+<img src="docs/images/small-robots.png" width="104" alt="a small robot">
+<img src="docs/images/knitted-toys.png" width="104" alt="a knitted toy">
+<img src="docs/images/sprouts.png" width="104" alt="a sprout">
+<img src="docs/images/pixel-critters.png" width="104" alt="a pixel critter">
+<img src="docs/images/drawn-heads.png" width="104" alt="a drawn head">
+<img src="docs/images/wild-plus.png" width="104" alt="a wild-plus creature">
 </p>
+
+<p>
+<img src="docs/images/mood-neutral.png" width="88" alt="the robot, neutral">
+<img src="docs/images/mood-working.png" width="88" alt="working">
+<img src="docs/images/mood-happy.png" width="88" alt="happy">
+<img src="docs/images/mood-waiting.png" width="88" alt="waiting">
+<img src="docs/images/mood-blocked.png" width="88" alt="blocked">
+<img src="docs/images/mood-sad.png" width="88" alt="sad">
+<img src="docs/images/mood-sleepy.png" width="88" alt="sleepy">
+</p>
+
+<sub>One creature from each of the six newest styles, then the robot in its seven moods. Every one is drawn from a random genome by the code in this repository; <code>docs/images/README.md</code> says how to draw them again.</sub>
 
 Every agent gets a creature of its own. The creature is drawn from a
 **genome**, a fixed-length run of bytes that is generated once and then

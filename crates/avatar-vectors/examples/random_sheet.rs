@@ -22,7 +22,10 @@
 //! the same sheet on every machine.
 //!
 //! Next to the PNG, a `.tsv` of the same name lists each cell's index, its
-//! genome index, its mood and the genome's first 16 hex characters.
+//! genome index, its mood and the genome's first 16 hex characters. With
+//! `--genome-out DIR`, each cell's whole genome is also written to
+//! `DIR/<cell>.hex`, so a chosen cell can be drawn again on its own, for
+//! example with `avatar-export --genome-file`.
 
 use std::{
     fmt::Write as _,
@@ -36,7 +39,8 @@ use avatar::{render_image, Alpha, GroundShadow, ImageOptions, Mood, CLASSIC};
 use avatar_svg::wild::mood;
 
 const USAGE: &str = "usage: random_sheet --type TYPE [--version N] [--seed N] [--count N] \
-                     [--columns N] [--cell PX] [--mood MOOD | --moods] --out PNG";
+                     [--columns N] [--cell PX] [--mood MOOD | --moods] \
+                     [--genome-out DIR] --out PNG";
 /// How many genomes `--moods` draws, each in every mood.
 const MOOD_GENOMES: u64 = 4;
 const SEPARATOR_GREY: u8 = 0xd0;
@@ -67,6 +71,7 @@ struct Args {
     cell: u32,
     mood: Mood,
     moods: bool,
+    genome_out: Option<PathBuf>,
     out: PathBuf,
 }
 
@@ -133,6 +138,21 @@ fn main() {
         }
         tsv.push('\n');
     }
+    if let Some(directory) = &args.genome_out {
+        fs::create_dir_all(directory)
+            .unwrap_or_else(|error| fail(&format!("create {}: {error}", directory.display())));
+        for (index, genome) in genomes.iter().enumerate() {
+            let mut hex = String::with_capacity(genome.len() * 2 + 1);
+            for byte in genome {
+                write!(hex, "{byte:02x}").expect("write to String");
+            }
+            hex.push('\n');
+            let path = directory.join(format!("{index}.hex"));
+            fs::write(&path, hex)
+                .unwrap_or_else(|error| fail(&format!("write {}: {error}", path.display())));
+        }
+    }
+
     let tsv_path = args.out.with_extension("tsv");
     fs::write(&tsv_path, tsv)
         .unwrap_or_else(|error| fail(&format!("write {}: {error}", tsv_path.display())));
@@ -149,6 +169,7 @@ fn parse_args() -> Args {
         cell: 256,
         mood: Mood::Neutral,
         moods: false,
+        genome_out: None,
         out: PathBuf::new(),
     };
     let mut words = std::env::args().skip(1);
@@ -173,6 +194,7 @@ fn parse_args() -> Args {
                     .find(|&mood| mood::name(mood) == value)
                     .unwrap_or_else(|| fail(&format!("unknown mood {value:?}")));
             }
+            "--genome-out" => args.genome_out = Some(PathBuf::from(value)),
             "--out" => args.out = PathBuf::from(value),
             _ => fail(&format!("unknown argument {flag:?}\n{USAGE}")),
         }
