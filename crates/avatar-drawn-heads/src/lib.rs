@@ -2,12 +2,17 @@
 //! ink, with ears, a neck, eyes with lids, brows, a nose, a mouth, hair,
 //! often facial hair, and the lines and spots a face collects with age.
 //!
-//! This is a port of a JavaScript design ("the reference" in this crate's
-//! comments), which lives in the authors' private experiments repository;
-//! `scripts/fidelity/` compares the two drawing by drawing. Every gene is read
-//! where the reference reads it, every value is computed in the reference's
-//! operation order, and the render tree holds the same elements in the same
-//! painter's order, written to the same precision as the reference's SVG. Generation uses only `+ - * /`, `sqrt`, rounding
+//! This began as a port of a JavaScript design ("the reference" in this
+//! crate's comments), which lives in the authors' private experiments
+//! repository. Every gene is read where the reference reads it, every value
+//! is computed in the reference's operation order, and the render tree holds
+//! the same elements in the same painter's order, written to the same
+//! precision as the reference's SVG. Version 1 was then refined in Rust
+//! after the port, so that random genomes stop drawing parts that read as
+//! clothing (a hood of long hair, earmuffs of side hair, a bib of beard) or
+//! a box of a bald head, and it no longer matches the reference exactly. The
+//! fidelity harness in `scripts/fidelity/` describes the port as it was, not
+//! the current drawing. Generation uses only `+ - * /`, `sqrt`, rounding
 //! and the shared sine polynomial in [`avatar_svg::wild::math`], so it gives
 //! the same tree on every platform.
 //!

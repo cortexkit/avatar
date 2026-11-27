@@ -5,6 +5,7 @@ use crate::geom::{
     clamp, curve, half_width_at, lerp, max, min, pt, ray_hit, sample, sharp, up_dir, Contour, Pt,
 };
 use crate::hair::HairStyle;
+use crate::palette::sparse as bare_crown;
 
 /// One head shape. Widths are shares of the head's greatest half-width,
 /// heights shares of its height from the top; `long` is the range of height
@@ -131,7 +132,7 @@ impl Head {
     }
 }
 
-pub fn make_head(g: &Genes) -> Head {
+pub fn make_head(g: &Genes, style: HairStyle) -> Head {
     let o = dna::HEAD;
     let k = &HEAD_KINDS[g.pick(o, 0, &HEAD_KINDS.map(|k| k.w))];
     let size = g.lin(o, 5, 3, 0.72, 1.0);
@@ -154,11 +155,18 @@ pub fn make_head(g: &Genes) -> Head {
     let h = 178.0 * size * (long / 1.25).sqrt();
     let w = h / (2.0 * long);
     let at = |x: f64, y: f64| pt(x * w, -h + y * h);
+    // Where the cranium's shoulder is. A skull with no hair over it is round
+    // on top: a bare flat crown with square shoulders reads as a box.
+    let (tx, ty) = if bare_crown(style) {
+        (min(k.tx, 0.62), max(k.ty, 0.3))
+    } else {
+        (k.tx, k.ty)
+    };
     let half = [
         pt(0.0, -h),
         at(
-            cw * clamp(k.tx + 0.05 * flat, 0.4, 0.9),
-            k.ty * k.yc * (1.0 - 0.22 * flat),
+            cw * clamp(tx + 0.05 * flat, 0.4, 0.9),
+            ty * k.yc * (1.0 - 0.22 * flat),
         ),
         at(cw, k.yc),
         at(kw, k.yk),
