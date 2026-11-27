@@ -110,6 +110,11 @@ pub(crate) fn build_core(r: &Reader) -> Core {
     if face_tech == Tech::Screen && pod && !legged(gear_kind) && gear_kind != "pogo" {
         face_tech = Tech::Lens;
     }
+    // One round window in the front of a drum is a front-loading washing
+    // machine: a can looks through two lenses instead.
+    if face_tech == Tech::Mono && kind == "can" {
+        face_tech = Tech::Lens;
+    }
     let lim = hull_aspect(kind);
     let mut aspect = r.lin(HEAD + 1, 0, 4, lim[0], lim[1]);
     let base_area = match plan {

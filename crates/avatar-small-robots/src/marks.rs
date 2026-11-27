@@ -1,7 +1,7 @@
 //! Markings and what is set into a hull: the chest fitting, and the paint
 //! scheme, seams, rivets, markings and wear of the head.
 
-use crate::draw::{disc, lamp, plate_k, rays, rivets, seam, Ctx, DiscOpts, El, Out, NO_DOT};
+use crate::draw::{disc, lamp, rays, rivets, seam, Ctx, DiscOpts, El, Out, NO_DOT};
 use crate::face::Face;
 use crate::geom::{line_path, poly_path, rrect, up_dir, Path};
 use crate::hull::Hull;
@@ -12,6 +12,8 @@ use crate::robot::Robot;
 const CHEST: usize = 1092;
 const DECOR: usize = 1096;
 const WEAR: usize = 1108;
+/// The least half-width of a crown stripe; a narrower one is a seam.
+const STRIPE_MIN_W: f64 = 3.0;
 
 /// Seven-segment digits: which of the segments a..g each digit lights.
 const DIGITS: [&str; 10] = [
@@ -96,9 +98,13 @@ pub const CHEST_NAMES: [&str; 10] = [
 const CHEST_WEIGHTS: [u32; 10] = [4, 5, 4, 3, 3, 4, 3, 3, 1, 2];
 
 /// The fittings that would make a hull with a screen read as a monitor or
-/// a television; the hull that carries a screen never carries them.
+/// a television; the hull that carries a screen never carries them. A single
+/// light under the screen is the set's power button.
 fn under_screen(kind: &str) -> bool {
-    matches!(kind, "panel" | "vent" | "leds" | "hatch" | "grille")
+    matches!(
+        kind,
+        "panel" | "vent" | "leds" | "hatch" | "grille" | "light"
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -379,7 +385,6 @@ pub(crate) struct Decor {
     top: f64,
     stripe_w: f64,
     stripe_clear: f64,
-    dip_y: f64,
     six: bool,
     decal: Option<Spot>,
     wear: Option<Spot>,
@@ -393,7 +398,6 @@ impl Decor {
             top: 0.0,
             stripe_w: 0.0,
             stripe_clear: 0.0,
-            dip_y: 0.0,
             six: false,
             decal: None,
             wear: None,
@@ -409,7 +413,7 @@ pub(crate) fn head_marks(out: &mut Out, ctx: &Ctx, c: &Robot) {
     let hull = &c.head;
     let line = if p.dark { p.paint.lite } else { p.paint.line };
     let clip = || crate::draw::clip_of(&poly_path(&hull.pts));
-    // A stripe of the second paint down the middle of the crown, or a dipped foot.
+    // A stripe of the second paint down the middle of the crown.
     if d.scheme == "stripe" {
         out.put(
             El::rect(
@@ -421,14 +425,6 @@ pub(crate) fn head_marks(out: &mut Out, ctx: &Ctx, c: &Robot) {
             .class("rb-stripe")
             .fill(p.accent.base)
             .clip(clip()),
-        );
-    }
-    if d.scheme == "dip" {
-        out.put(
-            El::rect(-hull.w - 2.0, d.dip_y, 2.0 * hull.w + 4.0, -d.dip_y + 3.0)
-                .class("rb-dip")
-                .fill(p.accent.base)
-                .clip(clip()),
         );
     }
     if !ctx.fine {
@@ -539,26 +535,6 @@ pub(crate) fn head_marks(out: &mut Out, ctx: &Ctx, c: &Robot) {
                 b.quad_to([x - 4.0, y - 4.0], [x, y - 1.5], [x + 4.0, y - 4.0]);
                 seam(out, ctx, &b, p.paint.lite, 1.3, None);
             }
-            "patch" => {
-                plate_k(
-                    out,
-                    ctx,
-                    &rrect(x - 6.5, y - 4.5, x + 6.5, y + 4.5, 1.5),
-                    &p.metal,
-                    0.6,
-                );
-                rivets(
-                    out,
-                    ctx,
-                    &[
-                        [x - 4.3, y - 2.3],
-                        [x + 4.3, y - 2.3],
-                        [x - 4.3, y + 2.3],
-                        [x + 4.3, y + 2.3],
-                    ],
-                    &p.metal,
-                );
-            }
             _ => {
                 let mut a = Path::new();
                 a.move_to([x - 6.0, y + 3.0]);
@@ -603,7 +579,6 @@ pub(crate) fn plug_decor(
     r: &Reader,
     hull: &Hull,
     f: &Face,
-    pod: bool,
     has_body: bool,
     chest: &Chest,
     ext: &Extent,
@@ -620,24 +595,23 @@ pub(crate) fn plug_decor(
         -face_bot
     };
     d.top = face_top;
-    let can_stripe = top_room >= 9.0;
-    let can_dip = pod && bot_room >= 12.0;
-    if can_stripe || can_dip {
-        let scheme = r.pick(o, 0, &[2, 1, 1], 0);
-        if scheme == 1 && can_stripe {
+    if top_room >= 9.0 && r.pick(o, 0, &[2, 1, 1], 0) == 1 {
+        // A stripe of the second paint down the middle of the crown is at
+        // least three times as long as wide. A shorter, wider one reads as a
+        // sticking plaster, so a crown with no room for a long enough stripe
+        // stays plain.
+        let clear = r.lin(o, 2, 2, 5.0, 11.0);
+        let most = (top_room - 1.0) / 6.0;
+        if min(clear, most) >= STRIPE_MIN_W {
             d.scheme = "stripe";
-            d.stripe_clear = r.lin(o, 2, 2, 5.0, 11.0);
-            d.stripe_w = d.stripe_clear;
-            // Under eyes on stalks the stripe is at least three times as long as wide.
-            if f.stalk.is_some() {
-                d.stripe_w = min(d.stripe_w, (top_room - 1.0) / 6.0);
-            }
-        }
-        if scheme == 2 && can_dip {
-            d.scheme = "dip";
-            d.dip_y = -bot_room * r.lin(o, 2, 2, 0.5, 0.85);
+            d.stripe_clear = clear;
+            d.stripe_w = min(clear, most);
         }
     }
+    // The pick's third scheme was a dipped foot, a band of the second paint
+    // round the bottom of a pod. It read as trousers, a skirt or a bib, so it
+    // leaves the hull plain.
+
     // A row over the face and a row under it: a seam, rivets, both or neither.
     if top_room >= 11.0 {
         let v = r.raw(o + 1, 0, 2);
@@ -649,7 +623,7 @@ pub(crate) fn plug_decor(
             });
         }
     }
-    if bot_room >= 11.0 && d.scheme != "dip" {
+    if bot_room >= 11.0 {
         let v = r.raw(o + 1, 2, 2);
         if v != 0 {
             d.rows.push(Row {
@@ -684,7 +658,7 @@ pub(crate) fn plug_decor(
     let top = spot(1.0, true).is_some();
     let bottom = spot(1.0, false).is_some();
     let mark_side = || if r.flag(o + 2, 3) { 1.0 } else { -1.0 };
-    if top || (bottom && d.scheme != "dip") {
+    if top || bottom {
         let mut dk = DECAL_NAMES[r.raw(o + 2, 0, 3) as usize];
         // Beside a screen, three short bars are a vent.
         if dk == "bars" && f.screen.is_some() {
@@ -700,18 +674,15 @@ pub(crate) fn plug_decor(
         }
     }
     if top || bottom {
-        let mut wk = ["none", "dent", "patch", "scratch"][r.raw(WEAR, 0, 2) as usize];
-        // Beside a screen, a riveted patch is a drive slot or a panel of buttons.
-        if wk == "patch" && f.screen.is_some() {
-            wk = "none";
-        }
+        // The wear gene's third kind was a riveted patch. Beside a screen it
+        // was a drive slot or a panel of buttons, and anywhere else a sticking
+        // plaster, so that kind leaves the hull unworn.
+        let wk = ["none", "dent", "none", "scratch"][r.raw(WEAR, 0, 2) as usize];
         if wk != "none" {
             let band_top = if top && bottom { r.flag(WEAR, 2) } else { top };
             let mut at = spot(-mark_side(), band_top).expect("the band has room for wear");
-            if !(d.scheme == "dip" && at.y > d.dip_y - 6.0) {
-                at.kind = wk;
-                d.wear = Some(at);
-            }
+            at.kind = wk;
+            d.wear = Some(at);
         }
     }
     d
