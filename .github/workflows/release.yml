@@ -1,0 +1,122 @@
+name: Release
+
+# Per-crate release to crates.io. Tag format: `<package>-v<version>`, for
+# example `cortexkit-avatar-svg-v0.1.0`. Each publishable crate versions and
+# publishes on its own tag. A package `cortexkit-avatar-<stem>` lives in
+# `crates/avatar-<stem>/`, and `cortexkit-avatar` in `crates/avatar/`.
+#
+# Publish in dependency order and wait for each crate to appear on
+# crates.io before pushing the next tag, because a crate can only be
+# published once every crate it depends on is there: tables, phenotype,
+# genome, svg, raster, the six style crates, then cortexkit-avatar.
+#
+# The filter requires a full major.minor.patch version, so a tag such as
+# `avatarkit-wild-v2` (a Swift package release) never starts a crate release.
+on:
+  push:
+    tags:
+      - "cortexkit-*-v[0-9]+.[0-9]+.[0-9]+"
+
+concurrency:
+  # Include the SHA so a retag at a different commit gets its own group and
+  # won't block behind a stuck queued run.
+  group: release-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # This repository's landing gate is scripts/check.sh, run by the pre-push
+  # hook, and CI only runs when started by hand. So a successful CI run on
+  # this exact commit, started by hand or by a push, proves it already
+  # passed; otherwise the full CI runs here before anything is published.
+  check_ci:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      green: ${{ steps.check.outputs.green }}
+    steps:
+      - name: Check for a successful CI run on this commit
+        id: check
+        run: |
+          green=false
+          # There is no checkout here, so gh takes the repository from GH_REPO.
+          # If gh cannot answer, say so: the full verify then runs, which is safe
+          # but slow, and a silent fallback would hide a broken check.
+          if ! runs=$(gh run list \
+            --workflow CI \
+            --commit "$GITHUB_SHA" \
+            --json conclusion,event,headBranch 2>&1); then
+            echo "::warning::could not read CI runs for $GITHUB_SHA, so the full verify runs: $runs"
+            runs='[]'
+          fi
+          if jq -e 'any(.[]; .headBranch == "master" and (.event == "push" or .event == "workflow_dispatch") and .conclusion == "success")' <<<"$runs" >/dev/null; then
+            green=true
+          fi
+          echo "green=$green" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+  # The same jobs as CI, reused rather than copied, so a release can never
+  # ship code that would not pass them.
+  verify:
+    if: needs.check_ci.outputs.green != 'true'
+    needs: check_ci
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: [check_ci, verify]
+    if: ${{ !cancelled() && (needs.check_ci.outputs.green == 'true' || needs.verify.result == 'success') }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Parse `<package>-v<version>` from the tag and check that the crate's
+      # Cargo.toml has that version, so a stale version is never tagged.
+      - name: Resolve crate and version from the tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^(cortexkit-.+)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::Tag '$TAG' must be '<package>-v<version>', e.g. cortexkit-avatar-svg-v0.1.0"
+            exit 1
+          fi
+          CRATE="${BASH_REMATCH[1]}"
+          VERSION="${BASH_REMATCH[2]}"
+          MANIFEST="crates/${CRATE#cortexkit-}/Cargo.toml"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::error::No crate '${CRATE}' at ${MANIFEST}"
+            exit 1
+          fi
+          NAME=$(grep '^name' "$MANIFEST" | head -1 | sed -E 's/name *= *"([^"]+)"/\1/')
+          if [ "$NAME" != "$CRATE" ]; then
+            echo "::error::${MANIFEST} is package '${NAME}', not '${CRATE}'"
+            exit 1
+          fi
+          CARGO_VERSION=$(grep '^version' "$MANIFEST" | head -1 | sed -E 's/version *= *"([^"]+)"/\1/')
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag wants ${VERSION} but ${MANIFEST} has ${CARGO_VERSION}"
+            exit 1
+          fi
+          echo "crate=$CRATE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${CRATE} v${VERSION}"
+
+      # Idempotent: a retag of the same version (a recovery re-run) treats
+      # "already exists" as success instead of failing the release.
+      - name: Publish
+        run: |
+          CRATE="${{ steps.tag.outputs.crate }}"
+          cargo publish --locked --package "$CRATE" \
+            || { ec=$?; cargo publish --locked --package "$CRATE" --dry-run 2>&1 | grep -q "already exists" && echo "already published; treating as success" || exit $ec; }
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

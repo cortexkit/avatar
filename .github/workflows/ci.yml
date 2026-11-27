@@ -1,5 +1,7 @@
 # MANUAL ONLY. The gate for this repository is scripts/check.sh, run
 # locally and enforced by the pre-push hook on every push to master.
+# The release workflow also calls this one, so a crate is never published
+# from a commit that has not passed it.
 #
 # Nothing triggers this workflow automatically, so nothing can queue
 # against a runner pool that is not serving it. That happened for a day:
@@ -14,6 +16,7 @@ name: CI
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
