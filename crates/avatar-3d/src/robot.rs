@@ -53,8 +53,8 @@
 //!
 //! # Textures
 //!
-//! Faces, stalk eyes and hull marks are drawn by the 2D type into separate
-//! layers and rasterized to 256×256 RGBA8 ([`TEXTURE_PX`]), sRGB colour
+//! Faces, stalk eyes, hull marks and a chest plate's drawing are drawn by
+//! the 2D type into separate layers and rasterized to 256×256 RGBA8 ([`TEXTURE_PX`]), sRGB colour
 //! premultiplied by alpha, as [`avatar_raster::rasterize_tree`] returns them.
 //! Each texture has a [`TextureBinding`]: the part it lies on, its canvas
 //! origin and edge C in robot units, so `uv = (projection − origin) / C` on
@@ -319,6 +319,10 @@ pub enum TextureContent {
     },
     /// The surface marks of a hull, shaded like the paint under them.
     Marks,
+    /// The chest fitting's drawing on the front of its plate, shaded like
+    /// the paint under it. Only chests drawn on a plate have one; a lamp,
+    /// gauge or LED chest is geometry that moves or lights up instead.
+    Chest,
 }
 
 /// Which triangles of its part a texture may cover.

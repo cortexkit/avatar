@@ -7,6 +7,57 @@ use super::fittings::helix;
 use super::solids::{self, ball, block, drum, hose, merge, or_ball, quadratic, rods, Affine, V3};
 use crate::mesh::{self, Axis, Belt, Mesh};
 
+/// The track belt's band thickness as a share of the belt's height.
+const TRACK_BAND: f64 = 0.24;
+/// The track's inner frame depth as a share of the belt's width, so its
+/// faces sit back from the belt's.
+const TRACK_FRAME_DEPTH: f64 = 0.8;
+/// How far each road wheel stands out of the belt's faces, in robot units.
+const WHEEL_PROUD: f64 = 1.5;
+/// A road wheel's domed hub radius as a share of the wheel's.
+const HUB: f64 = 0.4;
+
+/// A slab whose outline is a stadium, `half_length` from its middle to
+/// each end along x and `radius` round, `depth` deep along z and centred on
+/// the origin.
+fn stadium_slab(half_length: f64, radius: f64, depth: f64) -> Mesh {
+    use avatar_svg::wild::math::{cos, sin};
+    let straight = (half_length - radius).max(0.0);
+    let steps: u32 = 8;
+    let mut points = Vec::with_capacity(2 * steps as usize + 2);
+    // The right half turn from the bottom up, then the left from the top
+    // down; with no straight part between them they share their ends.
+    for (end, start) in [(straight, -0.5), (-straight, 0.5)] {
+        let shared = straight == 0.0 && start > 0.0;
+        for k in 0..=steps {
+            if shared && (k == 0 || k == steps) {
+                continue;
+            }
+            let a = std::f64::consts::PI * (start + f64::from(k) / f64::from(steps));
+            points.push([end + radius * cos(a), radius * sin(a)]);
+        }
+    }
+    let flat = mesh::Extrusion {
+        depth,
+        bevel: 0.0,
+        bevel_steps: 2,
+    };
+    let round = mesh::Extrusion {
+        bevel: 0.4_f64.min(0.2 * radius),
+        ..flat
+    };
+    mesh::Outline::new(&points)
+        .and_then(|o| mesh::extrude(&o, &round).or_else(|_| mesh::extrude(&o, &flat)))
+        .unwrap_or_else(|_| {
+            solids::stand_in("a block for a track frame the mesh module refused");
+            block(
+                Affine::translate([0.0; 3]),
+                [half_length, radius, 0.5 * depth],
+                0.0,
+            )
+        })
+}
+
 /// Builds the gear and returns the indices of the parts that touch the
 /// floor at rest: every foot, tread, track belt, wheel standing on the floor
 /// and ball. Hover gear touches nothing.
@@ -147,7 +198,7 @@ pub(super) fn build(b: &mut Builder) -> Vec<usize> {
                 let width = b.depth.tread_width * depth;
                 let centre = at(b, s.base, 0.0);
                 if class == "rb-track" {
-                    let thick = 0.24 * th;
+                    let thick = TRACK_BAND * th;
                     let belt = mesh::belt(&Belt {
                         radius: 0.5 * (th - thick),
                         span: (2.0 * tw - th).max(0.0),
@@ -163,15 +214,41 @@ pub(super) fn build(b: &mut Builder) -> Vec<usize> {
                     grounded.push(b.rigid(
                         "track", entry, "track", class, s.frame, s.base, rubber, root, mesh,
                     ));
+                    // The dark metal the 2D fills the belt with, set a little
+                    // back from the belt's faces so the loop reads round it
+                    // and the road wheels stand out in front of it.
+                    let inner = (0.5 * th - thick).max(0.5);
+                    let frame =
+                        stadium_slab((tw - thick).max(inner), inner, TRACK_FRAME_DEPTH * width);
+                    let dark = b.mats.metal_dark();
+                    b.rigid(
+                        "track.frame",
+                        entry,
+                        "track-frame",
+                        class,
+                        s.frame,
+                        s.base,
+                        dark,
+                        root,
+                        solids::transform(frame, &Affine::translate(centre)),
+                    );
                 } else {
                     let n = b.parts.iter().filter(|p| p.role == "wheel").count();
                     let bone = b.bone(format!("wheel.{n}"), Some(root), centre);
-                    let half = 0.5 * width * 1.02;
-                    let mesh = drum(
-                        [centre[0], centre[1], -half],
-                        [centre[0], centre[1], half],
-                        *wr,
-                    );
+                    // Each road wheel stands proud of both belt faces, with a
+                    // domed hub on each side, as the 2D draws wheels in the
+                    // belt.
+                    let half = 0.5 * width + WHEEL_PROUD;
+                    let hub = HUB * *wr;
+                    let mesh = merge(vec![
+                        drum(
+                            [centre[0], centre[1], -half],
+                            [centre[0], centre[1], half],
+                            *wr,
+                        ),
+                        ball([centre[0], centre[1], half], hub),
+                        ball([centre[0], centre[1], -half], hub),
+                    ]);
                     b.rigid(
                         format!("wheel.{n}"),
                         entry,

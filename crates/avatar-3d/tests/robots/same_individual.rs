@@ -204,15 +204,21 @@ fn expected(layout: &Layout) -> Vec<Item> {
             format!("grip.{x}"),
         );
         let hose = format!("skinned:{fore}+{upper}+{wrist}");
+        // Every arm kind carries the metal shoulder joint the 2D draws.
         let roles: Vec<(&str, &str)> = match arm.kind {
             "rod" | "shell" => vec![
                 ("arm-upper", &upper),
                 ("arm-lower", &fore),
                 ("elbow", &fore),
+                ("shoulder", &upper),
             ],
-            "telescope" => vec![("arm-upper", &upper), ("arm-lower", &fore)],
-            "stub" => vec![("arm", &upper)],
-            _ => vec![("arm", &hose)],
+            "telescope" => vec![
+                ("arm-upper", &upper),
+                ("arm-lower", &fore),
+                ("shoulder", &upper),
+            ],
+            "stub" => vec![("stub-arm", &upper), ("shoulder", &upper)],
+            _ => vec![("hose-arm", &hose), ("shoulder", &upper)],
         };
         for (role, bones) in roles {
             v.push(item(
@@ -292,7 +298,8 @@ fn expected(layout: &Layout) -> Vec<Item> {
         match &g.shape {
             GearShape::Treads { .. } => v.push(item(entry, "tread", c, f, base, "root")),
             GearShape::Track { .. } if c == "rb-track" => {
-                v.push(item(entry, "track", c, f, base, "root"))
+                v.push(item(entry, "track", c, f, base, "root"));
+                v.push(item(entry, "track-frame", c, f, base, "root"));
             }
             GearShape::Track { .. } => {
                 v.push(item(entry, "wheel", c, f, base, &format!("wheel.{wheels}")));
@@ -377,6 +384,7 @@ fn colour_2d(layout: &Layout, name: &str) -> Option<Rgb> {
     Some(match name {
         "paint" => p.paint.base,
         "metal" => p.metal.base,
+        "metal-dark" => p.metal.dark,
         "accent" => p.accent.base,
         "rubber" => p.rubber.base,
         "magnet" => p.magnet.base,

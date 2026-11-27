@@ -590,11 +590,11 @@ pub(super) fn chest(b: &mut Builder) {
                mesh: Mesh| {
         b.rigid(name, entry, role, class, frame, c, material, the_bone, mesh);
     };
-    let plate = |b: &Builder, half_h: f64| {
+    let plate = |b: &Builder, [half_w, half_h]: [f64; 2]| {
         let thick = raise + 1.0;
         block(
             Affine::translate(at(b, c, front - 1.0 + 0.5 * thick)),
-            [w, half_h, 0.5 * thick],
+            [half_w, half_h, 0.5 * thick],
             0.5 * raise.min(1.0),
         )
     };
@@ -650,12 +650,35 @@ pub(super) fn chest(b: &mut Builder) {
             }
         }
         kind => {
+            // The 2D draws these on the hull's paint (a hazard plate in its
+            // own yellow); the drawing is painted onto the plate from the
+            // chest layer, so the plate is grown to hold all of it.
             let (material, half_h) = match kind {
                 "hazard" => (b.mats.hazard(), h * 0.62),
-                "grille" => (b.mats.white(), h),
                 _ => (b.mats.paint(), h),
             };
-            let mesh = plate(b, half_h);
+            let mut half = [w, half_h];
+            if let Some(layer) = b.creature.chest_layer() {
+                let r = layer.region;
+                let margin = avatar_small_robots::layout::LAYER_MARGIN;
+                for k in 0..2 {
+                    let lo = r.origin[k] + margin - c[k];
+                    let hi = r.origin[k] + r.size[k] - margin - c[k];
+                    half[k] = half[k].max(lo.abs()).max(hi.abs());
+                }
+            }
+            // The front cap is the outline inset by the bevel, so the plate
+            // grows by the bevel to keep the drawing on its cap.
+            let bevel = 0.5 * raise.min(1.0);
+            let mut mesh = plate(b, half.map(|v| v + bevel));
+            // Projection coordinates in the chest's 2D frame, where the
+            // chest layer's canvas is bound.
+            let oy = b.oy(frame);
+            mesh.projection = mesh
+                .positions
+                .iter()
+                .map(|p| [p[0] + 0.0, -p[1] - oy + 0.0])
+                .collect();
             put(b, "chest".into(), "chest", material, bone, mesh);
         }
     }

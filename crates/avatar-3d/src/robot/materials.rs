@@ -213,6 +213,17 @@ impl<'a> Materials<'a> {
         self.add("metal", self.palette.metal.base, finish, Emission::None)
     }
 
+    /// The metal's dark tone, which the 2D fills a track belt with.
+    pub fn metal_dark(&mut self) -> usize {
+        let finish = metal_finish(self.palette.metal_kind);
+        self.add(
+            "metal-dark",
+            self.palette.metal.dark,
+            finish,
+            Emission::None,
+        )
+    }
+
     /// The secondary paint.
     pub fn accent(&mut self) -> usize {
         self.add("accent", self.palette.accent.base, "vinyl", Emission::None)

@@ -11,6 +11,11 @@ use crate::mesh;
 
 const SIDES: [&str; 2] = ["L", "R"];
 
+/// Half the width the 2D ink outline adds round an arm, in robot units. The
+/// 3D arm has no outline, so every arm radius grows by this much to keep
+/// the 2D arm's visual weight instead of reading as a wire.
+pub(super) const ARM_INK: f64 = 2.0;
+
 /// A point of an arm in robot space. The shoulders sit `shoulder_z` of the
 /// body's depth in front of its middle, and every point below a shoulder
 /// leans toward the viewer by the arm-tilt trait, so the front view keeps
@@ -37,7 +42,8 @@ pub(super) fn hand_centre(b: &Builder, arm: &ArmLayout) -> V3 {
 }
 
 /// Both arms: an upper and a lower segment on their own bones, or one
-/// skinned hose, each ending in its hand.
+/// skinned hose, each with the metal shoulder joint the 2D draws over the
+/// shoulder and ending in its hand.
 pub(super) fn arms(b: &mut Builder) {
     for side in 0..2 {
         let Some(arm) = b.layout.arms[side] else {
@@ -76,12 +82,12 @@ pub(super) fn arms(b: &mut Builder) {
                 // through the elbow.
                 let c = [0, 1, 2].map(|k| 2.0 * e[k] - 0.5 * (s[k] + t[k]));
                 let points = quadratic(s, c, t, 12);
-                let mesh = hose(&points, 0.5 * w);
+                let mesh = hose(&points, 0.5 * w + ARM_INK);
                 let skin = along_arm(&mesh, &points, [upper, fore, wrist]);
                 b.add(NewPart {
-                    name: format!("arm.{x}.arm"),
+                    name: format!("arm.{x}.hose-arm"),
                     entry,
-                    role: "arm",
+                    role: "hose-arm",
                     class: arm.class,
                     frame: Frame::UpperBody,
                     placement: r.shoulder,
@@ -90,10 +96,16 @@ pub(super) fn arms(b: &mut Builder) {
                     skin,
                 });
             }
-            "stub" => put(b, "arm", material, upper, rod(s, t, 0.5 * w)),
+            "stub" => put(b, "stub-arm", material, upper, rod(s, t, 0.5 * w + ARM_INK)),
             "telescope" => {
-                put(b, "arm-upper", material, upper, rod(s, e, 0.5 * w));
-                put(b, "arm-lower", metal, fore, rod(e, t, 0.25 * w));
+                put(
+                    b,
+                    "arm-upper",
+                    material,
+                    upper,
+                    rod(s, e, 0.5 * w + ARM_INK),
+                );
+                put(b, "arm-lower", metal, fore, rod(e, t, 0.25 * w + ARM_INK));
             }
             kind => {
                 let (lower, joint) = if kind == "shell" {
@@ -101,11 +113,28 @@ pub(super) fn arms(b: &mut Builder) {
                 } else {
                     (0.5 * w, 0.55 * w * arm.joint_scale)
                 };
-                put(b, "arm-upper", material, upper, rod(s, e, 0.5 * w));
-                put(b, "arm-lower", material, fore, rod(e, t, lower));
-                put(b, "elbow", metal, fore, ball(e, joint.max(0.5 * w)));
+                put(
+                    b,
+                    "arm-upper",
+                    material,
+                    upper,
+                    rod(s, e, 0.5 * w + ARM_INK),
+                );
+                put(b, "arm-lower", material, fore, rod(e, t, lower + ARM_INK));
+                put(
+                    b,
+                    "elbow",
+                    metal,
+                    fore,
+                    ball(e, joint.max(0.5 * w) + ARM_INK),
+                );
             }
         }
+        // The 2D draws a metal disc of radius (w/2 + 2.6) times the joint
+        // scale over the shoulder, with its outline; a ball of that size
+        // reads as the same disc from the front and as a joint from the side.
+        let shoulder = (0.5 * w + 2.6) * arm.joint_scale + 0.5 * ARM_INK;
+        put(b, "shoulder", metal, upper, ball(s, shoulder));
         hand(b, &arm, side, wrist, grip);
     }
 }

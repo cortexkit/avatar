@@ -9,7 +9,8 @@ use super::{Texture, TextureBinding, TextureContent, TextureSurface, TEXTURE_PX}
 
 /// Every texture: for each mood a face pair (as drawn, then blinking); on a
 /// stalk robot a pair for each stalk eye in each mood; then the head's and
-/// the chassis's marks where their marks calls return a drawing.
+/// the chassis's marks where their marks calls return a drawing; then the
+/// chest's drawing where the chest is a plate.
 pub(super) fn build(b: &Builder, draw: bool) -> Vec<Texture> {
     let c = b.creature;
     let mut out = Vec::new();
@@ -90,6 +91,18 @@ pub(super) fn build(b: &Builder, draw: bool) -> Vec<Texture> {
             chassis,
             TextureContent::Marks,
             TextureSurface::FacingFront,
+            origin,
+        );
+    }
+    // Only a plate chest has a part named `chest`; its projection is in the
+    // chest's frame, where the layer's canvas lies.
+    if let (Some(layer), Some(plate)) = (c.chest_layer(), part("chest")) {
+        let origin = layer.region.origin;
+        push(
+            layer,
+            plate,
+            TextureContent::Chest,
+            TextureSurface::TexturedFront,
             origin,
         );
     }

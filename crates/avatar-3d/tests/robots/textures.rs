@@ -4,6 +4,7 @@ use avatar_3d::robot::{
     build, build_with, BuildOptions, Robot, TextureBinding, TextureContent, TextureSurface,
     TEXTURE_BYTES,
 };
+use avatar_small_robots::layout::{Layout, LAYER_MARGIN};
 use avatar_small_robots::{decode, Mood};
 
 use crate::cases;
@@ -161,7 +162,24 @@ fn hulls_without_marks_have_no_marks_texture() {
 #[test]
 fn built_textures_hold_their_pixels() {
     let robot = build(&corpus("wild-port-0031"));
-    assert_eq!(robot.textures.len(), 16);
+    // The face pair of each of the seven moods, the head's and the
+    // chassis's marks, and the drawing on its chest plate.
+    let of = |want: fn(&TextureContent) -> bool| {
+        robot
+            .textures
+            .iter()
+            .filter(|t| want(&t.binding.content))
+            .count()
+    };
+    assert_eq!(
+        (
+            of(|c| matches!(c, TextureContent::Face { .. })),
+            of(|c| *c == TextureContent::Marks),
+            of(|c| *c == TextureContent::Chest),
+        ),
+        (14, 2, 1)
+    );
+    assert_eq!(robot.textures.len(), 17);
     for t in &robot.textures {
         let pixels = t.pixels.as_ref().expect("a full build draws every texture");
         assert_eq!(pixels.len(), TEXTURE_BYTES);
@@ -175,4 +193,60 @@ fn built_textures_hold_their_pixels() {
     assert!(untextured.textures.iter().all(|t| t.pixels.is_none()));
     let bindings = |r: &Robot| r.textures.iter().map(|t| t.binding).collect::<Vec<_>>();
     assert_eq!(bindings(&robot), bindings(&untextured));
+}
+
+#[test]
+fn chest_plates_carry_their_drawing_and_lit_chests_do_not() {
+    let mut painted = 0;
+    for (label, genome) in cases::cases(cases::committed_prefix()) {
+        let creature = decode(&genome);
+        let kind = Layout::new(&creature).chest.kind;
+        let robot = build_with(&genome, BuildOptions::untextured());
+        let chests: Vec<_> = robot
+            .textures
+            .iter()
+            .filter(|t| t.binding.content == TextureContent::Chest)
+            .collect();
+        // A lamp, gauge or LED chest is geometry that moves or lights up,
+        // so it is not drawn a second time.
+        let plate = !matches!(kind, "none" | "light" | "gauge" | "leds");
+        assert_eq!(chests.len(), usize::from(plate), "{label}: {kind}");
+        let Some(t) = chests.first() else { continue };
+        painted += 1;
+        let layer = creature.chest_layer().expect("a plate chest has a drawing");
+        let b = t.binding;
+        assert_eq!(robot.parts[b.part].name, "chest", "{label}");
+        assert_eq!(
+            (b.origin, b.extent, b.surface),
+            (
+                layer.region.origin,
+                layer.region.extent,
+                TextureSurface::TexturedFront
+            ),
+            "{label}"
+        );
+        // The plate's textured front holds the whole drawing.
+        let mesh = &robot.parts[b.part].mesh;
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for (i, tri) in mesh.triangles.iter().enumerate() {
+            if mesh.textured_front[i] {
+                for v in tri {
+                    let p = mesh.projection[*v as usize];
+                    for k in 0..2 {
+                        lo[k] = lo[k].min(p[k]);
+                        hi[k] = hi[k].max(p[k]);
+                    }
+                }
+            }
+        }
+        let r = layer.region;
+        for k in 0..2 {
+            assert!(
+                lo[k] <= r.origin[k] + LAYER_MARGIN + 1e-9
+                    && hi[k] >= r.origin[k] + r.size[k] - LAYER_MARGIN - 1e-9,
+                "{label}: the plate {lo:?}..{hi:?} misses the drawing {r:?}"
+            );
+        }
+    }
+    assert!(painted > 0, "no case has a plate chest");
 }
