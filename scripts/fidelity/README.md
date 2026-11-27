@@ -104,6 +104,15 @@ For `body_rgb`, each shim takes the reference's body colour:
 | small-robots | each field `summaryOf` reports, and the palette recipe | `P.body` |
 | drawn-heads | each field `summaryOf` reports, the age marks, and the palette recipe | `P.body` |
 
+The knitted-toys shim renames one element in the reference's SVG. A
+one-eyed toy's eye group has the id `eye`, which the eye gradient in
+`<defs>` already has. A browser resolves `fill="url(#eye)"` to the first
+element with that id, the gradient. resvg resolves it to the later
+element, the group, and leaves the safety eye, the iris gloss and the safety
+nose unfilled. Nothing in the markup refers to the group by its id, so the
+shim renames the group to `eye-group`, and both sides are compared as a
+browser draws the reference.
+
 A port's `examples/fidelity_port.rs` writes the same two files per case: the
 SVG from `serialize_tree`, and the choices from its `decode` mapped onto
 these keys. The mapping lives in the port crate.

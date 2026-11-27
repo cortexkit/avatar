@@ -57,6 +57,22 @@ const TRAITS = {
 
 const at = (obj, path) => path.split(".").reduce((o, k) => (o === undefined || o === null ? undefined : o[k]), obj);
 
+// toys.js gives a one-eyed toy's eye group the id "eye", which its eye
+// gradient in <defs> already has. A browser resolves fill="url(#eye)" (the
+// safety eye's dome, an iris's gloss, a safety nose) to the first element
+// with that id, the gradient. resvg, which the comparison draws with,
+// resolves it to the later element, the group, and leaves those shapes
+// unfilled. Nothing in the markup refers to the group by its id, so the shim
+// renames the group and both sides are compared as a browser draws the
+// reference.
+const EYE_GROUP = '<g id="eye" class=';
+function renameEyeGroup(svg) {
+  if (!svg.includes('<radialGradient id="eye"')) return svg;
+  const parts = svg.split(EYE_GROUP);
+  if (parts.length > 2) throw new lib.HarnessError("knitted-toys: more than one eye group has the id \"eye\"");
+  return parts.join('<g id="eye-group" class=');
+}
+
 const spec = {
   stem: "knitted-toys",
   script: "knitted-toys/toys.js",
@@ -71,7 +87,7 @@ const spec = {
   // The size sets the detail level (below 100 and 56 px) and the width of
   // rims and shadows, so the drawing is the one the reference makes at the
   // compared size.
-  draw: (api, G, mood, size) => api.draw(G, mood, { px: size }),
+  draw: (api, G, mood, size) => renameEyeGroup(api.draw(G, mood, { px: size })),
   // What summary() reports and the variety page counts, with every other
   // discrete trait decode picks.
   choices(api, G) {
