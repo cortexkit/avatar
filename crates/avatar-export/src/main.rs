@@ -240,8 +240,8 @@ const MINTABLE: &[(&str, usize, &[u32])] = &[
     // Version 2 puts mood lids and squints on aspect-scaled eyes; version 1
     // drew them beside the eye and stays for rows that still store it.
     ("creature.wild", 16_384, &[1, 2]),
-    // Six more styles of the same 16,384-byte genome wild reads, so a seat
-    // minted for any of them has the same genome it has under wild.
+    // Six more styles of the same 16,384-byte genome wild reads, so an agent
+    // id minted for any of them gets the same genome it gets under wild.
     (WILD_PLUS, 16_384, &[1]),
     (SPROUTS, 16_384, &[1]),
     (PIXEL_CRITTERS, 16_384, &[1]),
@@ -741,8 +741,8 @@ mod tests {
             .collect();
         let wild = mint_manifest(&ids, "creature.wild");
         for (type_name, _) in NEW_TYPES {
-            // Every type reads the genome wild reads, so a seat mints the same
-            // bytes under each; only the type and the version differ.
+            // Every type reads the genome wild reads, so an agent id mints the
+            // same bytes under each; only the type and the version differ.
             let expected = wild
                 .replace(
                     "\"avatar_type\":\"creature.wild\"",

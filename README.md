@@ -45,7 +45,10 @@ one-byte-per-parameter style. It
 was re-specified in fixed-point arithmetic, so that it is identical on
 every platform, rather than ported float for float. `creature.wild` is a
 new design built on the same machinery, with a genome sixteen times
-larger.
+larger. Six more types draw that same wild genome in other styles:
+`creature.wild-plus`, `creature.sprouts`, `creature.pixel-critters`,
+`creature.knitted-toys`, `creature.small-robots` and
+`creature.drawn-heads`.
 
 ## How it fits together
 
@@ -67,13 +70,15 @@ that divergence impossible instead of merely unlikely to be caught.
 
 ## Crates and ports
 
-The five library crates are published under `cortexkit-` package names.
+The library crates are published under `cortexkit-` package names.
 Each keeps a short library name, which is what code imports.
 
 | Package | Import as | What it is for |
 | --- | --- | --- |
-| `cortexkit-avatar` | `avatar` | Renders a stored avatar: dispatch by type and version, plus the tree types and serializers re-exported. The one crate a Rust host depends on. |
-| `cortexkit-avatar-svg` | `avatar_svg` | Every generator, the render tree, the canonical tree JSON and the SVG serializers. |
+| `cortexkit-avatar` | `avatar` | Renders a stored avatar: dispatch by type and version, finished images (`render_image`), plus the tree types and serializers re-exported. The one crate a Rust host depends on. |
+| `cortexkit-avatar-svg` | `avatar_svg` | The classic and wild generators, the render tree, the canonical tree JSON and the SVG serializers. |
+| `cortexkit-avatar-<stem>`, one for each of `wild-plus`, `sprouts`, `pixel-critters`, `knitted-toys`, `small-robots` and `drawn-heads` | `avatar_<stem>`, with `_` for `-` | The generator of the type `creature.<stem>`: `render_tree` draws a genome in a mood, `decode` reads its traits. |
+| `cortexkit-avatar-raster` | `avatar_raster` | Rasterizes a render tree, or a tree's SVG, to RGBA pixels; `avatar::render_image` draws through it. |
 | `cortexkit-avatar-genome` | `avatar_genome` | The classic 1 KiB genome and its decoder, the palette table, and genomes derived from an identifier at any length. |
 | `cortexkit-avatar-phenotype` | `avatar_phenotype` | The typed fixed-point units and the `Phenotype` struct a classic genome decodes to, with its canonical JSON. |
 | `cortexkit-avatar-tables` | `avatar_tables` | Committed sine and easing tables and the one rounding division, which keep classic arithmetic identical everywhere. |
@@ -82,7 +87,7 @@ Not published:
 
 | Where | What it is |
 | --- | --- |
-| `crates/avatar-ffi` | The C boundary (`avatar_render_tree_json`) built into the Swift package's embedded core. See `crates/avatar-ffi/README.md`. |
+| `crates/avatar-ffi` | The C boundary (`avatar_render_tree_json`, `avatar_render_image`) built into the Swift package's embedded core. See `crates/avatar-ffi/README.md`. |
 | `crates/avatar-export` | A command-line tool: renders a stored genome to PNG, SVG or tree JSON, and mints genome manifests. |
 | `crates/avatar-vectors` | The golden-corpus tests and the mint that writes `vectors/`. |
 | `ports/swift`, `Package.swift` | AvatarKit, the Swift package: calls the embedded Rust core, decodes the tree, caches trees, composes transforms. |
@@ -102,11 +107,15 @@ decisions left in it.
   tree's extent (`RenderTree::extent()` in Rust, `tree.extent` in Swift),
   never by `canvas`. Dividing by `canvas` draws a creature 100 times too
   large, which looks like a plausible zoom rather than a bug. Classic draws
-  on a 10,000-unit canvas, wild on 240.
+  on a 10,000-unit canvas; wild, wild-plus, sprouts, small robots and
+  drawn heads on 240; knitted toys on 200; pixel critters on 24, one unit
+  per cell of its pixel grid.
 - **Key behaviour on `role`, never on `label`.** A label is a diagnostic
   name with no stability promise. A role is the contract. The one role so
-  far is `ground_shadow`: every wild creature has exactly one, classic has
-  none, and a view with no ground plane hides it.
+  far is `ground_shadow`. Every wild creature has exactly one; wild-plus,
+  sprouts, knitted toys and small robots mark their ground shadow with it;
+  classic, pixel critters and drawn heads draw none. A view with no ground
+  plane hides it.
 - **Three projections.** `serialize_tree_json` writes the canonical JSON
   every other language decodes. It writes each distinct mask once, in a
   top-level `masks` table that masked effects refer to by index, and the
@@ -165,8 +174,9 @@ malformed: report it. Nothing falls back to a default creature, since a
 confidently wrong face is worse than an empty slot.
 
 To give a new agent its first genome, either store random bytes of the
-type's length (1,024 for classic, 16,384 for wild) or derive them from a
-stable identifier with `avatar_genome::derive_genome_bytes`
+type's length (1,024 for classic; 16,384 for wild and the six types that
+read its genome) or derive them from a stable identifier with
+`avatar_genome::derive_genome_bytes`
 (`cortexkit-avatar-genome`). Then store the result, and draw from what is
 stored: the genome may later be re-rolled, so never cache a creature by
 agent id alone. Cache by genome, type, version and mood.
@@ -218,6 +228,13 @@ be emptied under memory pressure. Each core failure maps to its own
 `CoreRenderError` case: `unsupportedType` and `unsupportedVersion` mean
 draw nothing, `genomeLength` means report the record.
 
+The six types that read the wild genome (wild-plus, sprouts, pixel
+critters, knitted toys, small robots and drawn heads) come to an app as
+finished images: `renderImageViaCore(genomeBytes:type:version:mood:sizePx:options:)`
+returns an `AvatarImage` of RGBA pixels drawn by the same core. Their
+trees use tree features only Rust draws, which the Swift and TypeScript
+decoders refuse.
+
 Two things worth knowing before writing the drawing loop:
 
 - **The manifest is at the repository root, the sources are not.** SwiftPM
@@ -250,6 +267,18 @@ const svg = serializeTree(tree); // the same bytes as Rust's serialize_tree
 | --- | --- | --- | --- |
 | `creature.classic` | 1,024 bytes | 2 | The TOG-derived creature. Integer and fixed-point arithmetic throughout. |
 | `creature.wild` | 16,384 bytes | 1, 2 | The current design. Version 2 fixes mood lids and squints that version 1 draws beside eyes the creature's eye aspect has narrowed; version 1 still draws every record that stores it. |
+| `creature.wild-plus` | 16,384 bytes | 1 | The wild body as the head, with more masses, limbs, a crest, a tail, a coat and a hide pattern (`crates/avatar-wild-plus`). |
+| `creature.sprouts` | 16,384 bytes | 1 | Small plant creatures: a plant-organ body with a face, shoots grown from rules the genome writes, and roots (`crates/avatar-sprouts`). |
+| `creature.pixel-critters` | 16,384 bytes | 1 | Pixel-art creatures on a 24 by 24 grid (`crates/avatar-pixel-critters`). |
+| `creature.knitted-toys` | 16,384 bytes | 1 | Crocheted plush toys; less stitch detail at small sizes (`crates/avatar-knitted-toys`). |
+| `creature.small-robots` | 16,384 bytes | 1 | Little machines with a hull, running gear, arms and tools; less detail at small sizes (`crates/avatar-small-robots`). |
+| `creature.drawn-heads` | 16,384 bytes | 1 | Flat, front-facing heads drawn in ink; less detail at small sizes (`crates/avatar-drawn-heads`). |
+
+The six newer types read the same stored genome as `creature.wild` and
+base their body colour on wild's, so only the type field selects the look.
+They are delivered as finished images (`avatar::render_image`, the C
+boundary's `avatar_render_image`, AvatarKit's `renderImageViaCore`), drawn
+at the size the image is shown at.
 
 The dispatch arms in `crates/avatar/src/dispatch.rs` are the
 authority. A record renders at the version it stores, never at the
@@ -289,7 +318,7 @@ the platform:
   (`crates/avatar-svg/src/wild/math.rs`). The limit matters because a wild
   creature branches on computed values: in measurement, a difference in
   the fourteenth digit flipped a branch and moved part of a creature by 93
-  of its 240 canvas units.
+  of its 240 canvas units. The six newer types follow the same rules.
 - **Serialization is hand-written and canonical**, for both the SVG and
   the tree JSON.
 

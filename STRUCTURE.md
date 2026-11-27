@@ -9,8 +9,11 @@ crates/
   avatar-tables/     committed sine and easing tables, rounding division, table mint (--check)
   avatar-phenotype/  classic typed units, Phenotype struct, canonical phenotype JSON
   avatar-genome/     classic 1 KiB Genome, decoder, palette table, id-derived genomes at any length
-  avatar-svg/        every generator (classic at the top level, wild in src/wild/), the tree, serializers
-  avatar/            the crate Rust hosts depend on: dispatch by type and version, re-exports of the tree and serializers
+  avatar-svg/        the classic and wild generators (classic at the top level, wild in src/wild/), the tree, serializers
+  avatar-wild-plus/, avatar-sprouts/, avatar-pixel-critters/, avatar-knitted-toys/, avatar-small-robots/, avatar-drawn-heads/
+                     one generator crate per newer type, each with its golden test and examples/fidelity_port.rs
+  avatar-raster/     render tree to RGBA pixels through resvg, and the fidelity comparison example
+  avatar/            the crate Rust hosts depend on: dispatch by type and version, render_image, re-exports of the tree and serializers
   avatar-ffi/        the C boundary built into the Swift package's embedded core
   avatar-export/     CLI: stored genome to PNG, SVG or tree JSON; genome manifests
   avatar-vectors/    golden corpus tests and the corpus mint
@@ -18,7 +21,7 @@ crates/
 ports/
   swift/             AvatarKit sources and tests, AvatarCore.xcframework, AvatarCore.source-hash
   ts/                tree decoder and generic SVG serializer, with Bun tests
-vectors/             golden corpus: dna/, phenotype/, svg/, tree/, tree-svg/, wild/, manifest.json, contact-sheet.html
+vectors/             golden corpus: dna/, phenotype/, svg/, tree/, tree-svg/, wild/, one directory per newer type (wild-plus/ and so on), image/, tree-features/, manifest.json, contact-sheet.html
 playground/          review harness (its own Cargo workspace) and the browser lab
 scripts/             the gate and its checks, the core build, the cross-platform check
 docs/                design/ notes (working notes go in the git-ignored .cortexkit/internal-docs/)
@@ -26,9 +29,9 @@ Package.swift        the Swift package, at the root so it can be consumed by git
 LICENSE              MIT
 ```
 
-`avatar-genome` builds on `avatar-phenotype` and `avatar-tables`, and so does `avatar-svg`. `avatar` builds on `avatar-svg`, `avatar-genome` (classic decoding, in dispatch) and `avatar-phenotype`. `avatar-ffi` sits on `avatar`; `avatar-export` sits on `avatar`, and on `avatar-svg` for its classic SVG.
+`avatar-genome` builds on `avatar-phenotype` and `avatar-tables`, and so does `avatar-svg`. Each newer type's generator crate builds on `avatar-svg`, most on `avatar-tables` too, and `avatar-raster` on `avatar-svg` and resvg. `avatar` builds on `avatar-svg`, `avatar-genome` (classic decoding, in dispatch), `avatar-phenotype`, `avatar-raster` and the six generator crates. `avatar-ffi` sits on `avatar`; `avatar-export` sits on `avatar`, and on `avatar-svg` for its classic SVG.
 
-Directory names are the short crate names. The five library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar`, `cortexkit-avatar-svg` and so on), which is the name `cargo -p` and a crates.io dependency use; each library keeps its short Rust name, so code imports `avatar` or `avatar_svg`. `avatar-ffi`, `avatar-export` and `avatar-vectors` keep their names and are never published.
+Directory names are the short crate names. The library crates' package names carry a `cortexkit-` prefix (`cortexkit-avatar`, `cortexkit-avatar-svg` and so on), which is the name `cargo -p` and a crates.io dependency use; each library keeps its short Rust name, so code imports `avatar` or `avatar_svg`. `avatar-ffi`, `avatar-export` and `avatar-vectors` keep their names and are never published.
 
 ## `crates/avatar-svg/src`
 
@@ -41,7 +44,9 @@ Directory names are the short crate names. The five library crates' package name
 
 ## Other crates
 
-- `crates/avatar/src`: `lib.rs` re-exports everything a Rust host needs; `dispatch.rs` holds `render_tree_for_bytes` and `render_tree_for`, the type and version arms, and each type's genome length.
+- `crates/avatar/src`: `lib.rs` re-exports everything a Rust host needs; `dispatch.rs` holds the type constants, `render_tree_for_bytes`, `render_tree_for_bytes_at`, `render_tree_for` and `render_image`, the type and version arms, and each type's genome length.
+- `crates/avatar-<stem>` for each newer type (`wild-plus`, `sprouts`, `pixel-critters`, `knitted-toys`, `small-robots`, `drawn-heads`): `lib.rs` exposes `render_tree` and `decode`, and the generator is split into modules by area (body, face, mood, palette, render and so on), with no source file over 5,000 lines. Its golden test mints and checks `vectors/<stem>/`; `examples/fidelity_port.rs` writes the port's side of the fidelity comparison.
+- `crates/avatar-raster/src`: `rasterize_svg`, `rasterize_tree` and the image types `avatar` re-exports; `examples/fidelity_compare.rs` compares a reference's drawings with a port's.
 - `crates/avatar-genome`: `genome.rs`, `decode.rs`, `identity.rs`, `generated/palette.rs` with `bin/mint_palette.rs`. `examples/fleet_coverage.rs` is the classic corpus coverage check the gate runs; the other examples render sample sheets.
 - `crates/avatar-vectors/src`: `lib.rs` holds the classic vector list and every boundary test; `tests/wild.rs` the wild corpus; `tree_fixture.rs` an independent strict decoder for the tree files.
 - `crates/avatar-ffi`: `src/lib.rs`, the C header in `include/`, and `README.md` on how the boundary is used.

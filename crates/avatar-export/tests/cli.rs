@@ -431,7 +431,8 @@ fn new_types_mint_genomes_at_version_1() {
         assert_eq!(records[0]["agent_id"], "agent_x");
         assert_eq!(records[0]["avatar_type"], type_name);
         assert_eq!(records[0]["avatar_version"], 1, "{type_name}");
-        // The same seat mints the same 16,384 bytes it mints under wild.
+        // The same agent id mints the same 16,384 bytes under each type as
+        // under wild.
         assert_eq!(
             records[0]["avatar_genome"], wild[0]["avatar_genome"],
             "{type_name}"
