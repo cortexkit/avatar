@@ -163,10 +163,9 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
     let textures = textures::build(&b, options.textures);
     let bones = skeleton::finish(&b.bones);
     let motion = rigging::motion(&b, genome, &bones);
-    let camera = camera::stage(&b.parts);
     let status = b.mats.table();
     let stand_ins = super::solids::take_stand_ins();
-    Robot {
+    let mut robot = Robot {
         depth,
         parts: b.parts,
         materials: b.mats.list,
@@ -179,8 +178,12 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
             hover: layout.gear.hover,
         },
         textures,
-        camera,
+        camera: camera::unset(),
         motion,
         stand_ins,
-    }
+    };
+    // The stage holds the robot through every reaction and status loop, so
+    // it is framed from the robot's own motion.
+    robot.camera = camera::stage(&robot);
+    robot
 }

@@ -15,7 +15,10 @@
 // linear colour premultiplied by alpha, sRGB-encoded, so sampling returns
 // linear premultiplied colour and blending is `t + under · (1 − t.a)`.
 // On one surface the order is paint, marks (shaded like the paint), then
-// the face (unlit, at the brightness the 2D drawing bakes in).
+// the face (unlit, at the brightness the 2D drawing bakes in). Where the
+// rest surface turns away from the depth axis, a projected drawing would
+// stretch across it, so a texture fades out as the rest normal's z falls
+// from 0.42 to 0.12.
 
 // Lights in view space, fixed to the camera: the key from above right in
 // front, the fill from the left.
@@ -23,6 +26,8 @@ const KEY = vec3<f32>(0.36, 0.5, 0.79);
 const FILL = vec3<f32>(-0.7, 0.1, 0.5);
 // How far the key light wraps round the shadow side.
 const WRAP: f32 = 0.45;
+// The rest normal z over which a projected texture fades out.
+const FADE = vec2<f32>(0.12, 0.42);
 
 // Per-vertex flags.
 const FLAG_TEXTURED_FRONT: u32 = 1u;
@@ -88,6 +93,8 @@ struct VertexOut {
     @location(1) view_normal: vec3<f32>,
     @location(2) projection: vec2<f32>,
     @location(3) @interpolate(flat) info: vec4<u32>,
+    // The rest normal's z, which projected textures fade by.
+    @location(4) rest_nz: f32,
 };
 
 @vertex
@@ -109,6 +116,7 @@ fn vs_robot(v: VertexIn) -> VertexOut {
     out.view_normal = (frame.view * robot.model * vec4<f32>(n, 0.0)).xyz;
     out.projection = v.projection;
     out.info = v.info;
+    out.rest_nz = v.normal.z;
     return out;
 }
 
@@ -130,11 +138,12 @@ fn fs_robot(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) v
     let dy = dpdy(in.projection);
     let m = materials[in.info.x];
     let flags = in.info.y;
+    let fade = smoothstep(FADE.x, FADE.y, in.rest_nz);
 
     // Paint, then the hull's marks over it, shaded together.
     var base = m.base.rgb;
     if ((flags & FLAG_FACING_FRONT) != 0u && in.info.w != NO_TEXTURE) {
-        let t = layer_sample(in.info.w, in.projection, dx, dy);
+        let t = layer_sample(in.info.w, in.projection, dx, dy) * fade;
         base = t.rgb + base * (1.0 - t.a);
     }
 
@@ -167,7 +176,7 @@ fn fs_robot(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) v
     if ((flags & FLAG_TEXTURED_FRONT) != 0u && slot > 0u) {
         let face = robot.faces[slot];
         if (face >= 0) {
-            let t = layer_sample(u32(face), in.projection, dx, dy);
+            let t = layer_sample(u32(face), in.projection, dx, dy) * fade;
             col = t.rgb + col * (1.0 - t.a);
         }
     }

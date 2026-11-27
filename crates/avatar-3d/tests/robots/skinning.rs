@@ -1,7 +1,10 @@
 //! Posing from the exported data alone: rigid and skinned points, anchors,
-//! and the stage camera.
+//! and the stage camera, which holds the robot through every reaction and
+//! status loop.
 
-use avatar_3d::robot::{build_with, BuildOptions, Robot, Skin};
+use avatar_3d::motion::{Actor, LOOP_BLEND, REACTIONS, STATUS_LOOPS};
+use avatar_3d::robot::{build_with, BuildOptions, Robot, Skin, FILL, REACH_SAMPLES_PER_SECOND};
+use avatar_small_robots::Mood;
 
 use crate::cases;
 
@@ -151,14 +154,8 @@ fn the_stage_camera_is_the_three_quarter_view() {
         ([0.0, 1.0, 0.0], 20.0, 1.0, 288)
     );
     // Pinned for wild-port-0005.
-    assert!(close(
-        c.eye,
-        [1.3774064138486284, 2.405042890320356, 6.919629648139448]
-    ));
-    assert!(close(
-        c.target,
-        [0.03236666372476038, 0.9067014519010492, 0.0]
-    ));
+    assert!(close(c.eye, PINNED_EYE), "eye {:?}", c.eye);
+    assert!(close(c.target, PINNED_TARGET), "target {:?}", c.target);
     // It looks from 11 degrees toward +x and 12 degrees above:
     // (sin 11° cos 12°, sin 12°, cos 11° cos 12°).
     let (s11, c11, s12, c12) = (
@@ -174,22 +171,95 @@ fn the_stage_camera_is_the_three_quarter_view() {
     ];
     let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
     assert!(close(d.map(|v| v / l), [s11 * c12, s12, c11 * c12]));
-    // Its target is the centre of the rest bounds, and the bounds fill the
-    // frame to within 0.9 of its half size.
-    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for p in robot.parts.iter().flat_map(|p| p.mesh.positions.iter()) {
-        for k in 0..3 {
-            lo[k] = lo[k].min(p[k]);
-            hi[k] = hi[k].max(p[k]);
+}
+
+/// The stage camera of wild-port-0005.
+const PINNED_EYE: V3 = [1.7941724449515872, 3.2345367603992283, 9.204325157627393];
+const PINNED_TARGET: V3 = [0.005032875407895765, 1.2414789671881963, 0.0];
+
+/// Every vertex of a robot in a pose, posed from the exported data alone.
+fn posed_vertices(robot: &Robot, joints: &[M4]) -> Vec<V3> {
+    let skin = |j: usize| mul(&joints[j], &inverse_rest(&robot.bones[j].rest));
+    let skins: Vec<M4> = (0..robot.bones.len()).map(skin).collect();
+    let mut out = Vec::new();
+    for part in &robot.parts {
+        for (i, v) in part.mesh.positions.iter().enumerate() {
+            out.push(match &part.skin {
+                Skin::Rigid { bone } => apply(&skins[*bone], *v),
+                Skin::Skinned { joints, weights } => (0..4).fold([0.0; 3], |acc, k| {
+                    let p = apply(&skins[joints[i][k] as usize], *v);
+                    [0, 1, 2].map(|c| acc[c] + weights[i][k] * p[c])
+                }),
+                _ => panic!("a part is rigid or skinned"),
+            });
         }
     }
-    assert!(close(
-        c.target,
-        [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.0]
-    ));
-    for i in 0..8 {
-        let corner = [0, 1, 2].map(|k| if i >> k & 1 == 0 { lo[k] } else { hi[k] });
-        let q = c.project(corner);
-        assert!(q[0].abs() <= 0.9 && q[1].abs() <= 0.9 && q[2] > 0.0);
+    out
+}
+
+/// Every pose the stage must hold: each reaction played from rest in
+/// neutral to its end, and each status loop through its fade-in and one
+/// period, sampled `REACH_SAMPLES_PER_SECOND` times a second with idle off.
+fn stage_poses(robot: &Robot) -> Vec<Vec<M4>> {
+    let mut poses = Vec::new();
+    let mut sample = |actor: &Actor, end: f64| {
+        let steps = (end * REACH_SAMPLES_PER_SECOND).floor() as u32;
+        for k in 0..=steps {
+            poses.push(
+                actor
+                    .evaluate(f64::from(k) / REACH_SAMPLES_PER_SECOND)
+                    .bones,
+            );
+        }
+    };
+    for r in REACTIONS {
+        let mut actor = Actor::new(robot, Mood::Neutral).without_idle();
+        actor.play(0.0, r);
+        sample(&actor, robot.motion.reaction(r).duration);
+    }
+    for l in STATUS_LOOPS {
+        let mut actor = Actor::new(robot, Mood::Neutral).without_idle();
+        actor.set_loop(0.0, Some(l));
+        sample(&actor, LOOP_BLEND + robot.motion.status_loop(l).duration);
+    }
+    poses
+}
+
+#[test]
+fn the_stage_holds_every_reaction_and_status_loop() {
+    for (label, genome) in cases::corpus() {
+        let robot = build_with(&genome, BuildOptions::untextured());
+        let c = robot.camera;
+        // The target is the centre, in x and y, of the box holding the rest
+        // pose and every stage pose.
+        let rest: Vec<M4> = robot.bones.iter().map(|b| b.rest).collect();
+        let poses = stage_poses(&robot);
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for joints in std::iter::once(&rest).chain(&poses) {
+            for p in posed_vertices(&robot, joints) {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(p[k]);
+                    hi[k] = hi[k].max(p[k]);
+                }
+            }
+        }
+        assert!(
+            close(
+                c.target,
+                [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.0]
+            ),
+            "{label}: target {:?}",
+            c.target
+        );
+        // No vertex leaves the frame, at rest or in any stage pose.
+        for (n, joints) in std::iter::once(&rest).chain(&poses).enumerate() {
+            for p in posed_vertices(&robot, joints) {
+                let q = c.project(p);
+                assert!(
+                    q[0].abs() <= FILL && q[1].abs() <= FILL && q[2] > 0.0,
+                    "{label}: sample {n} puts {p:?} at {q:?}, outside the frame"
+                );
+            }
+        }
     }
 }

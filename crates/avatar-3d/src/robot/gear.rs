@@ -310,6 +310,10 @@ pub(super) fn build(b: &mut Builder) -> Vec<usize> {
                 // and keep them off the floor when the robot lands.
                 let bone = b.bone("exhaust.0", Some(bone), outlet);
                 if g.kind == "rings" {
+                    // The 2D draws the rings as strokes of light in the glow
+                    // colour, so they share the flame's material and shine
+                    // with the thrust.
+                    let light = b.mats.flame();
                     for k in 0..(*rings).max(1) {
                         let y = outlet[1] - 3.0 * (f64::from(k) + 1.0);
                         let r = bot * (1.0 - 0.15 * f64::from(k));
@@ -330,7 +334,7 @@ pub(super) fn build(b: &mut Builder) -> Vec<usize> {
                             class,
                             s.frame,
                             s.base,
-                            metal,
+                            light,
                             bone,
                             ring,
                         );

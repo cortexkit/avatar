@@ -369,7 +369,7 @@ pub const MAPPING: &[Entry] = &[
     drawable("component", "cup", Lathe, "metal"),
     drawable("component", "nozzle", Lathe, "metal"),
     drawable("component", "flame", Lathe, "glow"),
-    drawable("component", "ring", Torus, "metal"),
+    drawable("component", "ring", Torus, "glow"),
     drawable("component", "chest-rim", Cylinder, "metal"),
     drawable("component", "dial", Cylinder, "paint"),
     drawable("component", "needle", Rod, "paint"),

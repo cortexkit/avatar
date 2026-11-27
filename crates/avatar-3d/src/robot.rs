@@ -76,7 +76,7 @@ mod skeleton;
 mod solids;
 mod textures;
 
-pub use camera::{Camera, AZIMUTH, ELEVATION, FILL, FOV_Y, FRAME_PX};
+pub use camera::{Camera, AZIMUTH, ELEVATION, FILL, FOV_Y, FRAME_PX, REACH_SAMPLES_PER_SECOND};
 pub use depth::{Depth, BACK_KINDS, FIRST_BYTE as FIRST_DEPTH_BYTE, LAST_BYTE as LAST_DEPTH_BYTE};
 pub use digest::mesh_bytes;
 pub use materials::{Emission, Finish, LightKind, Material, StatusLight, StatusTable, FINISHES};
@@ -130,7 +130,8 @@ pub struct Robot {
     /// Textures with their bindings. Pixels are present unless the robot was
     /// built with [`BuildOptions::textures`] off.
     pub textures: Vec<Texture>,
-    /// The three-quarter stage camera that frames this robot.
+    /// The three-quarter stage camera that frames this robot at rest and
+    /// through every reaction and status loop.
     pub camera: Camera,
     /// Mood postures, idle, reactions and status loops, for
     /// [`crate::motion::Actor`] to pose the robot with.
