@@ -12,13 +12,16 @@
 //! wilts, perks up, opens or closes its flowers, folds its leaves for the
 //! night, bristles.
 //!
-//! This is a port of a JavaScript design ("the reference" in this crate's
-//! comments), which lives in the authors' private experiments repository;
-//! `scripts/fidelity/` compares the two drawing by drawing. Generation uses
-//! `f64` arithmetic, square roots and rounding only, with sine and cosine
-//! from `avatar_svg::wild::math`, in the reference's operation order: the
-//! discrete choices that depend on geometry come out the same on every
-//! platform and as in the reference.
+//! This began as a port of a JavaScript design ("the reference" in this
+//! crate's comments), which lives in the authors' private experiments
+//! repository. Version 1 was then refined in Rust, after the port, so that
+//! every genome draws a readable creature: it no longer matches the
+//! reference exactly. The fidelity harness in `scripts/fidelity/` compares
+//! the reference with the port as it was first written, not with the
+//! current drawing. Generation uses `f64` arithmetic, square roots and
+//! rounding only, with sine and cosine from `avatar_svg::wild::math`, in
+//! the reference's operation order where the two still agree: the discrete
+//! choices that depend on geometry come out the same on every platform.
 //!
 //! [`render_tree`] draws a genome in one mood. It draws the same tree at
 //! every output size: the reference changes nothing but the size of its
