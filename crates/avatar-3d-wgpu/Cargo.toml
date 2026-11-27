@@ -1,0 +1,36 @@
+[package]
+name = "cortexkit-avatar-3d-wgpu"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Draws the 3D avatar creatures offscreen with wgpu."
+publish = false
+
+# The library keeps its short Rust name, so code imports it as
+# `avatar_3d_wgpu`.
+[lib]
+name = "avatar_3d_wgpu"
+
+[dependencies]
+# The robots as plain data: meshes, materials, the status colour table,
+# textures with their bindings, the skeleton, the stage camera and poses.
+avatar-3d = { version = "0.1.0", path = "../avatar-3d", package = "cortexkit-avatar-3d" }
+# Moods and statuses, which select textures and status colours.
+avatar-small-robots = { version = "0.1.0", path = "../avatar-small-robots", package = "cortexkit-avatar-small-robots" }
+# Pinned to the 30.0 series, the version the desktop apps link, so a
+# desktop build carries one copy.
+wgpu = "~30.0"
+# Waits for wgpu's adapter, device and readback futures.
+pollster = "1"
+
+[dev-dependencies]
+# Parses and validates the WGSL without a GPU.
+naga = { version = "~30.0", features = ["wgsl-in"] }
+# Rasterizes a 2D tree for the texture-upload model test.
+avatar-raster = { version = "0.1.0", path = "../avatar-raster", package = "cortexkit-avatar-raster" }
+avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+# Derives the review genomes the way the random_sheet example does.
+blake3 = "1.5"
+# Writes the review sheets.
+png = "0.17"
