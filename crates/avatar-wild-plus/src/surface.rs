@@ -347,7 +347,10 @@ pub fn build_surface(
             }
         } else if k == 3 {
             // Stripes that run in from the flanks and down from the crown.
-            let stripe_tone = if stood_in || c.limbs_in_skin {
+            // Across a body stacked under the head, stripes in a second hue
+            // read as a jumper or a belt, so there they are a shade of the
+            // body, as chevrons are.
+            let stripe_tone = if stood_in || c.limbs_in_skin || under || plan == 2 {
                 shade
             } else {
                 tone
@@ -548,12 +551,16 @@ pub fn build_surface(
                 ));
             }
         } else if k == 7 {
-            // The lower body dipped in a second colour.
-            let mut yb = lerp(max(face_bot + 2.0, by0 + 0.45 * hh), by1 - 0.12 * hh, g1);
+            // The lower body dipped in a deeper shade of its own colour.
+            // Dipped to the waist, or in a second hue or a pale one, or with
+            // a straight or scalloped edge, it reads as trousers or a skirt;
+            // dipped to the feet in a deeper shade with a wavy or ragged
+            // edge it reads as fur.
+            let mut yb = lerp(max(face_bot + 2.0, by1 - 0.24 * hh), by1 - 0.1 * hh, g1);
             if yb < face_bot + 2.0 {
                 yb = max(by1 - 0.2 * hh, face_bot + 1.0);
             }
-            let edge = g3 % 4;
+            let wavy = g3 % 2 == 0;
             let teeth = 2 * (2 + (g2 * 3.99).floor() as usize) + 1;
             let wd = (2.0 * half_w + 12.0) / teeth as f64;
             let a = hh * 0.035;
@@ -564,22 +571,17 @@ pub fn build_surface(
                 let xa = x0 + i as f64 * wd;
                 let xb = xa + wd;
                 let up = if i % 2 == 0 { -1.0 } else { 1.0 };
-                match edge {
-                    0 => d.l1(xb, yb),
-                    1 => d.quad_to(xa, yb, (xa + xb) / 2.0, yb + up * a * 2.0, xb, yb),
-                    2 => {
-                        d.l1((xa + xb) / 2.0, yb + up * a);
-                        d.l1(xb, yb);
-                    }
-                    _ => d.quad_to(xa, yb, (xa + xb) / 2.0, yb - a * 2.4, xb, yb),
+                if wavy {
+                    d.quad_to(xa, yb, (xa + xb) / 2.0, yb + up * a * 2.0, xb, yb);
+                } else {
+                    d.l1((xa + xb) / 2.0, yb + up * a);
+                    d.l1(xb, yb);
                 }
             }
             d.l1(x0 + teeth as f64 * wd, by1 + 8.0);
             d.l1(x0, by1 + 8.0);
             d.z();
-            let color =
-                [pal.part, pal.mark_deep, pal.mark_pale, pal.part2][((g3 >> 2) % 4) as usize];
-            flat.push(filled(d.shape(), color, None, "wp-dip"));
+            flat.push(filled(d.shape(), pal.mark_deep, None, "wp-dip"));
         } else if k == 8 {
             // A blaze: a stripe from the crown down between the eyes.
             let top = f.hb[1];
@@ -633,8 +635,9 @@ pub fn build_surface(
                     top - 8.0,
                 );
                 d.z();
-                let color = [pal.mark_pale, pal.mark_pale, pal.mark, pal.mark_deep]
-                    [((g3 >> 2) % 4) as usize];
+                // A blaze in a second hue reads as a painted stripe or a
+                // mask, so it is a paler or deeper shade of the body.
+                let color = [pal.mark_pale, pal.mark_deep][((g3 >> 2) % 4 / 2) as usize];
                 flat.push(filled(d.shape(), color, None, "wp-blaze"));
             }
         } else if k == 9 {
@@ -672,10 +675,12 @@ pub fn build_surface(
                 3 => size * lerp(0.3, 0.45, g2),
                 _ => hh * lerp(0.6, 0.95, g2),
             };
+            // A shade in a second hue over the lower or upper body reads as
+            // a garment, so the shade keeps the body's own hue.
             let col = match mode {
                 0 => pal.mark_deep,
                 3 => pal.mark_pale,
-                _ => tone,
+                _ => shade,
             };
             let stops: &[(f64, f64)] = if mode == 0 {
                 &[(0.45, 0.0), (1.0, 0.75)]
@@ -794,25 +799,28 @@ pub fn build_surface(
     }
 
     // ---- belly ----
-    let belly_kind = if plan == 5 {
+    // A dipped body's underside already has its own colour; a belly patch
+    // over the dip reads as a pair of shorts or a bag, so it has none.
+    let belly_kind = if plan == 5 || kind == 7 || second == 7 {
         1
     } else {
         r.pick(2400, &[5.0, 2.0, 2.0, 2.0, 2.0])
     };
     if belly_kind != 1 {
         // The wild belly patch: below the face, as wide as a share of the
-        // body at each height, tapering to a point at the top.
-        let region: &[P] = if plan == 4 || plan == 6 {
-            c.head
-        } else {
-            outline
-        };
+        // body at each height, tapering to a point at the top. On legs the
+        // head is the whole body and carries it. Under a long neck's head
+        // there is too little head left below the mouth, and a patch there
+        // is a short wide bar that reads as a collar or a scarf, so a long
+        // neck carries it down its front instead.
+        let region: &[P] = if plan == 6 { c.head } else { outline };
         let rb = bbox_of(region);
         let top_y = max(p.eye_y + rr * 3.4, p.mouth_y + rr * 1.5);
         let bottom_full = rb[3] - (rb[3] - top_y) * 0.06;
-        // Under a head, a torso or a segment covered edge to edge by the
-        // belly colour reads as a dress, so there the patch stays narrow.
-        let stacked = plan == 1 || plan == 2;
+        // Under a head, a torso, a segment or a long neck's base covered
+        // edge to edge by the belly colour reads as a dress, so there the
+        // patch stays narrow.
+        let stacked = plan == 1 || plan == 2 || plan == 4;
         let scale = if stacked {
             0.6
         } else if belly_kind == 3 {
@@ -866,10 +874,16 @@ pub fn build_surface(
         } else {
             bbox_of(&patch)
         };
+        // A patch less than a third as tall as it is wide is a band across
+        // the body, which reads as a belt or a waistband.
         if !patch.is_empty()
             && pb[2] - pb[0] >= (rb[2] - rb[0]) * 0.1
             && pb[3] - pb[1] >= (rb[3] - rb[1]) * 0.08
+            && pb[3] - pb[1] >= (pb[2] - pb[0]) * 0.35
         {
+            // Creases across a patch less than half as tall as it is wide
+            // read as the stripes of a belt, so a flat patch stays plain.
+            let plated = belly_kind == 2 && pb[3] - pb[1] >= (pb[2] - pb[0]) * 0.5;
             if belly_kind == 4 {
                 // A round spot on the belly in place of the patch.
                 belly.push(filled(
@@ -885,7 +899,7 @@ pub fn build_surface(
                 ));
             } else {
                 belly.push(filled(path_of(&patch, true), pal.belly, None, "wp-belly"));
-                if belly_kind == 2 {
+                if plated {
                     // Plates: creases across the patch.
                     let gap = max(5.0, (pb[3] - pb[1]) / (3.0 + f64::from(r.one(2408, 4))));
                     let mut d = PathB::new();
@@ -907,7 +921,7 @@ pub fn build_surface(
                     }
                 }
             }
-            if belly_kind != 0 && !(belly_kind == 3 && stacked) {
+            if belly_kind != 0 && !(belly_kind == 3 && stacked) && (belly_kind != 2 || plated) {
                 notes.push(
                     ["", "", "plated belly", "wide belly", "belly spot"][belly_kind].to_owned(),
                 );

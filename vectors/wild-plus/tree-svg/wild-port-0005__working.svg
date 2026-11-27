@@ -101,6 +101,12 @@
 </g><g clip-path="url(#clip-primitive-57)"><ellipse cx="120" cy="190.5" rx="9.1" ry="4.3" fill="#acda95" class="wp-belly"/></g>
 <g clip-path="url(#clip-primitive-58)"><ellipse cx="76.1" cy="152" rx="12.45" ry="7.59" fill="#d5f471" opacity="0.8" class="wp-blush"/></g>
 <g clip-path="url(#clip-primitive-59)"><ellipse cx="163.9" cy="152" rx="12.45" ry="7.59" fill="#d5f471" opacity="0.8" class="wp-blush"/></g>
+<path d="M113.42 160.44 L126.58 161.73" fill-rule="nonzero" fill="none" stroke="#617c1d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="wp-mouth-line"/>
+<path d="M120.26 161.11 C120.53 167.26,121.49 170.42,123.16 170.59 C124.91 170.76,125.87 167.79,126.05 161.68 Z" fill-rule="nonzero" fill="#e88a93" stroke="#617c1d" stroke-width="1.2" stroke-linecap="butt" stroke-linejoin="round" class="wp-tongue"/>
+<path d="M114.5 160.1 L117.6 160.7 L116.1 166.6 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-fang"/>
+<path d="M122.4 161.2 L125.5 161.2 L123.9 167.4 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-fang"/>
+<path d="M117.6 162.9 L114.5 162 L115.9 155.6 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-tooth"/>
+<path d="M122.4 163.4 L125.5 163.1 L124.1 156.4 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-tooth"/>
 <ellipse cx="89.97" cy="130.79" rx="13.3" ry="14.57" fill="#241f26" class="wp-pupil"/>
 <ellipse cx="94.22" cy="125.69" rx="3.99" ry="4.37" fill="#ffffff" opacity="0.9" class="wp-shine"/>
 <path d="M83.32 118.12 L79.99 111.78" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="wp-lash"/>
@@ -121,12 +127,6 @@
 <path d="M141.1 145.76 C147.06 140.23,153.01 140.23,158.96 145.76" fill-rule="nonzero" fill="none" stroke="#617c1d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="wp-lid-line"/>
 <path d="M102.6 105.63 L77.33 107.93" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="3.01" stroke-linecap="round" stroke-linejoin="round" class="wp-brow"/>
 <path d="M137.68 108.86 L162.38 111.16" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="3.01" stroke-linecap="round" stroke-linejoin="round" class="wp-brow"/>
-<path d="M113.42 160.44 L126.58 161.73" fill-rule="nonzero" fill="none" stroke="#617c1d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="wp-mouth-line"/>
-<path d="M120.26 161.11 C120.53 167.26,121.49 170.42,123.16 170.59 C124.91 170.76,125.87 167.79,126.05 161.68 Z" fill-rule="nonzero" fill="#e88a93" stroke="#617c1d" stroke-width="1.2" stroke-linecap="butt" stroke-linejoin="round" class="wp-tongue"/>
-<path d="M114.5 160.1 L117.6 160.7 L116.1 166.6 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-fang"/>
-<path d="M122.4 161.2 L125.5 161.2 L123.9 167.4 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-fang"/>
-<path d="M117.6 162.9 L114.5 162 L115.9 155.6 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-tooth"/>
-<path d="M122.4 163.4 L125.5 163.1 L124.1 156.4 Z" fill-rule="nonzero" fill="#ffffff" stroke="#617c1d" stroke-width="1.1" stroke-linecap="butt" stroke-linejoin="round" class="wp-tooth"/>
 <path d="M90.87 151.44 L46.26 137.58" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" class="wp-whisker"/>
 <path d="M90.87 155.99 L46.26 151.95" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" class="wp-whisker"/>
 <path d="M149.13 151.44 L193.74 137.58" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" class="wp-whisker"/>

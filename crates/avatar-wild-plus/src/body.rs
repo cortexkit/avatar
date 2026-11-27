@@ -483,6 +483,14 @@ pub fn compose_body(r: &Reader, w: &Wild, eye_plan: usize) -> Body {
         let hip_y = mid_y + under;
         // Legs and feet take the body's colour or a shade of it.
         let tone = ["toneDown", "dark", "body", "toneUp"][r.one(1253, 4) as usize];
+        // A plain oval foot much paler or darker than the body reads as a
+        // slipper or a shoe, so an oval foot keeps to the body's colour or
+        // its shade.
+        let foot_tone = match tone {
+            "dark" => "toneDown",
+            "toneUp" => "body",
+            t => t,
+        };
         if style == 0 {
             let rad = cw * r.lin(1251, 0.1, 0.2);
             let splay = cw * r.lin(1252, -0.08, 0.25);
@@ -514,7 +522,7 @@ pub fn compose_body(r: &Reader, w: &Wild, eye_plan: usize) -> Body {
                             [1.0, 0.0],
                             18,
                         ),
-                        tone,
+                        foot_tone,
                         true,
                         "foot",
                     )],
@@ -723,7 +731,7 @@ pub fn compose_body(r: &Reader, w: &Wild, eye_plan: usize) -> Body {
                             [1.0, 0.0],
                             18,
                         ),
-                        tone,
+                        foot_tone,
                         true,
                         "foot",
                     )],

@@ -101,6 +101,7 @@
 </g><g transform="rotate(4.888916 120 197.9)"><g clip-path="url(#clip-primitive-57)"><ellipse cx="120" cy="190.5" rx="9.1" ry="4.3" fill="#acda95" class="wp-belly"/></g></g>
 <g transform="rotate(4.888916 120 197.9)"><g clip-path="url(#clip-primitive-58)"><ellipse cx="76.1" cy="152" rx="12.45" ry="7.59" fill="#d5f471" opacity="0.8" class="wp-blush"/></g></g>
 <g transform="rotate(4.888916 120 197.9)"><g clip-path="url(#clip-primitive-59)"><ellipse cx="163.9" cy="152" rx="12.45" ry="7.59" fill="#d5f471" opacity="0.8" class="wp-blush"/></g></g>
+<ellipse cx="120" cy="163.14" rx="3.95" ry="5.21" fill="#4a2f33" stroke="#617c1d" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="miter" class="wp-mouth-inside" transform="rotate(4.888916 120 197.9)"/>
 <ellipse cx="83.71" cy="130.49" rx="16.07" ry="17.61" fill="#241f26" class="wp-pupil" transform="rotate(4.888916 120 197.9)"/>
 <ellipse cx="88.85" cy="124.33" rx="4.82" ry="5.28" fill="#ffffff" opacity="0.9" class="wp-shine" transform="rotate(4.888916 120 197.9)"/>
 <path d="M75.68 115.17 L71.66 107.52" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="wp-lash" transform="rotate(4.888916 120 197.9)"/>
@@ -113,7 +114,6 @@
 <path d="M171.52 129.51 L179.14 127.28" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="wp-lash" transform="rotate(4.888916 120 197.9)"/>
 <path d="M98.98 110.22 L68.45 115.55" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="3.01" stroke-linecap="round" stroke-linejoin="round" class="wp-brow" transform="rotate(4.888916 120 197.9)"/>
 <path d="M141.37 114.12 L171.21 119.45" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="3.01" stroke-linecap="round" stroke-linejoin="round" class="wp-brow" transform="rotate(4.888916 120 197.9)"/>
-<ellipse cx="120" cy="163.14" rx="3.95" ry="5.21" fill="#4a2f33" stroke="#617c1d" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="miter" class="wp-mouth-inside" transform="rotate(4.888916 120 197.9)"/>
 <path d="M90.87 151.44 L46.26 137.58" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" class="wp-whisker" transform="rotate(4.888916 120 197.9)"/>
 <path d="M90.87 155.99 L46.26 151.95" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" class="wp-whisker" transform="rotate(4.888916 120 197.9)"/>
 <path d="M149.13 151.44 L193.74 137.58" fill-rule="nonzero" fill="none" stroke="#241f26" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" class="wp-whisker" transform="rotate(4.888916 120 197.9)"/>

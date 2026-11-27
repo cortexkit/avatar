@@ -186,6 +186,13 @@ pub fn coat_half(
         if n[1] > 0.8 && pm[1] > bottom_y - 7.0 {
             w = 0.0;
         }
+        // Where the skin faces more body across a narrow gap, as between two
+        // legs, the coat from both sides would meet in a row of loops that
+        // reads as a zip, so the gap keeps the skin's own line.
+        let across = 2.0 * g.reach + 2.0;
+        if depth(pm[0] + n[0] * across, pm[1] + n[1] * across) > 0.0 {
+            w = 0.0;
+        }
         let v = (pm[1] - top_y) / height;
         if region == 1 {
             w *= 1.0 - smooth01((v - 0.3) / 0.2);

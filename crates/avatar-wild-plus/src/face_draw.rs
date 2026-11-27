@@ -161,29 +161,25 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
     }
     let mains: Vec<&FaceEye> = f.eyes.iter().filter(|e| e.main).collect();
 
-    // ---- markings under the eyes (they also set the eyelid colour) ----
-    let skin_of = |e: &FaceEye| -> &'static str {
-        if !e.main {
-            return "body";
-        }
-        if f.marking == 1 {
-            f.mark_tone
-        } else {
-            "body"
-        }
-    };
+    // ---- markings under the eyes ----
+    // Every eye is set in the body's skin: a patch hangs below its eye, so
+    // the lid above the eye is the body's colour.
+    let skin_of = |_: &FaceEye| -> &'static str { "body" };
     let big_r = |e: &FaceEye| e.r * max(outer[1], outer[2]);
     if f.marking == 1 {
+        // A patch centred on its eye rings it like a goggle lens, so each
+        // patch hangs below its eye, a teardrop that leans out toward the
+        // cheek, and the top of the eye stands clear of it.
         for e in &mains {
             let s = if e.side == 0.0 { 1.0 } else { e.side };
             let r1 = big_r(e) * f.mark_size;
             out.skin.push(filled(
                 path_of(
                     &ellipse_poly(
-                        e.x + s * r1 * 0.12,
-                        e.y + r1 * 0.14,
-                        r1 * 0.95,
-                        r1 * 1.15,
+                        e.x + s * r1 * 0.2,
+                        e.y + r1 * 0.6,
+                        r1 * 0.5,
+                        r1 * 0.75,
                         unit(1.0, -s * 0.5),
                         24,
                     ),
@@ -315,6 +311,7 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
                 near < big_r(x) + 0.5 * r
             })
         });
+    let all_room = mains.iter().all(|e| room_over(e));
     for e in &f.eyes {
         let on_stalk = e.part.is_some();
         let cx = if on_stalk { e.x } else { fx + (e.x - fx) * sx };
@@ -415,7 +412,8 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
             // A dark eye gets a white backing on dark skin.
             let backing =
                 (pal.sclera.is_some() || dark_skin) && matches!(style, 0 | 3 | 10 | 11 | 12);
-            let k = if style == 11 { 0.5 } else { 1.0 };
+            // A bead is the pupil alone, drawn as large as its outer ellipse.
+            let k = if style == 11 { outer[1] } else { 1.0 };
             if backing {
                 eye.push(filled(
                     el(0.0, 0.0, 1.2 * k + 0.02, 1.2 * k + 0.02),
@@ -431,20 +429,24 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
                         eye.push(shine(0.32, -0.35, 0.3, 0.9));
                     }
                     if style == 12 {
-                        let o = if side == 0.0 { 1.0 } else { side };
-                        for (lx, ly) in [(0.5, -0.87), (0.8, -0.6), (0.97, -0.26)] {
-                            eye.push(stroked(
-                                local_shape(
-                                    &[Cmd::M(o * lx, ly), Cmd::L(o * lx * 1.5, ly * 1.5)],
-                                    &xf,
-                                    &yf,
+                        // A lone eye's lashes fan out on both sides: on one
+                        // side only they read as the strap of an eyepatch.
+                        let sides: &[f64] = if side == 0.0 { &[1.0, -1.0] } else { &[side] };
+                        for &o in sides {
+                            for (lx, ly) in [(0.5, -0.87), (0.8, -0.6), (0.97, -0.26)] {
+                                eye.push(stroked(
+                                    local_shape(
+                                        &[Cmd::M(o * lx, ly), Cmd::L(o * lx * 1.5, ly * 1.5)],
+                                        &xf,
+                                        &yf,
+                                        None,
+                                    ),
+                                    if dark_skin { pal.white } else { pal.pupil },
+                                    1.6,
+                                    "wp-lash",
                                     None,
-                                ),
-                                if dark_skin { pal.white } else { pal.pupil },
-                                1.6,
-                                "wp-lash",
-                                None,
-                            ));
+                                ));
+                            }
                         }
                     }
                 }
@@ -635,8 +637,9 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
         }
         // Brows over the main eyes: the mood's, or the creature's resting
         // brow. A brow without room lies on its eye's rim in a mood and is
-        // left out at rest.
-        let brow_room = room_over(e) && !crowded;
+        // left out at rest. Brows go as a pair: one brow over two eyes
+        // reads as a scar or a pair of spectacles.
+        let brow_room = all_room && !crowded;
         if let Some(b) = brow_of(e, !brow_room) {
             let pen = if dark_skin { pal.white } else { pal.ink };
             let weight = if b.resting {
@@ -1234,8 +1237,25 @@ fn mouth(c: &Built, sp: &MoodSpec, out: &mut FaceOut) {
             )
         };
         if plan == 3 {
+            // A tusk that rises from a corner of the mouth into an eye reads
+            // as the arm of a pair of spectacles, so tusks rise only when
+            // both tips stay clear of every eye on the head, and otherwise
+            // hang down.
+            let rise_tip = |s: f64| -> P {
+                let x = mx(s * (0.92 + 0.2 * z));
+                [x, my(-0.45 - 0.6 * z) + f.smirk * (x - fx)]
+            };
+            let outer = max(EYE_OUTER[f.style][1], EYE_OUTER[f.style][2]);
+            let rises = f.kind & 1 == 0
+                && [-1.0, 1.0].iter().all(|&s| {
+                    let tip = rise_tip(s);
+                    f.eyes
+                        .iter()
+                        .filter(|e| e.part.is_none())
+                        .all(|e| dist(tip[0], tip[1], e.x, e.y) > e.r * outer + r * 0.35)
+                });
             for s in [-1.0, 1.0] {
-                if f.kind & 1 == 1 {
+                if !rises {
                     m.push(tusk(&[
                         [s * 0.28, 0.08],
                         [s * 0.58, 0.08],

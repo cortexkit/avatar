@@ -8,12 +8,18 @@
 //! face and a mood. Bytes 0..255 keep the meaning the wild type gives them;
 //! everything new is read from byte 1024 onward.
 //!
-//! This is a port of a JavaScript design ("the reference" in this crate's
-//! comments), which lives in the authors' private experiments repository;
-//! `scripts/fidelity/` compares the two drawing by drawing. The port follows
-//! the reference's arithmetic in the same order, so its discrete choices
-//! match exactly and its drawings match to the pixel tolerance the
-//! comparison sets.
+//! This began as a port of a JavaScript design ("the reference" in this
+//! crate's comments), which lives in the authors' private experiments
+//! repository. The port followed the reference's arithmetic in the same
+//! order, so its discrete choices matched exactly and its drawings matched
+//! to the pixel tolerance of the comparison in `scripts/fidelity/`. Version 1
+//! was then refined in Rust after the port, while no stored creature used it
+//! yet, so that every random genome draws a creature that reads as one:
+//! rules that made parts read as clothing or objects, faces too small to
+//! read, or parts drawn in the wrong order were changed. Version 1 therefore
+//! no longer matches the reference exactly, and the fidelity harness in
+//! `scripts/fidelity/` describes the port, not the current drawing. Comments
+//! that compare a rule with the reference describe the port.
 //!
 //! Masses are composed in "model space", the unit-less ring coordinates of
 //! the wild body (x right, y down, the head's ring centre at the origin).
