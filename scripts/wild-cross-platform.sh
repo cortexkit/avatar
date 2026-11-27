@@ -2,13 +2,22 @@
 # Run separately from check.sh: both Linux architectures need a container host.
 #
 #   scripts/wild-cross-platform.sh
-#       Mint the wild corpus trees natively on macOS and in Linux arm64 and
-#       x86_64 containers, and compare the trees byte for byte.
+#       Mint every type's corpus trees, wild's 25 and each newer type's 18,
+#       natively on macOS and in Linux arm64 and x86_64 containers, and
+#       compare them byte for byte, one type at a time: each platform's
+#       trees with the macOS mint, and the macOS mint with the type's
+#       committed trees. Trees must be identical everywhere.
 #   scripts/wild-cross-platform.sh image [WINDOWS_HASHES [WINDOWS_DUMP]]
 #       Draw every golden image in vectors/image on the same three platforms
 #       with the image-hashes example, and compare the SHA-256 of each
 #       image's RGBA pixels with its golden. Where a hash differs, the
-#       platform's dumped image is measured against the golden.
+#       platform's dumped image is measured against the golden, and passes
+#       if no channel is more than 8/255 off on at most max(1, 0.1%) of its
+#       pixels (scripts/wild-port/compare_images.py). Images, unlike trees,
+#       may differ slightly between platforms, because the rasterizer calls
+#       the platform's maths library. The report counts, for each platform,
+#       the images identical to their golden and those only within the
+#       tolerance.
 #
 #       Windows has no container here, so a Windows x86_64 machine runs the
 #       example by hand from a checkout of the same commit:
@@ -103,14 +112,17 @@ if [[ $mode == image ]]; then
         exit "$status"
     fi
     # Each dump holds tens of megabytes of uncompressed PNGs. Once every
-    # hash matches its golden, the dumps show nothing the hash lists don't.
+    # platform passes, the report above already gives each image that
+    # differs from its golden, with its largest channel difference and the
+    # number of pixels that differ.
     rm -r "$run/$host/dump" "$run/linux-arm64/dump" "$run/linux-x86_64/dump"
     echo "Cross-platform image comparison passed; full log: $run/output.log"
     exit 0
 fi
 
 # The mint renders through the avatar crate, the one a Rust host depends on.
-# Its library is named avatar, so cargo writes libavatar.rlib.
+# Its library is named avatar, so cargo writes libavatar.rlib. It writes one
+# directory per type, because the corpora share file names.
 cargo build --locked -j 4 -p cortexkit-avatar --lib
 rustc --edition=2021 scripts/wild-port/mint.rs \
     --extern "avatar=$CARGO_TARGET_DIR/debug/libavatar.rlib" \
@@ -137,4 +149,4 @@ for arch in arm64 amd64; do
 done
 python3 scripts/wild-port/compare.py platforms "$root" \
     "$run/macos" "$run/linux-arm64/trees" "$run/linux-amd64/trees"
-echo "Cross-platform comparison passed; full log: $run/output.log"
+echo "Cross-platform tree comparison passed; full log: $run/output.log"

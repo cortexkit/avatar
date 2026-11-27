@@ -98,6 +98,8 @@ class ImageComparisonTests(unittest.TestCase):
     def test_identical_images_pass(self):
         passed, output = self.run_compare(*self.producer_output("equal", self.goldens))
         self.assertTrue(passed, output)
+        self.assertIn("identical=2 within-tolerance=0 outside-tolerance=0 missing=0 extra=0",
+                      output)
         self.assertIn(f"PASS {PLATFORM}", output)
 
     def changed_first(self, name, pixels, by):
@@ -118,7 +120,8 @@ class ImageComparisonTests(unittest.TestCase):
         # A 16 by 16 image may have 1 differing pixel, by up to 8/255.
         passed, output = self.changed_first("within", 1, 8)
         self.assertTrue(passed, output)
-        self.assertIn("identical=1 differing=1 missing=0 extra=0", output)
+        self.assertIn("identical=1 within-tolerance=1 outside-tolerance=0 missing=0 extra=0",
+                      output)
         self.assertIn(
             f"  {PLATFORM} first.png: max channel difference 8/255, 1 of 256 pixels differ "
             "(0.3906%); within the tolerance of 8/255 on at most 1 pixels\n",
@@ -128,6 +131,8 @@ class ImageComparisonTests(unittest.TestCase):
     def test_a_channel_difference_over_the_tolerance_fails(self):
         passed, output = self.changed_first("over-difference", 1, 9)
         self.assertFalse(passed, output)
+        self.assertIn("identical=1 within-tolerance=0 outside-tolerance=1 missing=0 extra=0",
+                      output)
         self.assertIn(
             f"  {PLATFORM} first.png: max channel difference 9/255, 1 of 256 pixels differ "
             "(0.3906%); beyond the tolerance of 8/255 on at most 1 pixels\n",
@@ -137,6 +142,8 @@ class ImageComparisonTests(unittest.TestCase):
     def test_more_differing_pixels_than_the_tolerance_fails(self):
         passed, output = self.changed_first("over-count", 2, 1)
         self.assertFalse(passed, output)
+        self.assertIn("identical=1 within-tolerance=0 outside-tolerance=1 missing=0 extra=0",
+                      output)
         self.assertIn(
             f"  {PLATFORM} first.png: max channel difference 1/255, 2 of 256 pixels differ "
             "(0.7812%); beyond the tolerance of 8/255 on at most 1 pixels\n",
@@ -150,6 +157,8 @@ class ImageComparisonTests(unittest.TestCase):
             "no-dump", dict(self.goldens, **{"first.png": bytes(changed)}))
         passed, output = self.run_compare(hashes, None)
         self.assertFalse(passed, output)
+        self.assertIn("identical=1 within-tolerance=0 outside-tolerance=1 missing=0 extra=0",
+                      output)
         self.assertIn(f"  {PLATFORM} first.png: hash differs; no dumped image to measure", output)
         self.assertIn(f"FAIL {PLATFORM}", output)
 
@@ -165,8 +174,28 @@ class ImageComparisonTests(unittest.TestCase):
         hashes, dump = self.producer_output("short", {"first.png": self.goldens["first.png"]})
         passed, output = self.run_compare(hashes, dump)
         self.assertFalse(passed, output)
-        self.assertIn("identical=1 differing=0 missing=1 extra=0", output)
+        self.assertIn("identical=1 within-tolerance=0 outside-tolerance=0 missing=1 extra=0",
+                      output)
         self.assertIn(f"  {PLATFORM} missing cases: second.png\n", output)
+
+    def test_the_summary_counts_identical_and_within_tolerance_images_apart(self):
+        changed = bytearray(self.goldens["first.png"])
+        changed[1] += 8
+        runs = [("macos-arm64",) + self.producer_output("same", self.goldens),
+                ("linux-x86_64",) + self.producer_output(
+                    "drifted", dict(self.goldens, **{"first.png": bytes(changed)}))]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            passed = compare_images.platforms(self.root, runs)
+        output = output.getvalue()
+        self.assertTrue(passed, output)
+        summary = output[output.index("Per platform:\n"):]
+        self.assertEqual(summary, (
+            "Per platform:\n"
+            "  PASS macos-arm64: expected=2 listed=2 identical=2 within-tolerance=0 "
+            "outside-tolerance=0 missing=0 extra=0\n"
+            "  PASS linux-x86_64: expected=2 listed=2 identical=1 within-tolerance=1 "
+            "outside-tolerance=0 missing=0 extra=0\n"))
 
     def test_reader_reverses_every_filter_type(self):
         path = self.root / "filtered.png"

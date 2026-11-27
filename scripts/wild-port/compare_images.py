@@ -13,9 +13,11 @@ A case whose hash equals the SHA-256 of the golden PNG's decoded RGBA pixels
 is identical. When a hash differs, the platform's dumped PNG is decoded and
 compared with the golden pixel by pixel, and the report gives the platform,
 the case, the largest difference in any channel and the number and share of
-pixels that differ. The case still passes if no channel differs by more than
-8/255 and at most max(1, 0.1%) of its pixels differ; a case with no dumped
-image cannot be measured and fails.
+pixels that differ. The case still passes, as within the tolerance, if no
+channel differs by more than 8/255 and at most max(1, 0.1%) of its pixels
+differ; a case with no dumped image cannot be measured and fails. Each
+platform's report counts identical cases and cases within the tolerance
+separately, so a drift that still passes stays visible.
 
 Render trees are byte-identical on every platform, but finished images may
 differ slightly between platforms, because the rasterizer uses the
@@ -224,37 +226,76 @@ def describe(platform, name, golden_path, listed_hash, dump):
             f"{allowed_differing_pixels(pixels)} pixels"), within
 
 
-def compare(platform, cases, hashes_path, dump):
-    """Checks one platform's hash list, and its dump where hashes differ."""
+def tally(platform, cases, hashes_path, dump):
+    """Measures one platform's hash list, and its dump where hashes differ.
+
+    Returns (counts, report lines). Each listed case counts once: as
+    identical; as within the tolerance, when it differs but passes the rule;
+    or as outside it, when it differs beyond the rule or no usable dump lets
+    it be measured. counts also holds missing, extra and passed.
+    """
     hashes, problems = read_hashes(hashes_path)
     names = set(cases)
     missing = sorted(names - set(hashes))
     extra = sorted(set(hashes) - names)
     differing = sorted(name for name in names & set(hashes) if hashes[name] != cases[name][1])
-    identical = len(names & set(hashes)) - len(differing)
-    print(f"{platform}: expected={len(names)} listed={len(hashes)} identical={identical} "
-          f"differing={len(differing)} missing={len(missing)} extra={len(extra)}")
-    for problem in problems:
-        print(f"  {platform} {problem}")
+    lines = [f"  {platform} {problem}" for problem in problems]
     for kind, values in [("missing", missing), ("extra", extra)]:
         if values:
-            print(f"  {platform} {kind} cases: {', '.join(values[:10])}")
-    beyond = 0
+            lines.append(f"  {platform} {kind} cases: {', '.join(values[:10])}")
+    within = 0
     for name in differing:
-        line, within = describe(platform, name, cases[name][0], hashes[name], dump)
-        print(line)
-        beyond += not within
-    passed = not (problems or missing or extra or beyond)
-    print(f"{'PASS' if passed else 'FAIL'} {platform}")
-    return passed
+        line, passes = describe(platform, name, cases[name][0], hashes[name], dump)
+        lines.append(line)
+        within += passes
+    counts = {
+        "expected": len(names),
+        "listed": len(hashes),
+        "identical": len(names & set(hashes)) - len(differing),
+        "within": within,
+        "outside": len(differing) - within,
+        "missing": len(missing),
+        "extra": len(extra),
+    }
+    counts["passed"] = not (problems or missing or extra or counts["outside"])
+    return counts, [f"{platform}: {summary(counts)}"] + lines + [verdict(platform, counts)]
+
+
+def summary(counts):
+    return (f"expected={counts['expected']} listed={counts['listed']} "
+            f"identical={counts['identical']} within-tolerance={counts['within']} "
+            f"outside-tolerance={counts['outside']} missing={counts['missing']} "
+            f"extra={counts['extra']}")
+
+
+def verdict(platform, counts):
+    return f"{'PASS' if counts['passed'] else 'FAIL'} {platform}"
+
+
+def compare(platform, cases, hashes_path, dump):
+    """Checks one platform, prints its report, and returns whether it passes."""
+    counts, lines = tally(platform, cases, hashes_path, dump)
+    print("\n".join(lines))
+    return counts["passed"]
 
 
 def platforms(root, runs):
-    """runs: (platform, hashes file, dump directory or None) for each platform."""
+    """runs: (platform, hashes file, dump directory or None) for each platform.
+
+    Prints each platform's report, then one summary line per platform that
+    keeps identical images apart from those that only pass the tolerance.
+    """
     cases = golden_cases(root)
     print(f"golden images: {len(cases)} cases in vectors/image/manifest.json")
-    return all([compare(platform, cases, Path(hashes), None if dump is None else Path(dump))
-                for platform, hashes, dump in runs])
+    results = []
+    for platform, hashes, dump in runs:
+        counts, lines = tally(platform, cases, Path(hashes), None if dump is None else Path(dump))
+        print("\n".join(lines))
+        results.append((platform, counts))
+    print("Per platform:")
+    for platform, counts in results:
+        print(f"  {verdict(platform, counts)}: {summary(counts)}")
+    return all(counts["passed"] for _, counts in results)
 
 
 USAGE = ("usage: compare_images.py ROOT PLATFORM HASHES DUMP [PLATFORM HASHES DUMP ...]\n"
