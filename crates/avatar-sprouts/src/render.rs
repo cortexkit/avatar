@@ -16,7 +16,8 @@ use crate::palette::{rgb, WHITE};
 /// 240-unit frame: each shape is stroked at twice this, then filled.
 const WEIGHT: f64 = 1.7;
 
-/// An opacity as the reference writes it (two decimals), in Q32.
+/// An opacity rounded to two decimals, as the reference writes it, as a Q32
+/// fixed-point value (the render tree's fraction type).
 fn opacity(op: f64) -> Q32 {
     let written = js_round(op * 100.0) / 100.0;
     Q32((written * Q32::ONE.0 as f64).round() as i64)
