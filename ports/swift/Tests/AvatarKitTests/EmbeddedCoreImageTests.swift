@@ -15,6 +15,7 @@ final class EmbeddedCoreImageTests: XCTestCase {
 
         var optionsSeen: Set<String> = []
         var typesSeen: Set<String> = []
+        var identical = 0
         for entry in manifest.entries {
             let mood = try XCTUnwrap(Mood(rawValue: entry.mood), "\(entry.file): unknown mood")
             let options = try imageOptions(entry)
@@ -33,16 +34,10 @@ final class EmbeddedCoreImageTests: XCTestCase {
             XCTAssertEqual(golden.height, Int(entry.sizePx), entry.file)
             XCTAssertEqual(image.sizePx, entry.sizePx, entry.file)
             XCTAssertEqual(image.alpha, options.alpha, entry.file)
-            // Compare without XCTAssertEqual so a mismatch names one byte
-            // instead of printing megabytes of pixels.
-            if image.pixels != golden.pixels {
-                let firstDifference = zip(image.pixels, golden.pixels)
-                    .enumerated().first { $0.element.0 != $0.element.1 }?.offset
-                    ?? min(image.pixels.count, golden.pixels.count)
-                XCTFail(
-                    "\(entry.file): core image differs from the golden PNG at byte "
-                        + "\(firstDifference) (\(image.pixels.count) against "
-                        + "\(golden.pixels.count) bytes)")
+            // Images may differ slightly between platforms; see
+            // GoldenImageComparison.swift for the rule and its cause.
+            if assertImageMatchesGolden(image.pixels, golden: golden.pixels, label: entry.file) {
+                identical += 1
             }
             optionsSeen.insert("\(entry.groundShadow)/\(entry.alpha)")
             typesSeen.insert(entry.type)
@@ -51,7 +46,45 @@ final class EmbeddedCoreImageTests: XCTestCase {
         // option both ways.
         XCTAssertEqual(optionsSeen.count, 4)
         XCTAssertTrue(typesSeen.isSuperset(of: [classicAvatarType, wildAvatarType]))
-        print("Embedded core matched \(manifest.entries.count) golden images")
+        print(
+            "Embedded core matched \(manifest.entries.count) golden images on "
+                + "\(goldenImagePlatform), \(identical) of them exactly")
+    }
+
+    /// Knitted toys draw with compound paths, focal radial gradients and stop
+    /// opacity, tree features this package's decoder deliberately refuses. An
+    /// app still gets the creature, as a finished image from the core.
+    func testANewTypeRendersAsAnImageThoughItsTreeIsRefused() throws {
+        let root = try vectorsRoot()
+        let type = "creature.knitted-toys"
+        let genome = try readGenomeBytes(
+            root.appendingPathComponent("wild/wild-port-0005.hex"), expectedCount: 16_384)
+        let rustOnlyFeatures = ["compound_path", "radial_gradient_at", "opacity_q32"]
+
+        // The core draws the tree, and the decoder refuses it at one of the
+        // features it does not know.
+        XCTAssertThrowsError(try renderTreeViaCore(
+            genomeBytes: genome, type: type, version: 1, mood: .neutral
+        )) { error in
+            guard case DecodingError.dataCorrupted(let context) = error else {
+                return XCTFail("expected the decoder to refuse the tree, got \(error)")
+            }
+            XCTAssertTrue(
+                rustOnlyFeatures.contains { context.debugDescription.contains($0) },
+                context.debugDescription)
+        }
+        // It refuses the committed golden tree for the same genome too.
+        XCTAssertThrowsError(try decodeRenderTreeJson([UInt8](Data(contentsOf:
+            root.appendingPathComponent("knitted-toys/tree/wild-port-0005__neutral.json")))))
+
+        let image = try renderImageViaCore(
+            genomeBytes: genome, type: type, version: 1, mood: .neutral, sizePx: 256)
+        let file = "knitted-toys__wild-port-0005__v1__neutral__256px__keep__premultiplied.png"
+        let golden = try decodeGoldenPNG(
+            Data(contentsOf: root.appendingPathComponent("image/\(file)")), label: file)
+        XCTAssertEqual(image.sizePx, 256)
+        XCTAssertEqual(image.alpha, .premultiplied)
+        assertImageMatchesGolden(image.pixels, golden: golden.pixels, label: file)
     }
 
     func testSizesOutsideOneTo2048ThrowInvalidArgument() throws {

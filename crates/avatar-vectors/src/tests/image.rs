@@ -9,6 +9,10 @@
 //! Each PNG is 8-bit RGBA holding `Image::pixels` verbatim. A premultiplied
 //! image therefore stays premultiplied in its file, unlike a PNG written by
 //! `tiny_skia::Pixmap::encode_png`, which converts to straight alpha.
+//!
+//! On the platform that minted them the goldens are reproduced exactly. On
+//! other platforms an image may differ by a few levels in a few pixels;
+//! `ImageDifference` states the rule and why it exists.
 
 use std::time::{Duration, Instant};
 
@@ -401,32 +405,119 @@ fn read_golden(cell: &Cell) -> Image {
     }
 }
 
-/// Fails with the first differing pixel rather than two multi-megabyte dumps.
-fn assert_same_image(label: &str, expected: &Image, actual: &Image, remedy: &str) {
+/// The largest channel difference the cross-platform image rule allows.
+const TOLERANCE_CHANNEL: u8 = 8;
+
+/// How a finished image differs from its golden, pixel by pixel.
+///
+/// Render trees are byte-identical on every platform. Finished images are
+/// identical on one platform, but may differ slightly between platforms,
+/// because the rasterizer uses the platform's maths library. When tiny-skia
+/// 0.11.4 clips a cubic curve at the edge of the area being drawn
+/// (`edge_clipper.rs`, through `path_geometry::chop_mono_cubic_at_y`), it
+/// solves for the crossing with `path64::cubic64::roots_real`. That function
+/// calls `f64::acos` and `f64::cos`, which come from the system's maths
+/// library and can differ in the last bit between, for example, macOS and
+/// Linux. A different last bit can move a clipped edge by one sample of the
+/// anti-aliasing grid, which changes a pixel's coverage by 1/16.
+///
+/// So an image matches its golden if its pixels are identical, or if no
+/// channel differs by more than [`TOLERANCE_CHANNEL`] and at most
+/// `max(1, pixels / 1000)` pixels differ (0.1%). The Swift golden-image test
+/// and `scripts/wild-port/compare_images.py` apply the same rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ImageDifference {
+    /// The largest difference in any channel of any pixel.
+    max_channel: u8,
+    /// How many pixels differ in at least one channel.
+    differing_pixels: usize,
+    /// How many pixels the image has.
+    pixels: usize,
+}
+
+impl ImageDifference {
+    /// Compares two RGBA8 pixel buffers of the same length.
+    fn between(expected: &[u8], actual: &[u8]) -> Self {
+        assert_eq!(
+            expected.len(),
+            actual.len(),
+            "compared images differ in length"
+        );
+        let (expected, _) = expected.as_chunks::<4>();
+        let (actual, _) = actual.as_chunks::<4>();
+        let mut difference = Self {
+            max_channel: 0,
+            differing_pixels: 0,
+            pixels: expected.len(),
+        };
+        for (expected, actual) in expected.iter().zip(actual) {
+            if expected != actual {
+                difference.differing_pixels += 1;
+                for (expected, actual) in expected.iter().zip(actual) {
+                    difference.max_channel = difference.max_channel.max(expected.abs_diff(*actual));
+                }
+            }
+        }
+        difference
+    }
+
+    fn is_identical(&self) -> bool {
+        self.differing_pixels == 0
+    }
+
+    /// How many pixels may differ: 0.1% of the image, but at least one.
+    fn allowed_differing_pixels(&self) -> usize {
+        (self.pixels / 1_000).max(1)
+    }
+
+    fn is_within_tolerance(&self) -> bool {
+        self.max_channel <= TOLERANCE_CHANNEL
+            && self.differing_pixels <= self.allowed_differing_pixels()
+    }
+}
+
+/// The platform an image was drawn on, as the image reports name it.
+fn platform() -> String {
+    format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// Checks an image against its golden under the cross-platform rule (see
+/// [`ImageDifference`]). Size, alpha form and length must be equal. Every
+/// image that is not identical is printed with its platform, case, largest
+/// channel difference and differing pixel count, so drift stays visible even
+/// when it passes. A failure names the first differing pixel rather than
+/// printing two multi-megabyte dumps. Returns whether the image was identical.
+fn assert_matches_golden(label: &str, expected: &Image, actual: &Image, remedy: &str) -> bool {
     assert_eq!(
         (actual.size_px, actual.alpha, actual.pixels.len()),
         (expected.size_px, expected.alpha, expected.pixels.len()),
         "{label}: size, alpha form or length differs"
     );
-    let Some(index) = expected
+    let difference = ImageDifference::between(&expected.pixels, &actual.pixels);
+    if difference.is_identical() {
+        return true;
+    }
+    let measured = format!(
+        "{} {label}: max channel difference {}/255, {} of {} pixels differ",
+        platform(),
+        difference.max_channel,
+        difference.differing_pixels,
+        difference.pixels
+    );
+    if difference.is_within_tolerance() {
+        println!("{measured}; within the image tolerance");
+        return false;
+    }
+    let index = expected
         .pixels
         .iter()
         .zip(&actual.pixels)
         .position(|(expected, actual)| expected != actual)
-    else {
-        return;
-    };
+        .expect("a differing image has a differing byte");
     let pixel = index / 4;
-    let differing = expected
-        .pixels
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(actual.pixels.as_chunks::<4>().0)
-        .filter(|(expected, actual)| expected != actual)
-        .count();
     panic!(
-        "{label}: pixel ({}, {}) is {:?}, expected {:?}; {differing} pixels differ. {remedy}",
+        "{measured}, beyond the image tolerance of {TOLERANCE_CHANNEL}/255 on at most {} pixels. Pixel ({}, {}) is {:?}, expected {:?}. {remedy}",
+        difference.allowed_differing_pixels(),
         pixel as u32 % expected.size_px,
         pixel as u32 / expected.size_px,
         &actual.pixels[pixel * 4..pixel * 4 + 4],
@@ -508,34 +599,158 @@ fn golden_images_are_the_committed_trees_rasterized() {
     let remedy = format!(
         "If the rasterizer or the committed tree changed on purpose, re-mint with {MINT_COMMAND}."
     );
-    for cell in matrix() {
-        assert_same_image(
+    let cells = matrix();
+    let mut identical = 0;
+    for cell in &cells {
+        identical += usize::from(assert_matches_golden(
             &cell.label(),
-            &read_golden(&cell),
+            &read_golden(cell),
             &cell.rasterize_committed_tree(),
             &remedy,
-        );
+        ));
     }
+    println!(
+        "{}: {identical} of {} committed trees rasterize to their golden images exactly",
+        platform(),
+        cells.len()
+    );
 }
 
+/// `render_image` must draw, from the stored genome, exactly the image this
+/// platform rasterizes from the committed tree, and that image must match the
+/// golden under the cross-platform rule.
 #[test]
-fn render_image_equals_every_golden_image() {
+fn render_image_matches_every_golden_image() {
     if update_golden_enabled() {
         return;
     }
     let cells = matrix();
+    let mut identical = 0;
     for cell in &cells {
         let image = cell
             .render(&cell.genome_bytes())
             .unwrap_or_else(|error| panic!("{}: render_image failed: {error}", cell.label()));
-        assert_same_image(
+        // Both images are drawn here from the same tree, so the platform's
+        // maths library cannot tell them apart: they must be identical.
+        assert!(
+            image == cell.rasterize_committed_tree(),
+            "{}: render_image no longer draws the committed tree from its stored genome",
+            cell.label()
+        );
+        identical += usize::from(assert_matches_golden(
             &cell.label(),
             &read_golden(cell),
             &image,
             "render_image no longer draws the committed tree from its stored genome.",
+        ));
+    }
+    println!(
+        "{}: render_image matched {} golden images, {identical} of them exactly",
+        platform(),
+        cells.len()
+    );
+}
+
+/// A golden-like image whose channels leave room to move up by a few levels.
+fn tolerance_test_pixels(size_px: usize) -> Vec<u8> {
+    (0..size_px * size_px * 4)
+        .map(|index| u8::try_from(index * 37 % 200 + 20).expect("20..220 fits a byte"))
+        .collect()
+}
+
+/// `pixels` copied with the green channel of its first `count` pixels raised
+/// by `by` levels.
+fn raise_green(pixels: &[u8], count: usize, by: u8) -> Vec<u8> {
+    let mut changed = pixels.to_vec();
+    for pixel in 0..count {
+        changed[pixel * 4 + 1] += by;
+    }
+    changed
+}
+
+/// Identical images match. Up to 8/255 on up to max(1, 0.1%) of the pixels
+/// matches. One more level, or one more pixel, does not.
+#[test]
+fn image_tolerance_bounds_the_channel_difference_and_the_pixel_count() {
+    // 65,536 pixels allow 65 to differ; 256 pixels allow 1.
+    for (size_px, allowed) in [(256, 65), (16, 1)] {
+        let golden = tolerance_test_pixels(size_px);
+        let pixels = size_px * size_px;
+
+        let identical = ImageDifference::between(&golden, &golden);
+        assert!(identical.is_identical());
+        assert!(identical.is_within_tolerance());
+
+        let within =
+            ImageDifference::between(&golden, &raise_green(&golden, allowed, TOLERANCE_CHANNEL));
+        assert_eq!(
+            within,
+            ImageDifference {
+                max_channel: TOLERANCE_CHANNEL,
+                differing_pixels: allowed,
+                pixels,
+            }
+        );
+        assert!(!within.is_identical());
+        assert!(within.is_within_tolerance(), "{size_px} px: {within:?}");
+
+        let over_difference =
+            ImageDifference::between(&golden, &raise_green(&golden, 1, TOLERANCE_CHANNEL + 1));
+        assert_eq!(over_difference.differing_pixels, 1);
+        assert!(
+            !over_difference.is_within_tolerance(),
+            "{size_px} px: {over_difference:?}"
+        );
+
+        let over_count = ImageDifference::between(&golden, &raise_green(&golden, allowed + 1, 1));
+        assert_eq!(over_count.max_channel, 1);
+        assert!(
+            !over_count.is_within_tolerance(),
+            "{size_px} px: {over_count:?}"
         );
     }
-    println!("render_image matched {} golden images", cells.len());
+}
+
+/// The golden-image tests accept an image within the tolerance and report it
+/// as not identical.
+#[test]
+fn an_image_within_the_tolerance_matches_its_golden() {
+    let golden = tolerance_test_pixels(16);
+    let image = |pixels| Image {
+        size_px: 16,
+        alpha: Alpha::Premultiplied,
+        pixels,
+    };
+    assert!(assert_matches_golden(
+        "identical",
+        &image(golden.clone()),
+        &image(golden.clone()),
+        "",
+    ));
+    assert!(!assert_matches_golden(
+        "within",
+        &image(golden.clone()),
+        &image(raise_green(&golden, 1, TOLERANCE_CHANNEL)),
+        "",
+    ));
+}
+
+/// The golden-image tests fail an image beyond the tolerance.
+#[test]
+#[should_panic(expected = "beyond the image tolerance")]
+fn an_image_beyond_the_tolerance_fails_its_golden() {
+    let golden = tolerance_test_pixels(16);
+    let image = |pixels| Image {
+        size_px: 16,
+        alpha: Alpha::Premultiplied,
+        pixels,
+    };
+    assert_matches_golden(
+        "beyond",
+        &image(golden.clone()),
+        &image(raise_green(&golden, 2, 1)),
+        "",
+    );
 }
 
 /// A newer type tags its reference's ground shadow, if the reference draws

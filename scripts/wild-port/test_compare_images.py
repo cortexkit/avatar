@@ -1,10 +1,10 @@
 """Tests for the cross-platform image comparison.
 
-These prove the comparison can fail and that a failure is measured. A
-platform whose image is off by one in a single channel must be reported with
-the platform, the case, the largest channel difference and the share of
-pixels that differ; a comparison that only said "differs" would leave nothing
-to judge a tolerance by.
+These prove the comparison can fail and that every difference is measured.
+A platform whose image differs from the golden must be reported with the
+platform, the case, the largest channel difference and the number of pixels
+that differ, whether or not the difference is within the tolerance, so drift
+stays visible.
 """
 
 import contextlib
@@ -100,27 +100,66 @@ class ImageComparisonTests(unittest.TestCase):
         self.assertTrue(passed, output)
         self.assertIn(f"PASS {PLATFORM}", output)
 
-    def test_one_channel_difference_is_measured(self):
-        # Pixel 37's green channel holds neither 0 nor 255, so it can move
-        # either way.
-        index = 37 * 4 + 1
-        self.assertTrue(0 < self.goldens["first.png"][index] < 255)
-        # 1 of 256 pixels is 0.39%, inside the 0.5% share the ceiling allows,
-        # so the channel difference alone decides which side of it this is.
-        for change, verdict in [(1, "within"), (-1, "within"), (3, "beyond")]:
-            with self.subTest(change=change):
-                changed = bytearray(self.goldens["first.png"])
-                changed[index] += change
-                images = dict(self.goldens, **{"first.png": bytes(changed)})
-                passed, output = self.run_compare(
-                    *self.producer_output(f"changed{change}", images))
-                self.assertFalse(passed, output)
-                self.assertIn("identical=1 differing=1 missing=0 extra=0", output)
-                self.assertIn(
-                    f"  {PLATFORM} first.png: max channel difference {abs(change)}/255, "
-                    f"1 of 256 pixels differ (0.3906%); {verdict} the 2/255 on 0.5% ceiling\n",
-                    output)
-                self.assertIn(f"FAIL {PLATFORM}", output)
+    def changed_first(self, name, pixels, by):
+        """Compares a platform whose first.png has the green channel of the
+        first `pixels` pixels raised by `by` levels."""
+        changed = bytearray(self.goldens["first.png"])
+        for pixel in range(pixels):
+            changed[pixel * 4 + 1] += by
+        images = dict(self.goldens, **{"first.png": bytes(changed)})
+        return self.run_compare(*self.producer_output(name, images))
+
+    def test_green_channels_leave_room_to_change(self):
+        # The changes below raise green by up to 9 in the first 2 pixels.
+        for pixel in range(2):
+            self.assertLessEqual(self.goldens["first.png"][pixel * 4 + 1], 255 - 9)
+
+    def test_a_difference_within_the_tolerance_passes_and_is_measured(self):
+        # A 16 by 16 image may have 1 differing pixel, by up to 8/255.
+        passed, output = self.changed_first("within", 1, 8)
+        self.assertTrue(passed, output)
+        self.assertIn("identical=1 differing=1 missing=0 extra=0", output)
+        self.assertIn(
+            f"  {PLATFORM} first.png: max channel difference 8/255, 1 of 256 pixels differ "
+            "(0.3906%); within the tolerance of 8/255 on at most 1 pixels\n",
+            output)
+        self.assertIn(f"PASS {PLATFORM}", output)
+
+    def test_a_channel_difference_over_the_tolerance_fails(self):
+        passed, output = self.changed_first("over-difference", 1, 9)
+        self.assertFalse(passed, output)
+        self.assertIn(
+            f"  {PLATFORM} first.png: max channel difference 9/255, 1 of 256 pixels differ "
+            "(0.3906%); beyond the tolerance of 8/255 on at most 1 pixels\n",
+            output)
+        self.assertIn(f"FAIL {PLATFORM}", output)
+
+    def test_more_differing_pixels_than_the_tolerance_fails(self):
+        passed, output = self.changed_first("over-count", 2, 1)
+        self.assertFalse(passed, output)
+        self.assertIn(
+            f"  {PLATFORM} first.png: max channel difference 1/255, 2 of 256 pixels differ "
+            "(0.7812%); beyond the tolerance of 8/255 on at most 1 pixels\n",
+            output)
+        self.assertIn(f"FAIL {PLATFORM}", output)
+
+    def test_a_differing_case_without_a_dump_fails(self):
+        changed = bytearray(self.goldens["first.png"])
+        changed[1] += 1
+        hashes, _ = self.producer_output(
+            "no-dump", dict(self.goldens, **{"first.png": bytes(changed)}))
+        passed, output = self.run_compare(hashes, None)
+        self.assertFalse(passed, output)
+        self.assertIn(f"  {PLATFORM} first.png: hash differs; no dumped image to measure", output)
+        self.assertIn(f"FAIL {PLATFORM}", output)
+
+    def test_the_pixel_allowance_is_a_tenth_of_a_percent_but_at_least_one(self):
+        for pixels, allowed in [(256, 1), (1_999, 1), (65_536, 65), (1_166_400, 1_166)]:
+            with self.subTest(pixels=pixels):
+                self.assertEqual(compare_images.allowed_differing_pixels(pixels), allowed)
+                self.assertTrue(compare_images.within_tolerance(8, allowed, pixels))
+                self.assertFalse(compare_images.within_tolerance(9, 1, pixels))
+                self.assertFalse(compare_images.within_tolerance(1, allowed + 1, pixels))
 
     def test_missing_case_fails(self):
         hashes, dump = self.producer_output("short", {"first.png": self.goldens["first.png"]})
