@@ -12,7 +12,9 @@
 //! wilts, perks up, opens or closes its flowers, folds its leaves for the
 //! night, bristles.
 //!
-//! This is a port of the approved JavaScript reference. Generation uses
+//! This is a port of a JavaScript design ("the reference" in this crate's
+//! comments), which lives in the authors' private experiments repository;
+//! `scripts/fidelity/` compares the two drawing by drawing. Generation uses
 //! `f64` arithmetic, square roots and rounding only, with sine and cosine
 //! from `avatar_svg::wild::math`, in the reference's operation order: the
 //! discrete choices that depend on geometry come out the same on every
