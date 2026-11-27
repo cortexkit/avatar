@@ -1,0 +1,27 @@
+{
+  "type": "creature.pixel-critters",
+  "version": 1,
+  "genome_bytes": 16384,
+  "genomes": "vectors/wild/<project_id>.hex",
+  "producer_sha": "f1023d4eb63f7c8e9729caff7a672d6c8b792e1c",
+  "trees": [
+    {"name": "wild-port-0005__neutral", "json_bytes": 19960, "json_blake3": "5739a77675578e57ee194453b1c9985209f78eee702e0e9eee3ecf6f4da6ff93", "svg_bytes": 6864, "svg_blake3": "0582b9397eb8201f3dd518425fa2760da90b45c163ab6ee3247ed93a328f1085"},
+    {"name": "wild-port-0005__working", "json_bytes": 22149, "json_blake3": "6609577051bfccc458b4a3fb08d4bab15eb132734b054fb34fbc5729118355c5", "svg_bytes": 7603, "svg_blake3": "78f826e8c4044ea93caba71b18a61e499667760f0ce8dda5c883029ed97e6ef5"},
+    {"name": "wild-port-0005__happy", "json_bytes": 24081, "json_blake3": "5f492bfe271235bc5110f339dfc16d929e26cf1b3233c2f2361bf918aba54102", "svg_bytes": 8249, "svg_blake3": "75c00d26deba4dddf3729642080f9837f740e2fe7bc033f072b5c4cc0e84bb93"},
+    {"name": "wild-port-0005__waiting", "json_bytes": 20605, "json_blake3": "f1293a89a01fd5108f4bb767b2bc8b37f960fbf1599b966ad6d33ef15d9afb65", "svg_bytes": 7075, "svg_blake3": "49099522c4d80105b6ac8114ae6322cef9d6fcda2fefbf082f39a59eda6bde3d"},
+    {"name": "wild-port-0005__blocked", "json_bytes": 26700, "json_blake3": "cac977bd837ef12bef7ef64a7c4240e87ebc0314fc4972a3bd27cb5a6e446a79", "svg_bytes": 9144, "svg_blake3": "3b39389874ae175d2d5642f05948258d42f9fc495b39b112897c7472a913783c"},
+    {"name": "wild-port-0005__sad", "json_bytes": 20621, "json_blake3": "92ccb3d7b0a40f3cfd7c87d976b235d0994c28e223ce57fafe9ae15c74f23a81", "svg_bytes": 7088, "svg_blake3": "a32930a0c522d8e0a306a2c951756736cc32a33117c8ed2552b9b1c3033fb247"},
+    {"name": "wild-port-0005__sleepy", "json_bytes": 22550, "json_blake3": "29e9fc71696ac8b09fc2f8dccb7df648f9f13a3882737477e67423542b5b414b", "svg_bytes": 7730, "svg_blake3": "5e9be71c43973e70bffb53c918a5e8f28ca6642023401911c9c925fc22e9bf7b"},
+    {"name": "wild-port-0031__neutral", "json_bytes": 23460, "json_blake3": "e30ac7f2b521cead1af91746db5d7c08e58e055ccccda0a7cd7b7aa3a1f8e482", "svg_bytes": 8045, "svg_blake3": "1629dc83ce900a915889ec3013ab83ae6aadb3d36344804b0c4af1582f427b57"},
+    {"name": "wild-port-0009__neutral", "json_bytes": 24332, "json_blake3": "950d679625cbe7f7e99eba6fc25d060452dbf6e11b24e035afb0eb2221f0d0e2", "svg_bytes": 8296, "svg_blake3": "0c74ba67a5965154a87f17a1a4298d549743ba7504390a4920e9c8ef1bc55e2d"},
+    {"name": "wild-port-0022__neutral", "json_bytes": 19735, "json_blake3": "5adf69fb269640e040eefa6de4f135795b642d9fc076941b0369bc7e086fa630", "svg_bytes": 6747, "svg_blake3": "5d4c439cb94a165164a79f59f4efa2661bf41aaae9de350611dae9a2254415a0"},
+    {"name": "wild-port-0077__neutral", "json_bytes": 13099, "json_blake3": "43a0b51890e0cf5c648093bf8f7032f9cdb8c90bd4146df526edf4d992531405", "svg_bytes": 4509, "svg_blake3": "7c613d01e09f0a2941886786c647f1b9bea62c9af3c7eda63242004cca199470"},
+    {"name": "wild-port-0043__neutral", "json_bytes": 18354, "json_blake3": "d6cf558bf1357dca3d8ec6405a600ece459a92fe85458c126050b4ab10500c25", "svg_bytes": 6279, "svg_blake3": "a4ce00ae2e318aa1d08a2f7c923169a3eef3ef48501406ed850b90340bc2134a"},
+    {"name": "wild-port-0016__neutral", "json_bytes": 16031, "json_blake3": "43424bb2f6473070a948b7aab0b592d0c309c239e5bc20f07eddd12fcd3d62f1", "svg_bytes": 5486, "svg_blake3": "cb443f00ffe97ad29546a7b64153bf4ecfa8b86e33f27f83e7e1788e0b275121"},
+    {"name": "wild-port-0021__neutral", "json_bytes": 21664, "json_blake3": "b631a81b1f7bdde85918a529b2c79f6779ceed718b15abc223ac3b61348b2790", "svg_bytes": 7403, "svg_blake3": "540ffd8a82b0a8ae7572ca5c7fb689f48fdcb5630388df7918f730293a882b64"},
+    {"name": "wild-port-0000__neutral", "json_bytes": 17521, "json_blake3": "bd3d1617382ffd1aefcce9b924159af3ace32a1e0c16afa292dbd84df088e3e6", "svg_bytes": 5984, "svg_blake3": "4fb2fd8a819d608a9954d196fd81774eb5cf94b94597b394b92dbf7c2cec6d70"},
+    {"name": "wild-port-0001__neutral", "json_bytes": 19699, "json_blake3": "4df3ad87c96df65753b950528557728cc4511a15d573e9ab7b0e04fe51469214", "svg_bytes": 6719, "svg_blake3": "deacc026022b8c3440a1698d8a8ffdb62f6da648671d6a4fabe0ad2ca5748aae"},
+    {"name": "wild-port-0002__neutral", "json_bytes": 19118, "json_blake3": "4317a68df5b898c232eba17e55f9944cd2290f6b4da9ca6c300e55f46d0f8097", "svg_bytes": 6568, "svg_blake3": "fecf4aae6fe9c162a05225cc5fbf1257676535601482864fbbda7810dda64d10"},
+    {"name": "wild-port-0007__neutral", "json_bytes": 20163, "json_blake3": "12ccad83ac49c7ecf46f0dcd88613fc7f05f5b3cd81defbc677a369741893537", "svg_bytes": 6886, "svg_blake3": "0e2a5881bdce4951fd660b93e145168d5b6b8efda94f988532e9b10f0d7b4769"}
+  ]
+}
