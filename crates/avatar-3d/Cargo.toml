@@ -14,7 +14,16 @@ name = "avatar_3d"
 [dependencies]
 # Portable sine and cosine, so every platform builds the same vertices.
 avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+# The 2D robot type: its layout view is the single source of every robot's
+# parts, proportions, colours and faces.
+avatar-small-robots = { version = "0.1.0", path = "../avatar-small-robots", package = "cortexkit-avatar-small-robots" }
+# Draws the face and marks layers into RGBA8 textures, the same way 2D
+# images are drawn.
+avatar-raster = { version = "0.1.0", path = "../avatar-raster", package = "cortexkit-avatar-raster" }
 
 [dev-dependencies]
 # Hashes each solid's canonical bytes for the pinned digests.
 sha2 = "0.10"
+# Derives the coverage genomes the way the random_sheet example derives
+# its genomes.
+blake3 = "1.5"

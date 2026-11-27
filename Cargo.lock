@@ -169,6 +169,9 @@ dependencies = [
 name = "cortexkit-avatar-3d"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
+ "cortexkit-avatar-small-robots",
  "cortexkit-avatar-svg",
  "sha2",
 ]
