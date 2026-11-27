@@ -1,6 +1,7 @@
 //! The first numbers, printed without thresholds: for the stage (the
 //! stated robot alone) and the plaza (the plaza sheet's 33 robots, placed
-//! as that sheet places them), both animating, the frame size, the warmup
+//! by `avatar_3d_wgpu::plaza::layout` from their neutral rest footprints),
+//! both animating, the frame size, the warmup
 //! and measured frame counts, the CPU and GPU frame times, the time to
 //! build and to upload one robot, and what the robots hold in memory.
 //!
@@ -667,8 +668,8 @@ pub fn run(renderer: &Renderer) -> Result<(), RenderError> {
         built.push(build_and_upload(renderer, &g)?);
         bare.push(untextured_build(&g).1);
     }
-    // Placed as the plaza sheet places them: from their neutral rest
-    // poses, without idle.
+    // Placed by `plaza::layout` from each robot's footprint in its neutral
+    // rest pose, without idle, as the plaza review sheet does.
     let prints: Vec<_> = built
         .iter()
         .map(|b| {
