@@ -11,8 +11,9 @@ use super::*;
 /// A box two wide and three tall, standing on y = 0.
 const BOX: [[f64; 2]; 4] = [[-1.0, 0.0], [1.0, 0.0], [1.0, 3.0], [-1.0, 3.0]];
 
-/// The corners of a `tee` hull outline at a typical size, in robot units
-/// (y down, standing on y = 0), with each corner's rounding radius.
+/// The corners of the small robots' `tee` head outline at a typical size,
+/// with y increasing downward and the base on y = 0, and each corner's
+/// rounding radius.
 fn tee_corners() -> Vec<([f64; 2], f64)> {
     let (w, h) = (30.0, 50.0);
     let (wj, hj) = (w * 0.67, h * 0.32);
