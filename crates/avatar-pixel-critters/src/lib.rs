@@ -6,8 +6,12 @@
 //! wild reads them); everything else is read from byte 1024 on, bit by bit.
 //!
 //! This is a port of a JavaScript design ("the reference" in this crate's
-//! comments), which lives in the authors' private experiments repository;
-//! `scripts/fidelity/` compares the two drawing by drawing.
+//! comments), which lives in the authors' private experiments repository.
+//! Version 1 was refined in Rust after the port, so that every genome reads
+//! as a creature rather than as one wearing or carrying something, and it no
+//! longer matches the reference exactly. The fidelity harness in
+//! `scripts/fidelity/` compared the two drawing by drawing: it describes the
+//! port, not the current drawing.
 //!
 //! How a creature is made:
 //! 1. A ramp of colours is built round the body colour.

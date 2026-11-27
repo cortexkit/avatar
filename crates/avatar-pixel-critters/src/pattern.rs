@@ -4,7 +4,7 @@
 
 use avatar_svg::Mood;
 
-use crate::genes::{Belly, Marks, Muzzle, TopKind};
+use crate::genes::{Belly, Marks, Muzzle};
 use crate::grid::{clamp, disc_rows, oval, rndi, Mask, AX, CH, CW};
 use crate::palette::{BELLY, MARK, POINT};
 use crate::sprite::{col_of, overlay, row_of, Ctx, LobeId, Marking};
@@ -95,7 +95,10 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
             let al = f64::from(a_low);
             match pt.belly {
                 Belly::Round => {
-                    let bw = 2 * clamp(rndi(al * [0.4, 0.48, 0.56, 0.64][size]), 2, a_low - 2);
+                    // At most twice as wide as it is tall: a wider one is a
+                    // band across the body.
+                    let bw = (2 * clamp(rndi(al * [0.4, 0.48, 0.56, 0.64][size]), 2, a_low - 2))
+                        .min(2 * rows);
                     oval(&mut m, AX - bw / 2, y0, bw, rows);
                 }
                 Belly::Low => {
@@ -199,6 +202,16 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
                 used.set_at(c);
             }
         };
+        // Spots and patches on the head keep below its brow: the eyes' bottom
+        // row, or for eyes carried above the head, the top of the face's
+        // clear patch. On the forehead or the crown a marking reads as a
+        // sticker, a gem or a bow.
+        let brow = fdy
+            + if face.bumps.is_some() {
+                face.clear.y0 - 1
+            } else {
+                face.eye_bottom
+            };
         if spots {
             // A few whole spots: two cells square, or a rounded four.
             let n = 1 + pt.count;
@@ -244,10 +257,15 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
                             while dx <= r && !done {
                                 if dx.abs().max(dy.abs()) == r {
                                     let (x, y) = (x0 + dx, y0 + dy);
-                                    // A mirrored pair keeps off the axis.
-                                    let fits = !(x < AX + i32::from(pt.mirror)
+                                    // A spot keeps a cell clear of the axis:
+                                    // on it, one alone is a button or a badge.
+                                    // On a torso it keeps a row clear under
+                                    // the head: there it is a bow or a collar.
+                                    let fits = !(x < AX + 1
                                         || y < lb.top + 1
                                         || y + dd > lb.bottom + 1
+                                        || (lobe == LobeId::Head && y <= brow)
+                                        || (lobe == LobeId::Torso && y <= hd.bottom + 1)
                                         // A pale spot keeps above the belly.
                                         || (pale && Some(lobe) == belly_lobe && y + dd > belly_top - 1));
                                     if fits {
@@ -265,6 +283,12 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
                                         }
                                         let ok = cells.len() as f64 <= budget
                                             && cells.iter().all(|&c| free(&used, c))
+                                            // No two spots, or pairs, share a
+                                            // row: in a row they are buttons
+                                            // or studs.
+                                            && !(y..y + dd).any(|r| {
+                                                (0..CW).any(|xx| spots_at.at(r * CW + xx))
+                                            })
                                             // Nor may a lone spot land where it
                                             // mirrors one already there.
                                             && !(!pair_up
@@ -296,8 +320,9 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
         }
         if patches {
             // Large patches that wrap round the edge of the body, never
-            // mirrored, clipped where they meet the face: the first in the
-            // upper half of the body, the second on the other side, lower.
+            // mirrored, clipped where they meet the face, above the brow and
+            // at the axis: the first in the upper half of the body, the
+            // second on the other side, lower.
             let n = if pt.marks == Marks::OnePatch { 1 } else { 2 };
             let top = hd.top;
             let rows = if welded { trunk.bottom } else { hd.bottom } - top + 1;
@@ -325,6 +350,14 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
                         c > CW
                             && c < CW * (CH - 1)
                             && head_mask.at(c)
+                            && row_of(c) > brow
+                            // A patch keeps to its own side, a cell clear of
+                            // the axis: across the body it is a band.
+                            && if toward > 0 {
+                                col_of(c) > AX
+                            } else {
+                                col_of(c) < AX - 1
+                            }
                             && !in_clear(col_of(c), row_of(c), 1)
                             && clear_of(&used, c)
                     })
@@ -354,15 +387,10 @@ pub(crate) fn build_pattern(ctx: &mut Ctx, marks0: &mut Vec<Marking>) {
     }
     if points {
         // Points, as on a Siamese cat: the ears and the tail a shade darker
-        // than the body, whole.
-        let long = g.top.kind == TopKind::Long;
+        // than the body, on its own hue, whole.
         for p in ctx.parts.iter_mut() {
             if !p.line_only && (p.group == "ears" || p.group == "tail") {
-                p.ramp = if p.group == "ears" && long {
-                    POINT
-                } else {
-                    MARK
-                };
+                p.ramp = POINT;
             }
         }
     }

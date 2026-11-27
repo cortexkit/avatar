@@ -168,13 +168,14 @@ pub(crate) fn compose(parts: &[Part]) -> Comp {
                 continue;
             }
             let part = &parts[o as usize];
-            let (mut outer, mut seam) = (false, false);
+            let (mut outer, mut seam, mut chin) = (false, false, false);
             for (dx, dy) in NB4 {
                 let n = owner(x + dx, y + dy, &own);
                 if n < 0 {
                     outer = true;
                 } else if parts[n as usize].z < part.z {
                     seam = true;
+                    chin |= part.name == "head" && parts[n as usize].name == "torso";
                 }
             }
             if part.line_only {
@@ -204,11 +205,16 @@ pub(crate) fn compose(parts: &[Part]) -> Comp {
             }
             if seam {
                 line[c] = 2;
-                col[c] = INNER;
+                // A head over its torso keeps the dark outline it has
+                // elsewhere: a seam in the lighter inner colour runs right
+                // across the body there and reads as a collar or a belt.
+                col[c] = if chin { OUTLINE_DARK } else { INNER };
                 continue;
             }
             let mut level = levels[o as usize][c];
-            // A part in front casts a one-cell shadow down and to the right.
+            // A part in front casts a one-cell shadow down and to the right;
+            // a head on its torso has its dark outline there instead, and a
+            // shadow under it as well would stripe a short torso.
             for (dx, dy) in [(-1, -1), (0, -1)] {
                 let (xx, yy) = (x + dx, y + dy);
                 if !inside(xx, yy) {
@@ -218,6 +224,7 @@ pub(crate) fn compose(parts: &[Part]) -> Comp {
                 if n >= 0
                     && parts[n as usize].z > part.z
                     && !parts[n as usize].line_only
+                    && !(part.name == "torso" && parts[n as usize].name == "head")
                     && level < SHADE
                 {
                     level = SHADE;

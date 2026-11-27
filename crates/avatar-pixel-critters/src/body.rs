@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use crate::genes::{is_ear, CoatKind, EarDetail, LegKind, SideKind, TailKind, TopKind, WingKind};
 use crate::grid::{clamp, oval, rndi, running, spread, trail, Dir, Mask, Pt, AX, CH, CW, GY};
-use crate::palette::{BELLY, GLOW, HORN, MARK, POINT, WING};
+use crate::palette::{BELLY, GLOW, HORN, POINT, WING};
 use crate::sprite::{Car, Ctx, PartOpts, Z_ARM, Z_FEET, Z_FRONT, Z_HEAD, Z_HIND, Z_TAIL, Z_WING};
 
 use Dir::{Ne, Nw, Se, Sw, E, N, S, W};
@@ -263,21 +263,24 @@ fn top_mask(ctx: &Ctx, car: Car, short: i32, quirk: i32) -> TopSide {
             }
         }
         TopKind::Goblin => {
-            // Ears that point out sideways from the upper side of the head.
+            // Ears that point out and up from the upper side of the head,
+            // above the eyes. Level with the eyes they read as earmuffs, and
+            // straight out from the top of the head as the brim of a hat.
             let len = clamp(scaled([0.3, 0.42, 0.54, 0.66]) - less, 1, 6);
             let ys = h.top
                 + 2.max(rndi(
                     f64::from(h.len()) * (0.24 + 0.06 * f64::from(t.place)),
-                ));
+                ))
+                .min(ctx.f.eye_top - 1 - h.top);
             let xe = AX + h.width_at(ys) - 1;
             let moves: Vec<(Dir, i32)> = if up {
-                vec![(Ne, 1 + (len >> 1)), (E, len >> 1)]
+                vec![(Ne, 1 + len)]
             } else if droop {
                 vec![(E, 1), (Se, len)]
             } else if back {
                 vec![(E, len + 1)]
             } else {
-                vec![(E, 1), (Ne, 1), (E, 0.max(len - 1))]
+                vec![(E, 1), (Ne, 1 + (len >> 1)), (E, len >> 1)]
             };
             m.stroke(&trail(xe - 1, ys, &moves), |u, _| {
                 if u < 0.45 {
@@ -556,8 +559,8 @@ pub(crate) fn build_top(ctx: &mut Ctx) {
                     crate::sprite::overlay(&mut ctx.parts[p], &cells, BELLY);
                 }
                 Some(EarDetail::Dark) => {
-                    // Ears a shade darker than the body, whole.
-                    ctx.parts[p].ramp = if t.kind == TopKind::Long { POINT } else { MARK };
+                    // Ears a shade darker than the body, on its own hue, whole.
+                    ctx.parts[p].ramp = POINT;
                 }
                 _ => {}
             }
@@ -1133,7 +1136,9 @@ pub(crate) fn build_tail(ctx: &mut Ctx) {
             m.stroke(&trail(xe, yt, &moves), |_, _| d);
         }
         TailKind::Bushy => {
-            let big = 5 + i32::from(t.curl & 2 != 0) + i32::from(bristle);
+            // A plume that rises beside the body, no wider than it rises: a
+            // wider one is a block or a bag carried at the side.
+            let big = 4 + i32::from(t.curl & 2 != 0) + i32::from(bristle);
             let moves: Vec<(Dir, i32)> = if down {
                 vec![(E, 2), (Se, 1.min(g - 2 - yt)), (E, 1 + len)]
             } else {

@@ -243,9 +243,11 @@ pub(crate) fn build_palette(reader: &mut Reader) -> Palette {
         )
     };
 
-    // Markings: a darker or a lighter step of the body, on its hue or beside it.
+    // Markings: a darker or a lighter step of the body, on its hue or a
+    // little beside it. A spot or patch turned further from the body's hue
+    // reads as something stuck on or carried (a sticker, a bag), not coat.
     let mark_kind = reader.bits(2) as usize;
-    let mh = h + [0.0, 26.0, -26.0, 0.0][mark_kind];
+    let mh = h + [0.0, 10.0, -10.0, 0.0][mark_kind];
     let darker_l = if dark {
         l + 13.0
     } else {
@@ -266,8 +268,9 @@ pub(crate) fn build_palette(reader: &mut Reader) -> Palette {
     } else {
         ramp_of(mh, (92f64).min(s + 5.0), darker_l, d, turn)
     };
-    // A long ear darker than the body takes the marking's step on the body's
-    // own hue: in a hue of its own it reads as a ribbon tied on.
+    // Ears and a tail darker than the body take the marking's step on the
+    // body's own hue: in a hue of their own, ears read as a ribbon or
+    // earmuffs and a tail as a bag.
     ramps[POINT as usize] = if mark_kind == 1 || mark_kind == 2 {
         ramp_of(h, (92f64).min(s + 5.0), darker_l, d, turn)
     } else {
