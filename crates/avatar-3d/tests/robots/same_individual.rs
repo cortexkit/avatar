@@ -308,15 +308,17 @@ fn expected(layout: &Layout) -> Vec<Item> {
                 v.push(item(entry, other, c, f, base, "root"));
             }
             GearShape::Hover { .. } => {
+                // The nozzle hangs on the jet; the flame or rings below it on
+                // the exhaust, which a pose shrinks toward the nozzle.
                 v.push(item(entry, "nozzle", c, f, base, "jet.0"));
                 if g.kind == "rings" {
                     if let GearShape::Hover { rings, .. } = &g.shape {
                         for _ in 0..(*rings).max(1) {
-                            v.push(item(entry, "ring", c, f, base, "jet.0"));
+                            v.push(item(entry, "ring", c, f, base, "exhaust.0"));
                         }
                     }
                 } else {
-                    v.push(item(entry, "flame", c, f, base, "jet.0"));
+                    v.push(item(entry, "flame", c, f, base, "exhaust.0"));
                 }
             }
             shape => {

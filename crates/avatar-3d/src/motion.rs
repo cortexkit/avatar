@@ -23,14 +23,13 @@
 //!
 //! # Layers
 //!
-//! Following the shared conventions for live creatures (sections "Layers
-//! and how they combine" to "Status loops"): each mood's static posture by
-//! its blend weight, the status loop, the procedural idle, the reaction's
-//! additive tracks and its set tracks, then the floor rule. Every number
-//! comes from the creature, its events and the time asked for, through the
-//! exact arithmetic operations and the portable sine and arctangent of
-//! [`avatar_svg::wild::math`], so a pose is the same bytes on every
-//! platform.
+//! A pose is built from the bottom up: each mood's static posture by its
+//! blend weight, the status loop, the procedural idle, the reaction's
+//! additive tracks and its set tracks, then the floor rule
+//! ([`Actor::evaluate`]). Every number comes from the creature, its events
+//! and the time asked for, through the exact arithmetic operations and the
+//! portable sine and arctangent of [`avatar_svg::wild::math`], so a pose is
+//! the same bytes on every platform.
 
 mod actor;
 mod clip;

@@ -26,7 +26,7 @@ pub enum Reaction {
     Poke,
 }
 
-/// The reactions in their conventional order.
+/// The reactions, in the order every list of them uses.
 pub const REACTIONS: [Reaction; 5] = [
     Reaction::Hello,
     Reaction::Ask,
@@ -64,7 +64,7 @@ pub enum StatusLoop {
     Sleepy,
 }
 
-/// The status loops in their conventional order.
+/// The status loops, in the order every list of them uses.
 pub const STATUS_LOOPS: [StatusLoop; 4] = [
     StatusLoop::Working,
     StatusLoop::Waiting,
