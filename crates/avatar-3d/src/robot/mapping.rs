@@ -175,8 +175,9 @@ const fn finish(field: &'static str, value: &'static str, finish: &'static str) 
 use Solid::*;
 use Texture::{Face, HeadMarks};
 
-/// Every entry. Box-like hulls are extruded and round ones lathed, as the
-/// 3D lead builds them; fittings are rods, tubes, balls and blocks.
+/// Every entry. Box-like hulls are extruded with bevelled edges and round
+/// ones are their outline's half turned on a lathe; fittings are rods,
+/// tubes, balls and blocks.
 pub const MAPPING: &[Entry] = &[
     // The assembly plan arranges the hulls.
     assembly("plan", "pod", &["head"]),

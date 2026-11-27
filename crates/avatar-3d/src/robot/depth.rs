@@ -13,7 +13,9 @@ pub const LAST_BYTE: usize = 6153;
 pub const BACK_KINDS: [&str; 4] = ["hatch", "vents", "plate", "grille"];
 
 /// The decoded depth traits. Each is read from a bit field of one depth
-/// byte and spread evenly over its range, as the browser 3D lead reads them.
+/// byte and spread evenly over its range, as the experimental browser
+/// renderer the 3D robots were first drawn in reads them, so a genome keeps
+/// its depth between the two.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct Depth {
@@ -42,12 +44,14 @@ pub struct Depth {
     /// bits 0–4).
     pub antenna_tilt: f64,
     /// Glass bulge over glass width, 0 to 0.1 (6149, bits 0–3). Read but
-    /// unused in part one: the face is a texture on the head's front.
+    /// unused: the face is a texture on the head's front.
     pub screen_bulge: f64,
-    /// Stalk-eye lens depth over its radius, 0.35 to 0.7 (6149, bits 4–7).
+    /// Lens dome height over the lens radius, 0.35 to 0.7 (6149, bits 4–7).
+    /// Read but unused: a stalk eye's lens is drawn in its
+    /// texture, on the front of its pod.
     pub lens_dome: f64,
     /// What the back carries, from [`BACK_KINDS`] (6150, bits 0–1). Read but
-    /// unused in part one, like the next two: the 2D type has no rear
+    /// unused, like the next two: the 2D type has no rear
     /// fitting, and the 3D parts are exactly the 2D ones.
     pub back_kind: &'static str,
     /// Size of the back fitting, 0.8 to 1.2 (6150, bits 2–4).
@@ -57,7 +61,7 @@ pub struct Depth {
     /// Shine within each finish's range, 0 to 1 (6151, bits 0–3).
     pub gloss: f64,
     /// Screen bezel standing proud, 0.6 to 2.4 per 100 units of width
-    /// (6151, bits 4–7). Read but unused in part one: the bezel is drawn in
+    /// (6151, bits 4–7). Read but unused: the bezel is drawn in
     /// the face texture.
     pub bezel_depth: f64,
     /// Foot depth over foot width, 1 to 1.7 (6152, bits 0–3).
@@ -65,11 +69,11 @@ pub struct Depth {
     /// How far the chest panel stands proud in robot units, 0.3 to 1.6
     /// (6152, bits 4–7).
     pub panel_raise: f64,
-    /// Stalk-eye housing depth over its radius, 0.25 to 0.6 (6153, bits
-    /// 0–3).
+    /// How deep a stalk eye's pod is: its depth is its larger radius times
+    /// one plus twice this, 0.25 to 0.6 (6153, bits 0–3).
     pub housing_depth: f64,
     /// Share of a rivet's sphere proud of the paint, 0.4 to 0.9 (6153, bits
-    /// 4–7). Read but unused in part one: rivets are drawn in the marks
+    /// 4–7). Read but unused: rivets are drawn in the marks
     /// textures.
     pub rivet_dome: f64,
 }

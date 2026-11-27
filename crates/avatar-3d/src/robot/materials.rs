@@ -1,10 +1,13 @@
-//! Materials: the 2D colours with the 3D lead's finishes, and the status
+//! Materials: the 2D colours with 3D finishes (how each surface shines),
+//! and the status
 //! colour table.
 
 use avatar_small_robots::layout::{MoodLayout, PaletteLayout, Status};
 use avatar_small_robots::Rgb;
 
-/// How a surface shines, after the 3D lead's shading model. `gloss` (a
+/// How a surface shines under the shading model the renderer implements:
+/// a wrapped key light, a fill, darkening at grazing angles and a
+/// highlight. `gloss` (a
 /// depth trait) moves the shine within each finish's range.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]

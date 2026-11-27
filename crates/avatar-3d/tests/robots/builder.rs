@@ -4,7 +4,8 @@ use avatar_3d::robot::{build_with, BuildOptions, Robot};
 
 use crate::cases;
 
-/// The `random_sheet` seed of the behavioural genomes.
+/// The `random_sheet` seed of the random genomes that are only built, to
+/// show the builder never fails; no digest pins them.
 const RANDOM_SEED: u64 = 7;
 /// How many genomes of that seed are built.
 const RANDOM_COUNT: u64 = 1_000;

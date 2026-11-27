@@ -9,6 +9,7 @@
 //! they together show every catalogue value the 2D layout marks reachable.
 //! The search looks at no more than [`COVERAGE_LIMIT`] genomes.
 
+// The example and the tests each use only part of this module.
 #![allow(dead_code)]
 
 use std::collections::BTreeSet;

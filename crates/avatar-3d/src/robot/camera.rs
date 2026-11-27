@@ -1,4 +1,5 @@
-//! The stage camera: the 3D lead's three-quarter view, framing one robot.
+//! The stage camera: a three-quarter view from slightly right of and above
+//! the robot, framing it whole.
 
 use std::f64::consts::PI;
 

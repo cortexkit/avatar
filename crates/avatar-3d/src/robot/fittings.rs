@@ -17,8 +17,8 @@ use super::UNIT;
 use crate::mesh::{self, Axis, Extrusion, Mesh, Outline};
 
 /// The radius of antenna rods and stalks in robot units: the 2D stroke's
-/// half width, thickened a little as the 3D lead does for parts that lose
-/// their ink outline.
+/// half width, thickened a little because a 3D rod has no ink outline
+/// round it to give it the weight it has in the 2D drawing.
 pub const ROD_RADIUS: f64 = 1.9;
 
 /// A 2D drawing direction as a robot-space direction.
@@ -473,7 +473,8 @@ pub(super) fn sides(b: &mut Builder) {
     let head = b.find("head");
     let metal = b.mats.metal();
     for f in &fittings {
-        // Painted vents are a surface contribution in the head's marks.
+        // Painted vents are drawn into the head's marks texture, not built as
+        // side-fitting geometry.
         if matches!(f.kind, "vents" | "none") {
             continue;
         }
