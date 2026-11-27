@@ -8,6 +8,18 @@
 //! face and a mood. Bytes 0..255 keep the meaning the wild type gives them;
 //! everything new is read from byte 1024 onward.
 //!
+//! This is a port of a JavaScript design ("the reference" in this crate's
+//! comments), which lives in the authors' private experiments repository;
+//! `scripts/fidelity/` compares the two drawing by drawing. The port follows
+//! the reference's arithmetic in the same order, so its discrete choices
+//! match exactly and its drawings match to the pixel tolerance the
+//! comparison sets.
+//!
+//! Masses are composed in "model space", the unit-less ring coordinates of
+//! the wild body (x right, y down, the head's ring centre at the origin).
+//! The finished creature is fitted into the 240-unit frame of the canvas,
+//! and everything after the fit works in frame units.
+//!
 //! Geometry uses `f64` with only basic arithmetic, `sqrt` and the shared
 //! polynomial sine and cosine of `avatar_svg::wild::math`, so every platform
 //! draws the same tree.
