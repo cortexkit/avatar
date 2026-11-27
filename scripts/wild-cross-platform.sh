@@ -27,10 +27,11 @@
 #   scripts/wild-cross-platform.sh robots-3d
 #       Run the 3D robots' pins example (crates/avatar-3d, robot_pins) on
 #       the same three platforms. Each prints the labelled SHA-256 digests
-#       of the robots' rest meshes; the digests must be identical on every
-#       platform and equal to the committed vectors/robots-3d/digests.tsv.
-#       The digests leave out texture pixels, which come from the
-#       rasterizer, so they are exact everywhere.
+#       of the robots' rest meshes and of their poses in the motion scripts;
+#       the digests must be identical on every platform and equal to the
+#       committed vectors/robots-3d/digests.tsv followed by
+#       vectors/robots-3d/poses.tsv. The digests leave out texture pixels,
+#       which come from the rasterizer, so they are exact everywhere.
 set -euo pipefail
 usage() {
     echo "usage: $0 [image [WINDOWS_HASHES [WINDOWS_DUMP]] | robots-3d]" >&2
@@ -78,8 +79,9 @@ CARGO_TARGET_DIR="$root/target/wild-cross-platform"
 export CARGO_TARGET_DIR
 
 if [[ $mode == robots-3d ]]; then
-    # The example writes the pins file's lines to standard output and each
-    # robot's triangle count and texture bytes to standard error.
+    # The example writes both pins files' lines to standard output, rest
+    # meshes then poses, and each robot's triangle count and texture bytes
+    # to standard error.
     host="macos-$(uname -m)"
     mkdir "$run/$host"
     cargo run --locked -j 4 -p cortexkit-avatar-3d --example robot_pins \
@@ -100,7 +102,7 @@ if [[ $mode == robots-3d ]]; then
                     --example robot_pins >/out/robots-3d.tsv 2>/out/robots-3d.stats
             ' bash "$arch"
     done
-    grep -v '^#' vectors/robots-3d/digests.tsv >"$run/committed.tsv"
+    cat vectors/robots-3d/digests.tsv vectors/robots-3d/poses.tsv | grep -v '^#' >"$run/committed.tsv"
     status=0
     for platform in "$host" linux-arm64 linux-amd64; do
         if cmp -s "$run/committed.tsv" "$run/$platform/robots-3d.tsv"; then

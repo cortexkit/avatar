@@ -8,7 +8,8 @@
 //! inputs give the same bytes everywhere.
 //!
 //! [`mesh`] makes the solids the creatures are built from; [`robot`]
-//! builds the small robots from their 2D type.
+//! builds the small robots from their 2D type, and [`motion`] poses them.
 
 pub mod mesh;
+pub mod motion;
 pub mod robot;

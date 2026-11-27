@@ -32,7 +32,7 @@ fn cross(a: V3, b: V3) -> V3 {
 
 /// The barycentric weights of a projection point in a triangle's
 /// projection, if it lies inside or on it.
-fn weights(mesh: &Mesh, t: [u32; 3], p: [f64; 2]) -> Option<[f64; 3]> {
+pub fn weights(mesh: &Mesh, t: [u32; 3], p: [f64; 2]) -> Option<[f64; 3]> {
     let [a, b, c] = t.map(|i| mesh.projection[i as usize]);
     let area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
     if area == 0.0 {
@@ -102,7 +102,7 @@ fn first_hit(robot: &Robot, from: V3, to: V3) -> Option<(usize, usize, V3)> {
 /// Each face target with the part that carries it: every non-stalk eye
 /// centre and the mouth centre on the head, and each stalk eye's centre
 /// on its own pod, all in model space on their textured fronts.
-fn targets(robot: &Robot, layout: &Layout, label: &str) -> Vec<(String, usize, V3)> {
+pub fn targets(robot: &Robot, layout: &Layout, label: &str) -> Vec<(String, usize, V3)> {
     let head = robot.parts.iter().position(|p| p.name == "head").unwrap();
     let mut points: Vec<(String, usize, [f64; 2])> = layout
         .face

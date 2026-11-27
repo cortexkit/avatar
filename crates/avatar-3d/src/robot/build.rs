@@ -7,7 +7,7 @@ use avatar_small_robots::{decode, Creature, Mood, GENOME_LEN};
 use super::depth::Depth;
 use super::materials::Materials;
 use super::solids::V3;
-use super::{camera, fittings, gear, hulls, limbs, skeleton, textures};
+use super::{camera, fittings, gear, hulls, limbs, rigging, skeleton, textures};
 use super::{BuildOptions, GearInfo, Part, Robot, Skin, UNIT};
 use crate::mesh::Mesh;
 
@@ -162,6 +162,7 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
     let anchors = skeleton::anchors(&b);
     let textures = textures::build(&b, options.textures);
     let bones = skeleton::finish(&b.bones);
+    let motion = rigging::motion(&b, genome, &bones);
     let camera = camera::stage(&b.parts);
     let status = b.mats.table();
     let stand_ins = super::solids::take_stand_ins();
@@ -179,6 +180,7 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
         },
         textures,
         camera,
+        motion,
         stand_ins,
     }
 }

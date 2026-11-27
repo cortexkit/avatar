@@ -305,6 +305,10 @@ pub(super) fn build(b: &mut Builder) -> Vec<usize> {
                 b.rigid(
                     "nozzle", entry, "nozzle", class, s.frame, s.base, metal, bone, nozzle,
                 );
+                // The flame or rings hang on their own bone at the outlet, so
+                // a pose can shorten them toward the nozzle as thrust drops
+                // and keep them off the floor when the robot lands.
+                let bone = b.bone("exhaust.0", Some(bone), outlet);
                 if g.kind == "rings" {
                     for k in 0..(*rings).max(1) {
                         let y = outlet[1] - 3.0 * (f64::from(k) + 1.0);

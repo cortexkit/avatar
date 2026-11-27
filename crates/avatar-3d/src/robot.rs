@@ -38,8 +38,9 @@
 //! - `leg.X` at each hip and `foot.X` at its ankle, where X is `L`, `R`, `M`
 //!   for a middle leg, or `L1`, `R1`, `L2`… for splayed pairs from the
 //!   front; `spring.0` for a pogo spring; `wheel.L`, `wheel.R`, `wheel.M`,
-//!   or `wheel.0`, `wheel.1`… for a track's road wheels; and `jet.0` at a
-//!   hover nozzle's mount.
+//!   or `wheel.0`, `wheel.1`… for a track's road wheels; `jet.0` at a
+//!   hover nozzle's mount, and `exhaust.0` at its outlet, carrying the
+//!   flame or the rings below it.
 //!
 //! # Parts, bones and skinning
 //!
@@ -70,6 +71,7 @@ mod hulls;
 mod limbs;
 pub mod mapping;
 mod materials;
+mod rigging;
 mod skeleton;
 mod solids;
 mod textures;
@@ -83,6 +85,7 @@ use avatar_small_robots::layout::Frame;
 use avatar_small_robots::{Mood, GENOME_LEN};
 
 use crate::mesh::Mesh;
+use crate::motion::Motion;
 
 /// Model units per robot unit: 100 robot units, about one body width, make
 /// one model unit.
@@ -129,6 +132,9 @@ pub struct Robot {
     pub textures: Vec<Texture>,
     /// The three-quarter stage camera that frames this robot.
     pub camera: Camera,
+    /// Mood postures, idle, reactions and status loops, for
+    /// [`crate::motion::Actor`] to pose the robot with.
+    pub motion: Motion,
     /// Solids the [`crate::mesh`] module refused for this genome's numbers,
     /// each replaced
     /// by a simpler stand-in so that building never fails. Empty for every

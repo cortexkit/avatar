@@ -1,17 +1,21 @@
-//! Prints the labelled SHA-256 digests of the 3D small robots' rest meshes.
+//! Prints the labelled SHA-256 digests of the 3D small robots' rest meshes
+//! and of their poses in the motion scripts.
 //!
 //! ```text
 //! cargo run -p cortexkit-avatar-3d --example robot_pins [-- --write | --check]
 //! ```
 //!
-//! Standard output is the pins file's content: the coverage seed and
-//! prefix, then one `label<TAB>sha256` line per case (see `cases.rs`). Each
-//! robot's triangle count and texture bytes go to standard error.
+//! Standard output is the two pins files' content without their comments:
+//! the coverage seed and prefix and one `label<TAB>sha256` line per rest
+//! mesh (see `cases.rs`), then one line per pinned pose (see `scripts.rs`).
+//! Each robot's triangle count and texture bytes go to standard error.
 //! `--write` runs the coverage search and writes the pins to
-//! `vectors/robots-3d/digests.tsv`, the only way that file is written.
-//! `--check` exits non-zero unless the digests equal the committed pins.
+//! `vectors/robots-3d/digests.tsv` and `vectors/robots-3d/poses.tsv`, the
+//! only way those files are written. `--check` exits non-zero unless the
+//! digests equal the committed pins.
 
 mod cases;
+mod scripts;
 
 use std::process::ExitCode;
 use std::{env, fs};
@@ -35,7 +39,8 @@ fn main() -> ExitCode {
         }
     };
     let lines = cases::pin_lines(count);
-    for line in &lines {
+    let poses = scripts::pose_lines();
+    for line in lines.iter().chain(&poses) {
         println!("{line}");
     }
     for (label, genome) in cases::cases(count) {
@@ -49,14 +54,19 @@ fn main() -> ExitCode {
     }
     match mode.as_str() {
         "--write" => {
-            let path = cases::vectors().join(cases::PINS);
-            fs::create_dir_all(path.parent().expect("the pins file has a directory"))
-                .expect("create vectors/robots-3d");
-            let text = format!("{}\n{}\n", cases::HEADER, lines.join("\n"));
-            fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-            eprintln!("robot_pins: wrote {}", path.display());
+            for (file, header, lines) in [
+                (cases::PINS, cases::HEADER, &lines),
+                (scripts::POSE_PINS, scripts::POSE_HEADER, &poses),
+            ] {
+                let path = cases::vectors().join(file);
+                fs::create_dir_all(path.parent().expect("the pins file has a directory"))
+                    .expect("create vectors/robots-3d");
+                let text = format!("{header}\n{}\n", lines.join("\n"));
+                fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+                eprintln!("robot_pins: wrote {}", path.display());
+            }
         }
-        "--check" if lines != cases::committed() => {
+        "--check" if lines != cases::committed() || poses != scripts::committed_poses() => {
             eprintln!("robot_pins: the digests differ from the committed pins");
             return ExitCode::FAILURE;
         }
