@@ -3,7 +3,8 @@
 //! Every function here uses only `+ - * /`, `sqrt`, comparisons and the
 //! polynomial sine, cosine and arctangent of `avatar_svg::wild::math`, so the
 //! same genome gives the same numbers on every platform. The operation order
-//! follows the reference generator's, so the two agree to the last bit.
+//! is the reference's, so the port and the reference compute the same values
+//! to the last bit.
 
 use avatar_svg::wild::math;
 

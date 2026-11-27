@@ -1,6 +1,10 @@
 //! The `creature.knitted-toys` avatar type: crocheted plush creatures in the
 //! manner of amigurumi, drawn from a stored 16,384-byte genome.
 //!
+//! This is a port of a JavaScript design ("the reference" in this crate's
+//! comments), which lives in the authors' private experiments repository;
+//! `scripts/fidelity/` compares the two drawing by drawing.
+//!
 //! - [`decode`] reads a toy's traits: bytes 1024 to 1279 for the toy, plus
 //!   creature.wild's colour bytes 160 to 163 for its yarn.
 //! - [`render_tree`] builds the toy's pieces (head, body) and its sewn-on

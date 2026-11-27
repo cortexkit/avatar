@@ -14,7 +14,7 @@ use crate::knit::{Row, Stitch};
 use crate::palette::{palette, Palette, Yarn};
 use crate::piece::{arc_spine, make_piece, make_tube, mirror_tube, Piece, Tube};
 
-/// The seven moods, in the order the reference lists them.
+/// The seven moods. Poses and drawings index them in this order.
 pub const MOODS: [&str; 7] = [
     "neutral", "working", "happy", "waiting", "blocked", "sad", "sleepy",
 ];

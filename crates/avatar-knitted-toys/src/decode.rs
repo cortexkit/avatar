@@ -312,9 +312,11 @@ pub struct Traits {
     pub temper: Temper,
 }
 
-/// How far each of six choice genes is turned (see [`Reader::pick`]). Which
-/// value of a gene means which body plan or which ears is arbitrary; these
-/// turns are the reference's.
+/// How far each of six choice genes is turned (see [`Reader::pick`]): a
+/// turn changes which values of the gene select each variant, never the
+/// variants' shares. Which value means which body plan or which ears is
+/// arbitrary; these turns are the reference's, so a genome gets the same
+/// toy.
 struct Turns {
     plan: u32,
     site: u32,
