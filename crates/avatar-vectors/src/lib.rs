@@ -392,6 +392,7 @@ mod tests {
             "manifest.json".to_owned(),
             "phenotype".to_owned(),
             "pixel-critters".to_owned(),
+            "robots-3d".to_owned(),
             "small-robots".to_owned(),
             "sprouts".to_owned(),
             "svg".to_owned(),
