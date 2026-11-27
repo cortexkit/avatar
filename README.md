@@ -24,11 +24,13 @@ At draw time a **mood** is added: neutral, working, happy, waiting,
 blocked, sad or sleepy. A mood moves the face; it never changes who the
 creature is.
 
-The same genome, type, version and mood always produce the same bytes, on
-every platform. A creature drawn by a Rust server, an iPhone app and a web
-page is the same creature, down to the last coordinate. The images above
-are files from the golden corpus in `vectors/`, which every language is
-tested against.
+The same genome, type, version and mood always produce the same render
+tree, byte for byte, on every platform. A creature drawn by a Rust server,
+an iPhone app and a web page is the same creature, down to the last
+coordinate. A finished image is the same on any one platform, but between
+platforms it may differ by a few levels in a pixel or two, for the reason
+given under The determinism guarantee. The images above are files from
+the golden corpus in `vectors/`, which every language is tested against.
 
 Avatar is a library. It has no service and no store, and it never decides
 which genome an agent has: the application that keeps track of agents
@@ -173,6 +175,45 @@ A wrong length for a known type (`GenomeLength`) means the record is
 malformed: report it. Nothing falls back to a default creature, since a
 confidently wrong face is worse than an empty slot.
 
+For pixels instead of a tree, call `render_image`:
+
+```rust
+use avatar::{render_image, Alpha, DispatchError, GroundShadow, Image, ImageOptions, Mood};
+
+fn draw_image(genome: &[u8], avatar_type: &str, version: u32, mood: Mood)
+    -> Result<Image, DispatchError>
+{
+    // ImageOptions::default() keeps the ground shadow and premultiplies.
+    let options = ImageOptions { ground_shadow: GroundShadow::Drop, alpha: Alpha::Straight };
+    render_image(genome, avatar_type, version, mood, 256, &options)
+}
+```
+
+It returns an `Image`: `size_px`, the `alpha` form, and `pixels`, exactly
+`size_px² × 4` bytes of sRGB RGBA8, rows top first and tightly packed.
+
+- **Size:** `size_px` must be 1 to 2,048 (`avatar::MAX_SIZE_PX`). It is
+  checked after the type, version and genome length, so a record this
+  build cannot draw is reported as such whatever the size, and a size out
+  of range fails with `DispatchError::ImageSize`. A rasterizer failure is
+  `DispatchError::Raster`.
+- **Ground shadow:** `GroundShadow::Keep` (the default) draws it;
+  `GroundShadow::Drop` leaves out every primitive whose role is
+  `ground_shadow`, for a view that draws its own.
+- **Alpha:** `Alpha::Premultiplied` (the default) returns colour channels
+  already multiplied by alpha, as the rasterizer draws them;
+  `Alpha::Straight` divides them back out, and a fully transparent pixel
+  is `[0, 0, 0, 0]`.
+- **Detail:** knitted toys, small robots and drawn heads draw less detail,
+  and lines about a pixel wide, at small sizes, so the image is drawn at
+  the detail for `size_px`. `render_tree_for_bytes_at` returns the tree
+  for a given `detail_px`; a `detail_px` of 0 means full detail, the tree
+  `render_tree_for_bytes` returns.
+
+The image is a pure function of its arguments, with no cache and no
+global state, and it is safe to draw from several threads. Cache it by
+genome, type, version, mood, size and options.
+
 To give a new agent its first genome, either store random bytes of the
 type's length (1,024 for classic; 16,384 for wild and the six types that
 read its genome) or derive them from a stable identifier with
@@ -220,13 +261,15 @@ for primitive in tree.primitives {
 The package carries the Rust generator as an **embedded core**:
 `ports/swift/AvatarCore.xcframework`, committed static libraries for arm64
 iOS, the arm64 iOS simulator and arm64 macOS, so an app needs no Rust
-toolchain and nothing to embed or sign. `renderTreeViaCore` calls it
-through the C boundary and decodes the result. Rendering is pure and safe
-from any thread, and the tree types are `Sendable`. `RenderTreeCache` is
-a cache the app owns, keyed by genome, type, version and mood, and it can
-be emptied under memory pressure. Each core failure maps to its own
-`CoreRenderError` case: `unsupportedType` and `unsupportedVersion` mean
-draw nothing, `genomeLength` means report the record.
+toolchain and nothing to embed or sign. Each library is about 4.1 MB,
+up from 2.1 MB before the six newer types' generators were linked in.
+`renderTreeViaCore` calls it through the C boundary and decodes the
+result. Rendering is pure and safe from any thread, and the tree types
+are `Sendable`. `RenderTreeCache` is a cache the app owns, keyed by
+genome, type, version and mood, and it can be emptied under memory
+pressure. Each core failure maps to its own `CoreRenderError` case:
+`unsupportedType` and `unsupportedVersion` mean draw nothing,
+`genomeLength` means report the record.
 
 The six types that read the wild genome (wild-plus, sprouts, pixel
 critters, knitted toys, small robots and drawn heads) come to an app as
@@ -301,9 +344,9 @@ looks like.
 
 ## The determinism guarantee
 
-The same genome, type, version and mood produce the same bytes on every
-platform. That holds because no generation path is allowed to depend on
-the platform:
+The same genome, type, version and mood produce the same render tree,
+byte for byte, on every platform. That holds because no generation path
+is allowed to depend on the platform:
 
 - **No platform maths library.** Trigonometry, exponentials, logarithms,
   powers, `hypot`, `cbrt` and `mul_add` differ between platforms in the
@@ -322,23 +365,50 @@ the platform:
 - **Serialization is hand-written and canonical**, for both the SVG and
   the tree JSON.
 
+Finished images are not byte-identical across platforms. The rasterizer
+(resvg, drawing with tiny-skia) is outside these rules: when tiny-skia
+clips a cubic curve at the edge of the area it draws, its cubic root
+solver (`roots_real` in tiny-skia's `src/path64/cubic64.rs`) calls the
+platform's `acos` and `cos`, and Apple's maths library and glibc can
+differ in the last bit. On the golden images that moved one pixel of one
+small-robots image by 6/255 between macOS and Linux. So an image is
+byte-identical on any one platform, and between platforms it agrees
+within a fixed rule: identical, or no channel more than 8/255 off on at
+most max(1, 0.1%) of its pixels (`scripts/wild-port/compare_images.py`).
+The tree it is drawn from is still identical everywhere.
+
 How it is checked:
 
 - **The golden corpus** in `vectors/`, written only by its mint, pins four
   boundaries: genome to classic phenotype (`dna/`, `phenotype/`), classic
   phenotype to SVG (`svg/`), tree to canonical JSON (`tree/`) and tree to
-  SVG (`tree-svg/`), plus the wild reference genomes in `vectors/wild/`.
-  Rust renders every vector and compares bytes. Swift decodes every tree
-  and re-encodes it to identical bytes, and its embedded-core tests
-  reproduce every tree through the shipped binary. TypeScript decodes
-  every tree and serializes each one to its `tree-svg/` file.
+  SVG (`tree-svg/`), plus the wild reference genomes in `vectors/wild/`,
+  each newer type's 18 trees in `vectors/<stem>/`, and 137 golden images
+  in `vectors/image/`. Rust renders every vector and compares bytes, and
+  compares every golden image under the rule above. Swift decodes every
+  tree and re-encodes it to identical bytes, and its embedded-core tests
+  reproduce every tree, and every golden image under the same rule,
+  through the shipped binary. TypeScript decodes every tree and
+  serializes each one to its `tree-svg/` file.
 - **Coverage of the genome space**: the `fleet_coverage` example decodes
   1,000 synthetic classic genomes and fails if a decode branch they reach
   has no corpus vector.
-- **Across platforms**: `scripts/wild-cross-platform.sh` mints the wild
-  corpus natively on macOS arm64 and in Linux arm64 and x86_64 containers
-  and compares the bytes (it needs Docker, so it runs by hand). The CI
-  workflow runs the Rust tests, corpus included, on Linux and Windows.
+- **Across platforms**: `scripts/wild-cross-platform.sh` runs natively on
+  macOS arm64 and in Linux arm64 and x86_64 containers (it needs Docker,
+  so it runs by hand). It has two modes:
+  - With no argument it mints every type's corpus trees, wild's 25 and
+    each newer type's 18, and compares them byte for byte, one type at a
+    time: each platform with macOS, and macOS with the committed trees.
+  - `scripts/wild-cross-platform.sh image` draws every golden image in
+    `vectors/image/` with `render_image` and compares it with its golden.
+    For each platform it counts the images that are identical and those
+    only within the tolerance above, and it fails on anything beyond it.
+    A Windows x86_64 machine runs the same producer by hand
+    (`cargo run -p cortexkit-avatar --example image-hashes`), and its
+    output can be passed to the script.
+
+  The CI workflow runs the Rust tests, corpus included, on Linux and
+  Windows.
 - **The committed tables** are regenerated and compared by their mint
   (`cargo run -p cortexkit-avatar-tables --bin mint -- --check`).
 - **The embedded core** is checked against a hash of every source it is
