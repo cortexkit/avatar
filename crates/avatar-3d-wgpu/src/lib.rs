@@ -31,6 +31,11 @@
 //! material's colour (a status light's from the table) and emission, the
 //! face textures the pose's face set and blink select, anchor positions and
 //! the shadow. [`Renderer::render`] uploads those and draws.
+//!
+//! [`Renderer::draw`] draws the same frame without reading it back and
+//! returns once it is submitted, so a frame's CPU time can be measured on
+//! its own; [`Submitted::wait`] then gives the GPU's time for it from
+//! timestamp queries, where the device has them.
 
 pub mod colour;
 pub mod frame;
@@ -39,7 +44,9 @@ pub mod plaza;
 pub mod upload;
 pub mod view;
 
-pub use gpu::{vertex_data, GpuRobot, Image, Item, RenderError, Renderer, Scene};
+pub use gpu::{
+    target_bytes, vertex_data, GpuRobot, Image, Item, RenderError, Renderer, Scene, Submitted,
+};
 
 /// The WGSL source of the robot and shadow pipelines.
 pub const SHADER: &str = include_str!("shader.wgsl");

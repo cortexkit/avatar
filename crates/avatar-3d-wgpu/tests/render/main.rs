@@ -7,5 +7,6 @@ mod genomes;
 mod gpu;
 mod plaza;
 mod shader;
+mod targets;
 mod upload;
 mod view;

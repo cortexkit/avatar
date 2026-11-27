@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 use std::fmt;
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Mutex, MutexGuard};
 
 use avatar_3d::motion::Pose;
 use avatar_3d::robot::Robot;
@@ -26,6 +26,8 @@ pub enum RenderError {
     NoDevice(String),
     /// The frame could not be read back.
     Readback(String),
+    /// Waiting for the GPU to finish failed.
+    Wait(String),
 }
 
 impl fmt::Display for RenderError {
@@ -34,6 +36,7 @@ impl fmt::Display for RenderError {
             Self::NoAdapter(m) => write!(f, "no GPU adapter: {m}"),
             Self::NoDevice(m) => write!(f, "no GPU device: {m}"),
             Self::Readback(m) => write!(f, "readback failed: {m}"),
+            Self::Wait(m) => write!(f, "waiting for the GPU failed: {m}"),
         }
     }
 }
@@ -93,7 +96,23 @@ pub struct Renderer {
     frame_buffer: wgpu::Buffer,
     frame_group: wgpu::BindGroup,
     targets: Mutex<Option<Targets>>,
+    timer: Option<Timer>,
 }
+
+/// The timestamp queries that time a drawn frame's scene pass on the GPU.
+struct Timer {
+    /// Two timestamps: the scene pass's start and end.
+    queries: wgpu::QuerySet,
+    /// Where the queries resolve to, on the GPU.
+    resolve: wgpu::Buffer,
+    /// The resolved timestamps copied where the CPU can map them.
+    readback: wgpu::Buffer,
+    /// Nanoseconds per timestamp tick.
+    period: f64,
+}
+
+/// The bytes of two resolved timestamps.
+const TIMESTAMP_BYTES: u64 = 2 * wgpu::QUERY_SIZE as u64;
 
 impl fmt::Debug for Renderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -120,6 +139,9 @@ pub struct GpuRobot {
     pub texture_bytes: u64,
     /// Bytes of vertex and index memory.
     pub geometry_bytes: u64,
+    /// Bytes of the buffers rewritten every frame (placement, skin
+    /// matrices, material colours) and of the texture bindings.
+    pub frame_bytes: u64,
     /// Triangles drawn.
     pub triangles: u32,
 }
@@ -142,6 +164,87 @@ const SHADOW_BYTES: u64 = 24;
 /// The no-texture marker of a vertex's marks slot.
 const NO_TEXTURE: u32 = u32::MAX;
 
+/// What a submitted frame is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Purpose {
+    /// An image to read back.
+    Image,
+    /// A frame timed on the GPU, not read back.
+    Timed,
+}
+
+/// A frame [`Renderer::draw`] submitted, which the GPU may still be
+/// drawing.
+#[must_use = "wait for the frame before drawing the next one"]
+#[derive(Debug)]
+pub struct Submitted<'r> {
+    renderer: &'r Renderer,
+}
+
+impl Submitted<'_> {
+    /// Waits until the GPU has finished the frame and returns how long its
+    /// scene pass took there, in seconds, from timestamps written at the
+    /// pass's start and end. `None` when the device has no timestamp
+    /// queries, or they read back as no time at all.
+    pub fn wait(self) -> Result<Option<f64>, RenderError> {
+        let renderer = self.renderer;
+        renderer.wait_idle()?;
+        let Some(timer) = &renderer.timer else {
+            return Ok(None);
+        };
+        // The timestamps are resolved only once the frame has finished. On
+        // Metal, a resolve recorded after the pass in the frame's own
+        // submission read the end timestamp before the GPU had written it,
+        // so each frame's end came back with the next frame.
+        let mut encoder = renderer
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame time"),
+            });
+        encoder.resolve_query_set(&timer.queries, 0..2, &timer.resolve, 0);
+        encoder.copy_buffer_to_buffer(&timer.resolve, 0, &timer.readback, 0, TIMESTAMP_BYTES);
+        renderer.queue.submit([encoder.finish()]);
+        let slice = timer.readback.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            // The receiver waits below, so the send cannot fail.
+            let _ = tx.send(r);
+        });
+        renderer.wait_idle()?;
+        rx.recv()
+            .map_err(|e| RenderError::Readback(e.to_string()))?
+            .map_err(|e| RenderError::Readback(e.to_string()))?;
+        let ticks = {
+            let data = slice
+                .get_mapped_range()
+                .map_err(|e| RenderError::Readback(e.to_string()))?;
+            let stamp = |i: usize| {
+                let mut bytes = [0; 8];
+                bytes.copy_from_slice(&data[8 * i..8 * i + 8]);
+                u64::from_le_bytes(bytes)
+            };
+            stamp(1).checked_sub(stamp(0))
+        };
+        timer.readback.unmap();
+        Ok(ticks
+            .filter(|t| *t > 0)
+            .map(|t| t as f64 * timer.period * 1e-9))
+    }
+}
+
+/// The bytes of the frame targets [`Renderer`] keeps for a frame of this
+/// size: the multisampled colour and depth, the resolved colour, and the
+/// readback buffer with its rows padded for the copy.
+pub fn target_bytes(width: u32, height: u32) -> u64 {
+    let pixels = u64::from(width) * u64::from(height);
+    let samples = u64::from(SAMPLE_COUNT);
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let padded_row = u64::from((4 * width).div_ceil(align) * align);
+    // Rgba8UnormSrgb colour and Depth32Float depth both take four bytes a
+    // sample.
+    4 * pixels * samples + 4 * pixels * samples + 4 * pixels + padded_row * u64::from(height)
+}
+
 impl Renderer {
     /// Starts a renderer on the system's preferred high-performance adapter.
     /// The `WGPU_BACKEND` environment variable can pick the backend.
@@ -156,8 +259,11 @@ impl Renderer {
         }))
         .map_err(|e| RenderError::NoAdapter(e.to_string()))?;
         let info = adapter.get_info();
+        // Timestamp queries time frames on the GPU when the adapter has
+        // them ([`Renderer::draw`]); without them frames draw the same.
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("avatar-3d"),
+            required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
             ..Default::default()
         }))
         .map_err(|e| RenderError::NoDevice(e.to_string()))?;
@@ -167,6 +273,12 @@ impl Renderer {
     /// The adapter's name and backend.
     pub fn adapter(&self) -> &wgpu::AdapterInfo {
         &self.info
+    }
+
+    /// Whether frames drawn with [`Renderer::draw`] are timed on the GPU:
+    /// the device has timestamp queries.
+    pub fn timestamps(&self) -> bool {
+        self.timer.is_some()
     }
 
     fn with_device(device: wgpu::Device, queue: wgpu::Queue, info: wgpu::AdapterInfo) -> Self {
@@ -361,6 +473,29 @@ impl Renderer {
                 resource: frame_buffer.as_entire_binding(),
             }],
         });
+        let timer = device
+            .features()
+            .contains(wgpu::Features::TIMESTAMP_QUERY)
+            .then(|| Timer {
+                queries: device.create_query_set(&wgpu::QuerySetDescriptor {
+                    label: Some("frame time"),
+                    ty: wgpu::QueryType::Timestamp,
+                    count: 2,
+                }),
+                resolve: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("frame time resolve"),
+                    size: TIMESTAMP_BYTES,
+                    usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                }),
+                readback: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("frame time readback"),
+                    size: TIMESTAMP_BYTES,
+                    usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                period: f64::from(queue.get_timestamp_period()),
+            });
         Self {
             device,
             queue,
@@ -372,6 +507,7 @@ impl Renderer {
             frame_buffer,
             frame_group,
             targets: Mutex::new(None),
+            timer,
         }
     }
 
@@ -462,6 +598,7 @@ impl Renderer {
         GpuRobot {
             index_count: indices.len() as u32,
             geometry_bytes: (vertices.len() + 4 * indices.len()) as u64,
+            frame_bytes: uniform.size() + joints.size() + materials.size() + bindings.size(),
             triangles: (indices.len() / 3) as u32,
             vertices: vertex_buffer,
             indices: index_buffer,
@@ -544,6 +681,44 @@ impl Renderer {
     /// Panics when an item's robot and uploaded robot disagree on their
     /// bones or materials, or when one uploaded robot appears twice.
     pub fn render(&self, scene: &Scene<'_>) -> Result<Image, RenderError> {
+        let targets = self.submit(scene, Purpose::Image);
+        self.read_back(targets.as_ref().expect("the frame targets were just made"))
+    }
+
+    /// Draws a scene without reading it back, and returns as soon as the
+    /// frame is submitted, so the CPU's share of a frame can be timed apart
+    /// from the GPU's. [`Submitted::wait`] then waits for the GPU and gives
+    /// its time for the frame.
+    ///
+    /// # Panics
+    ///
+    /// As [`Renderer::render`].
+    pub fn draw(&self, scene: &Scene<'_>) -> Submitted<'_> {
+        drop(self.submit(scene, Purpose::Timed));
+        Submitted { renderer: self }
+    }
+
+    /// Submits every upload still queued and waits until the GPU has
+    /// finished it. [`Renderer::upload`] queues its texture copies, which
+    /// otherwise run with the next frame.
+    pub fn finish_uploads(&self) -> Result<(), RenderError> {
+        self.queue.submit([]);
+        self.wait_idle()
+    }
+
+    /// Waits until the GPU has finished everything submitted.
+    fn wait_idle(&self) -> Result<(), RenderError> {
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map(drop)
+            .map_err(|e| RenderError::Wait(e.to_string()))
+    }
+
+    /// Writes a scene's per-frame buffers, records its pass and submits it:
+    /// for an image with the copy to the readback buffer, for a timed frame
+    /// with the timestamps when the device has them. Returns the frame
+    /// targets, still locked, for the readback.
+    fn submit(&self, scene: &Scene<'_>, purpose: Purpose) -> MutexGuard<'_, Option<Targets>> {
         for (i, a) in scene.items.iter().enumerate() {
             assert!(
                 scene.items[..i].iter().all(|b| !std::ptr::eq(a.gpu, b.gpu)),
@@ -591,6 +766,10 @@ impl Renderer {
             *guard = Some(self.targets(scene.width, scene.height));
         }
         let targets = guard.as_ref().expect("the frame targets were just made");
+        let timer = match purpose {
+            Purpose::Timed => self.timer.as_ref(),
+            Purpose::Image => None,
+        };
 
         let mut encoder = self
             .device
@@ -623,6 +802,11 @@ impl Renderer {
                     }),
                     stencil_ops: None,
                 }),
+                timestamp_writes: timer.map(|t| wgpu::RenderPassTimestampWrites {
+                    query_set: &t.queries,
+                    beginning_of_pass_write_index: Some(0),
+                    end_of_pass_write_index: Some(1),
+                }),
                 ..Default::default()
             });
             pass.set_pipeline(&self.robot_pipeline);
@@ -640,29 +824,31 @@ impl Renderer {
                 pass.draw(0..6, 0..scene.items.len() as u32);
             }
         }
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &targets.resolve,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &targets.readback,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(targets.padded_row),
-                    rows_per_image: Some(scene.height),
+        if purpose == Purpose::Image {
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &targets.resolve,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
                 },
-            },
-            wgpu::Extent3d {
-                width: scene.width,
-                height: scene.height,
-                depth_or_array_layers: 1,
-            },
-        );
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &targets.readback,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(targets.padded_row),
+                        rows_per_image: Some(scene.height),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: scene.width,
+                    height: scene.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         self.queue.submit([encoder.finish()]);
-        self.read_back(targets)
+        guard
     }
 
     /// Writes one item's per-frame buffers: placement and face textures,

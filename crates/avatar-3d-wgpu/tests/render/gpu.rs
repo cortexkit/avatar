@@ -60,3 +60,42 @@ fn a_render_returns_rgba8_of_the_requested_size_with_the_robot_on_it() {
         "{robot_pixels} of {total} pixels differ from the background"
     );
 }
+
+#[test]
+#[ignore = "needs a GPU adapter"]
+fn every_drawn_frame_is_timed_on_the_gpu_when_the_device_has_timestamps() {
+    let renderer = Renderer::new().expect("a GPU adapter and device");
+    let robot = build(&genomes::corpus()[0]);
+    let gpu = renderer.upload(&robot);
+    renderer.finish_uploads().expect("the upload finishes");
+    let actor = Actor::new(&robot, Mood::Neutral);
+    let background = Rgb {
+        r: 0xee,
+        g: 0xf0,
+        b: 0xf3,
+    };
+    for frame in 0..8 {
+        let pose = actor.evaluate(f64::from(frame) / 30.0);
+        let scene = Scene {
+            view: View::from(&robot.camera),
+            width: 288,
+            height: 288,
+            background,
+            items: &[Item {
+                robot: &robot,
+                gpu: &gpu,
+                pose: &pose,
+                offset: [0.0; 3],
+            }],
+        };
+        let time = renderer.draw(&scene).wait().expect("the frame finishes");
+        if renderer.timestamps() {
+            // A time read before the GPU had written the frame's end would
+            // come back missing, or end before it started.
+            let t = time.unwrap_or_else(|| panic!("frame {frame} was not timed"));
+            assert!(t > 0.0 && t < 0.25, "frame {frame} took {t} s on the GPU");
+        } else {
+            assert_eq!(time, None, "frame {frame} without timestamp queries");
+        }
+    }
+}

@@ -5,7 +5,12 @@
 //! ```text
 //! cargo run --release -p cortexkit-avatar-3d-wgpu --example review_sheets -- \
 //!     --out DIR [--only random,random-509,moods,reactions,views,plaza]
+//! cargo run --release -p cortexkit-avatar-3d-wgpu --example review_sheets -- --numbers
 //! ```
+//!
+//! With `--numbers` it draws no sheet and prints the first numbers of the
+//! stage and the plaza instead: frame times, build and upload times and
+//! memory (see the `numbers` module).
 //!
 //! The sheets:
 //!
@@ -30,6 +35,7 @@
 //! posture and the face exactly, never a passing blink or glance.
 //! Single-robot frames are 288 px square.
 
+mod numbers;
 mod sheet;
 
 use std::fs;
@@ -350,6 +356,7 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
 fn main() -> ExitCode {
     let mut out: Option<PathBuf> = None;
     let mut only: Option<Vec<String>> = None;
+    let mut numbers = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -359,15 +366,26 @@ fn main() -> ExitCode {
                     .next()
                     .map(|s| s.split(',').map(str::to_owned).collect())
             }
+            "--numbers" => numbers = true,
             other => {
                 eprintln!("review_sheets: unknown argument {other:?}");
                 return ExitCode::FAILURE;
             }
         }
     }
+    if numbers {
+        let result = Renderer::new().and_then(|renderer| numbers::run(&renderer));
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("review_sheets: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let Some(out) = out else {
         eprintln!(
-            "usage: review_sheets --out DIR [--only random,random-509,moods,reactions,views,plaza]"
+            "usage: review_sheets --out DIR [--only random,random-509,moods,reactions,views,plaza]\n       review_sheets --numbers"
         );
         return ExitCode::FAILURE;
     };
