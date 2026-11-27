@@ -7,7 +7,7 @@ use crate::draw::{Ctx, Out};
 use crate::face::{Eye, Tech};
 use crate::face_draw::{face, lens_eye};
 use crate::kit::P2;
-use crate::marks::draw_head_marks;
+use crate::marks::{chest_draw, draw_head_marks};
 use crate::parts::{pod_eye, stalk_at};
 use crate::robot::Robot;
 use crate::{Creature, Mood, FULL_DETAIL_PX, MOODS};
@@ -62,7 +62,8 @@ pub struct Layer {
     /// Tree with its origin at the top left, padded on the right and bottom.
     pub tree: RenderTree,
     /// Binding in pre-fit robot units: head-local for face, stalks and head
-    /// marks; upper-body-local for chassis rivets.
+    /// marks; upper-body-local for chassis rivets; the chest's own frame
+    /// ([`super::ChestLayout::frame`]) for the chest.
     pub region: Region,
 }
 
@@ -228,6 +229,23 @@ impl Creature {
         out.group("rb-chassis-shell", &[], |out| {
             chassis_rivets(out, &detail(), &self.robot)
         });
+        marks_layer(out)
+    }
+
+    /// Full-detail chest fitting drawing in the chest's frame
+    /// ([`super::ChestLayout::frame`]: upper-body-local on a chassis,
+    /// head-local on a pod), drawn as the neutral mood draws it. Returns
+    /// `None` when the robot has no chest. The light, gauge and LED kinds
+    /// change with the mood in the full drawing; every other kind draws the
+    /// same in every mood.
+    pub fn chest_layer(&self) -> Option<Layer> {
+        let mut out = Out::new();
+        chest_draw(
+            &mut out,
+            &detail(),
+            &self.robot,
+            self.robot.mood(Mood::Neutral),
+        );
         marks_layer(out)
     }
 }

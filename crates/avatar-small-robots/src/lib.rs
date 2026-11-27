@@ -26,7 +26,8 @@
 //! without applying the 240-unit picture fit. The layout gives rest geometry
 //! and the resolved mood poses in robot units, with negative y pointing up.
 //! [`Creature::face_layer`], [`Creature::stalk_eye_layer`],
-//! [`Creature::head_marks`] and [`Creature::chassis_marks`] draw separate,
+//! [`Creature::head_marks`], [`Creature::chassis_marks`] and
+//! [`Creature::chest_layer`] draw separate,
 //! transparent trees. Each layer gives the origin of its square canvas in
 //! the original drawing frame, so it can be projected back without scaling.
 //!

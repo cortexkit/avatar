@@ -8,7 +8,7 @@ use crate::body::chassis_rivets;
 use crate::draw::{El, Out};
 use crate::face_draw::{face, lens_eye};
 use crate::geom::{tree_ops, Op, Path};
-use crate::marks::head_marks;
+use crate::marks::{chest_draw, head_marks};
 use crate::mood::Shut;
 use crate::parts::{pod_eye, stalk_at};
 use crate::{decode, Creature, Mood, Tech, FULL_DETAIL_PX, GENOME_LEN, MOODS};
@@ -152,6 +152,51 @@ const SEED: u64 = 1;
 const LIMIT: u64 = 4_096;
 const COVERAGE_PREFIX: u64 = 70;
 
+#[test]
+fn layout_chest_matches_emitter_and_full_tree_transform_chain() {
+    let genomes = corpus()
+        .into_iter()
+        .chain((0..COVERAGE_PREFIX).map(sheet_genome));
+    let mut kinds = BTreeSet::new();
+    for bytes in genomes {
+        let creature = decode(&bytes);
+        let c = &creature.robot;
+        let layout = Layout::new(&creature);
+        let ctx = detail();
+        let mut neutral = Out::new();
+        chest_draw(&mut neutral, &ctx, c, c.mood(Mood::Neutral));
+        let layer = creature.chest_layer();
+        assert_eq!(layer.is_none(), c.chest.kind == "none", "{}", c.chest.kind);
+        assert_eq!(layer.map_or_else(Vec::new, |l| unshift(&l)), neutral.prims);
+        kinds.insert(c.chest.kind);
+        for mood in MOODS {
+            let m = layout.mood(mood);
+            let fit = c.fit;
+            // A chassis's chest is drawn in the upper body and a pod's in its
+            // head, which on a pod has no transform of its own.
+            let mut upper_ops = tree_ops(&[Op::T(fit.x, fit.y), Op::S(fit.s, fit.s)]);
+            upper_ops.extend(tree_ops(&[
+                Op::T(0.0, -(layout.rise + m.lift)),
+                Op::R(m.lean),
+            ]));
+            let mut drawn = Out::new();
+            chest_draw(&mut drawn, &ctx, c, c.mood(mood));
+            let full = creature.render_tree(mood, Some(FULL_DETAIL_PX));
+            contains_run(
+                &full.primitives,
+                &prefix(&drawn.prims, &upper_ops),
+                "chest",
+                mood,
+            );
+            // Only the kinds that light up or move change with the mood.
+            if !matches!(c.chest.kind, "light" | "gauge" | "leds") {
+                assert_eq!(drawn.prims, neutral.prims, "{} in {mood:?}", c.chest.kind);
+            }
+        }
+    }
+    assert!(kinds.len() >= 6, "chest kinds seen: {kinds:?}");
+}
+
 fn sheet_genome(index: u64) -> Box<[u8; GENOME_LEN]> {
     // Same derivation as the random_sheet example; the keyed hash is valid
     // for any genome length, including the small-robots genome used here.
@@ -267,7 +312,10 @@ fn check_canvases(c: &Creature) {
             }
         }
     }
-    for marks in [c.head_marks(), c.chassis_marks()].into_iter().flatten() {
+    for marks in [c.head_marks(), c.chassis_marks(), c.chest_layer()]
+        .into_iter()
+        .flatten()
+    {
         assert_on_canvas(&marks);
     }
 }
