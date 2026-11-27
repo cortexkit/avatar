@@ -169,12 +169,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cortexkit-avatar-pixel-critters"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
+]
+
+[[package]]
 name = "cortexkit-avatar-raster"
 version = "0.1.0"
 dependencies = [
  "cortexkit-avatar-genome",
  "cortexkit-avatar-svg",
  "resvg",
+]
+
+[[package]]
+name = "cortexkit-avatar-sprouts"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
 ]
 
 [[package]]
@@ -192,6 +214,17 @@ name = "cortexkit-avatar-tables"
 version = "0.1.0"
 dependencies = [
  "blake3",
+]
+
+[[package]]
+name = "cortexkit-avatar-wild-plus"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
 ]
 
 [[package]]

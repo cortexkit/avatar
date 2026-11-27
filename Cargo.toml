@@ -4,10 +4,13 @@ members = [
     "crates/avatar-ffi",
     "crates/avatar-genome",
     "crates/avatar-phenotype",
+    "crates/avatar-pixel-critters",
     "crates/avatar-raster",
+    "crates/avatar-sprouts",
     "crates/avatar-svg",
     "crates/avatar-tables",
     "crates/avatar-vectors",
+    "crates/avatar-wild-plus",
     "crates/avatar-export",
 ]
 resolver = "2"
