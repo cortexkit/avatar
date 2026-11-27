@@ -1,11 +1,14 @@
 [workspace]
 members = [
     "crates/avatar",
+    "crates/avatar-drawn-heads",
     "crates/avatar-ffi",
     "crates/avatar-genome",
+    "crates/avatar-knitted-toys",
     "crates/avatar-phenotype",
     "crates/avatar-pixel-critters",
     "crates/avatar-raster",
+    "crates/avatar-small-robots",
     "crates/avatar-sprouts",
     "crates/avatar-svg",
     "crates/avatar-tables",

@@ -151,11 +151,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "cortexkit-avatar-drawn-heads"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
+]
+
+[[package]]
 name = "cortexkit-avatar-genome"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "cortexkit-avatar-phenotype",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
+]
+
+[[package]]
+name = "cortexkit-avatar-knitted-toys"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
  "cortexkit-avatar-svg",
  "cortexkit-avatar-tables",
  "serde_json",
@@ -186,6 +208,17 @@ dependencies = [
  "cortexkit-avatar-genome",
  "cortexkit-avatar-svg",
  "resvg",
+]
+
+[[package]]
+name = "cortexkit-avatar-small-robots"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cortexkit-avatar-raster",
+ "cortexkit-avatar-svg",
+ "cortexkit-avatar-tables",
+ "serde_json",
 ]
 
 [[package]]

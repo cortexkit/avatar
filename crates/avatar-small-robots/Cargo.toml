@@ -1,0 +1,25 @@
+[package]
+name = "cortexkit-avatar-small-robots"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Draws the creature.small-robots avatar type: a stored 16,384-byte genome becomes a render tree."
+
+# Published as cortexkit-avatar-small-robots. The library keeps its short Rust
+# name, so code imports it as `avatar_small_robots` under either package name.
+[lib]
+name = "avatar_small_robots"
+
+[dependencies]
+avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-avatar-svg" }
+avatar-tables = { version = "0.1.0", path = "../avatar-tables", package = "cortexkit-avatar-tables" }
+
+[dev-dependencies]
+# Rasterizes trees for the fidelity comparison and the review sheets, the same
+# way finished images are drawn.
+avatar-raster = { version = "0.1.0", path = "../avatar-raster", package = "cortexkit-avatar-raster" }
+# Hashes each golden tree for the corpus manifest.
+blake3 = "1.5"
+# Reads and writes the golden manifest and the fidelity case files.
+serde_json = "1"
