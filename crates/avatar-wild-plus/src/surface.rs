@@ -542,12 +542,7 @@ pub fn build_surface(
             if !rim.is_empty() {
                 pattern.push(lined(
                     rim.shape(),
-                    stroke(
-                        if pal.dark { pal.light } else { pal.outline },
-                        120,
-                        StrokeCap::Round,
-                        StrokeJoin::Miter,
-                    ),
+                    stroke(pal.light, 120, StrokeCap::Round, StrokeJoin::Miter),
                     Some(0.45),
                     "wp-scales",
                 ));
@@ -752,7 +747,7 @@ pub fn build_surface(
     let fleck = r.pick(2636, &[2.0, 3.0, 2.0, 2.0, 2.0]);
     if fleck != 0 {
         let count = 14 + r.mod_(2637, 23) as usize;
-        let pen = if pal.dark { pal.light } else { pal.outline };
+        let pen = pal.light;
         let mut d = PathB::new();
         let mut dots = Vec::new();
         for i in 0..count {

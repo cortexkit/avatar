@@ -333,8 +333,10 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
         };
         let skin = pal.ink(skin_of(e));
         let dark_skin = luma(skin) < 0.36;
-        // The rim of a white eye is thin and soft.
-        let rim = if pal.dark { pal.outline } else { pal.tone_rim };
+        // The rim of a white eye is thin and soft. The reference chooses
+        // between the outline and a softer tone by its palette's `dark` key,
+        // which holds the dark shade's colour and so always picks the first.
+        let rim = pal.outline;
         let derp = e.derp.unwrap_or([0.0, 0.0]);
         let g = [
             clamp(sp.gaze[0] * c.temper.side + derp[0], -1.0, 1.0),
@@ -711,7 +713,7 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
                     q2(cheek_y + fr[1] * r),
                     q2(max(0.7, r * 0.09)),
                 ),
-                if pal.dark { pal.light } else { pal.outline },
+                pal.light,
                 Some(0.6),
                 "wp-freckle",
             ));
@@ -725,7 +727,7 @@ pub fn face_prims(c: &Built, mood: Mood) -> FaceOut {
 
     // ---- whiskers reach past the cheeks, over everything ----
     if f.whiskers != 0 {
-        let pen = if pal.dark { pal.ink } else { pal.outline };
+        let pen = pal.ink;
         for s in [-1.0, 1.0] {
             for i in 0..f.whiskers {
                 let v = f64::from(i) - (f64::from(f.whiskers) - 1.0) / 2.0;
@@ -838,7 +840,10 @@ fn mouth(c: &Built, sp: &MoodSpec, out: &mut FaceOut) {
     };
     let mut m: Vec<Primitive> = Vec::new();
     // Beak fill, kept off a body of nearly the same colour.
-    let warm_clash = (((w.hue - 32.0 + 540.0) % 360.0) - 180.0).abs() < 38.0 && !pal.dark;
+    // The reference keeps the beak off a warm body only when its palette's
+    // `dark` key is unset, and that key always holds the dark shade, so the
+    // warm fills are always used.
+    let warm_clash = false;
     let beak_fill = match f.tone {
         0 => {
             if warm_clash {

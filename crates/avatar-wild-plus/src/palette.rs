@@ -67,7 +67,6 @@ fn warm_shift(h: f64) -> f64 {
 pub struct Palette {
     pub recipe: u32,
     pub scheme: usize,
-    pub dark: bool,
     pub body: Rgb,
     pub outline: Rgb,
     pub part: Rgb,
@@ -75,6 +74,9 @@ pub struct Palette {
     pub tone_up: Rgb,
     pub tone_down: Rgb,
     pub light: Rgb,
+    /// The dark shade. The reference's palette object holds it under the
+    /// same `dark` key as its dark-recipe flag; the shade, written later,
+    /// wins, so wherever the reference tests that flag it is always set.
     pub dark_c: Rgb,
     pub limb_mark: Rgb,
     pub lift: Rgb,
@@ -239,7 +241,6 @@ pub fn build_palette(r: &Reader, w: &Wild) -> Palette {
     Palette {
         recipe,
         scheme,
-        dark,
         body,
         outline,
         part: if scheme == 7 {
