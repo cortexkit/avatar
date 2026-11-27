@@ -6,10 +6,16 @@
 //! machine has. The hull takes the body colour the genome's `creature.wild`
 //! has. Each mood poses the same machine again.
 //!
-//! This is a port of a JavaScript design ("the reference" in this crate's
-//! comments), which lives in the authors' private experiments repository;
-//! `scripts/fidelity/` compares the two drawing by drawing. The port reads
-//! the same genes, builds the same parts and draws the same shapes.
+//! This began as a port of a JavaScript design ("the reference" in this
+//! crate's comments), which lives in the authors' private experiments
+//! repository. The port read the same genes, built the same parts and drew
+//! the same shapes. Version 1 was then refined in Rust after the port, so it
+//! no longer matches the reference exactly: a few of its rules were changed
+//! so that no genome draws a part that reads as clothing or a household
+//! object, or a face that does not read. The fidelity harness in
+//! `scripts/fidelity/` compares drawings with the reference, so it describes
+//! the port, not the current drawing.
+//!
 //! Generation uses only arithmetic, `sqrt`, `floor` and rounding, with sine
 //! and cosine from `avatar_svg::wild::math`, so every platform draws the
 //! same tree.

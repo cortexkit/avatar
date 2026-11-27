@@ -29,6 +29,8 @@ const SIDE_WEIGHTS: [u32; 7] = [10, 7, 4, 4, 3, 2, 2];
 
 /// What trails behind.
 pub const BACK_NAMES: [&str; 3] = ["none", "cable", "pipe"];
+/// The most a cable leaves the base of the lowest module by.
+const CABLE_RISE: f64 = 10.0;
 
 /// One mast: where it stands on the head, how it leans and how long it is,
 /// which side it belongs to (0 for the middle), what it is, and whether
@@ -361,6 +363,11 @@ pub(crate) fn plug_top(r: &Reader, c: &mut Robot) {
     let mut kind = TOP_NAMES[r.pick(o, 0, weights, 0)];
     // Eyes on stalks take the top of the head: only one mast fits between them.
     if c.f.stalk.is_some() && matches!(kind, "twin" | "triple" | "ears") {
+        kind = "rod";
+    }
+    // Two masts on a pod with a screen are a television's rabbit ears: it
+    // takes one.
+    if kind == "twin" && c.f.screen.is_some() && c.body.is_none() {
         kind = "rod";
     }
     c.top = kind;
@@ -742,7 +749,9 @@ pub(crate) fn plug_back(r: &Reader, c: &mut Robot) {
     if kind == "cable" {
         let len = r.lin(o, 5, 2, 22.0, 40.0) * c.scale;
         let low = c.low();
-        let ay = -low.h * 0.32;
+        // The cable leaves the lowest module near its base, so that it runs
+        // down to the ground beside the robot, not out of its side under a hand.
+        let ay = -min(low.h * 0.32, CABLE_RISE);
         let ax = side * low.hw_at(ay) * 0.7;
         c.cable = Some(Cable { side, len, ax, ay });
         c.parts.push(Part {
@@ -792,7 +801,10 @@ struct CableGeom {
     u: P2,
 }
 
-/// The cable swings up when the robot is pleased and lies on the ground when it is not.
+/// The cable swings up when the robot is pleased. Otherwise it runs down to
+/// the ground and its plug lies there: a plug that hung in the air beside an
+/// arm, or a cable that dropped straight past a hand, read as something the
+/// robot was holding.
 fn cable_geom(c: &Robot, md: &MoodSpec, pose: &Pose) -> CableGeom {
     let cb = c.cable.as_ref().expect("a cable part has a cable");
     let (side, len) = (cb.side, cb.len);
@@ -800,13 +812,16 @@ fn cable_geom(c: &Robot, md: &MoodSpec, pose: &Pose) -> CableGeom {
     let t = md.tail;
     let up = max(0.0, t);
     let down = max(0.0, -t);
+    // Each end of the swing: on the ground at rest, and swung up above the
+    // cable's root when the robot is most pleased.
+    let lift = |rest: f64, swung: f64| min(rest, rest + (swung - rest) * up);
     let tip = [
         a[0] + side * len * (1.0 - 0.15 * up - 0.3 * down),
-        min(-3.5, a[1] + len * (0.35 - 1.05 * up) + down * 40.0),
+        lift(-3.5, a[1] - len * 0.7),
     ];
     let ctl = [
         a[0] + side * len * (0.55 + 0.2 * up),
-        min(-2.0, a[1] + len * (0.5 - 0.35 * up) + down * 30.0),
+        lift(-2.0, a[1] + len * 0.15),
     ];
     CableGeom {
         a,

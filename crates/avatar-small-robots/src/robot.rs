@@ -224,7 +224,7 @@ impl Robot {
         } else {
             Chest::none()
         };
-        c.decor = plug_decor(r, &c.head, &c.f, c.plan == "pod", !pod, &c.chest, &ext);
+        c.decor = plug_decor(r, &c.head, &c.f, !pod, &c.chest, &ext);
         let temper = build_temper(r);
         c.temper = Some(temper);
         let hover = c.gear.hover;

@@ -66,7 +66,8 @@ pub(crate) enum Form {
 const MOUTH_FORMS: [Form; 5] = [Form::Arc, Form::Cat, Form::Steps, Form::Flat, Form::Vee];
 
 /// What carries the mouth: a line a screen draws, a display strip, a slot,
-/// a grille, or none.
+/// or a grille. `None` is the empty mouth a face starts from; every robot's
+/// face ends with one of the others.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MouthKind {
     Line,
@@ -396,7 +397,12 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
             } else {
                 1.0
             };
-            let style = SCREEN_EYES[r.pick(o + 2, 0, &[8, 8, 5, 4, 4, 3], 0)];
+            let mut style = SCREEN_EYES[r.pick(o + 2, 0, &[8, 8, 5, 4, 4, 3], 0)];
+            // Wide eyes side by side on a screen are a pair of sunglasses or a
+            // visor: the screen draws dots instead.
+            if style == "wide" {
+                style = "dot";
+            }
             let dims = match style {
                 "pill" => [0.66, 1.1, 0.66, 0.66],
                 "square" => [0.9, 0.9, 0.3, 0.3],
@@ -508,7 +514,9 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
     let tech = f.tech;
     let lamp = tech == Tech::Lamp;
     let stalk = tech == Tech::Stalk;
-    // Eyes on stalks always have a mouth; only one eye or three may go without.
+    // Eyes on stalks always have a mouth, and so does every other face: one
+    // eye or three over no mouth was a porthole or a blank face whose moods
+    // did not read, so the gene's fourth choice is a slot.
     let weights: &[u32] = if tech == Tech::Mono || tech == Tech::Tri {
         &[5, 5, 3, 3]
     } else {
@@ -518,15 +526,19 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
         MouthKind::Strip,
         MouthKind::Slot,
         MouthKind::Grid,
-        MouthKind::None,
+        MouthKind::Slot,
     ][r.pick(om + 2, 0, weights, 0)];
-    let has = kind != MouthKind::None;
     let mh = match kind {
         MouthKind::Strip => 9.5,
         MouthKind::Grid => 8.5,
         _ => 7.0,
     };
-    let shape = ["round", "square", "tall", "wide"][r.pick(o + 2, 0, &[10, 3, 2, 1], 0)];
+    let mut shape = ["round", "square", "tall", "wide"][r.pick(o + 2, 0, &[10, 3, 2, 1], 0)];
+    // Wide lenses side by side are a pair of goggles: two eyes look through
+    // round ones.
+    if shape == "wide" && matches!(tech, Tech::Lens | Tech::Lamp | Tech::Odd) {
+        shape = "round";
+    }
     let mut sd = match shape {
         "square" => [0.92, 0.92, 0.36, 0.36],
         "tall" => [0.86, 1.06, 0.86, 1.06],
@@ -539,7 +551,8 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
         sd[2] = sd[0];
         sd[3] = sd[1];
     }
-    f.lamp_pupil = lamp && r.flag(o + 4, 0);
+    // A lamp with no pupil is a headlight or a goggle lens, so every lamp has one.
+    f.lamp_pupil = lamp;
     f.iris = r.lin(o + 5, 0, 2, 0.46, 0.6);
     if !lamp || f.lamp_pupil {
         f.pupil = f.iris * r.lin(o + 5, 2, 2, 0.38, 0.54);
@@ -614,13 +627,15 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
     let floor = if tee { -hull.jaw_h - 3.0 } else { -4.0 };
     let my: f64;
     if let Some(eyes_of) = &eyes_of {
-        let best = fit_eyes(
-            hull,
-            eyes_of.as_ref(),
-            if has && !tee { mh } else { 0.0 },
-            floor,
-        );
-        let rr = best.r * lerp(0.74, 1.0, size());
+        let best = fit_eyes(hull, eyes_of.as_ref(), if tee { 0.0 } else { mh }, floor);
+        // Three eyes share the room two would have, so the size gene does not
+        // shrink them: smaller, the side eyes were specks at icon size.
+        let shrink = if tech == Tech::Tri {
+            1.0
+        } else {
+            lerp(0.74, 1.0, size())
+        };
+        let rr = best.r * shrink;
         f.eyes = eyes_of(rr, best.ey);
         if tech == Tech::Lens || lamp {
             // Two eyes are set apart by their own gene, as far as the hull lets them go.
@@ -632,10 +647,8 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
         }
         my = if tee {
             -hull.jaw_h / 2.0 + 1.5
-        } else if has {
-            best.my.unwrap_or(0.0) - (best.r - rr) * 0.6
         } else {
-            0.0
+            best.my.unwrap_or(0.0) - (best.r - rr) * 0.6
         };
     } else {
         let rr = r.lin(o + 3, 0, 3, 17.0, 23.5) * scale;
@@ -655,56 +668,53 @@ pub(crate) fn build_face(r: &Reader, hull: &Hull, tech: Tech, scale: f64) -> Fac
             .map(|e| e.x.abs() + e.rx)
             .fold(f64::NEG_INFINITY, max)
     };
-    if has {
-        // A strip or a grille takes at most half the hull's width where it
-        // sits; a strip with no room for that is a slot instead.
-        let mut most = if tee {
-            hull.jaw_w - 9.0
-        } else {
-            mouth_room(hull, my, mh, span)
-        };
-        if kind == MouthKind::Strip && min(most, hull.hw_at(my) * 0.5) - 6.0 < 9.0 {
-            kind = MouthKind::Slot;
-        }
-        if kind != MouthKind::Slot {
-            most =
-                min(most, hull.hw_at(my) * 0.5) - if kind == MouthKind::Strip { 6.0 } else { 0.0 };
-        }
-        let mw = max(
-            7.0,
-            min(
-                most,
-                span * r.lin(
-                    om,
-                    0,
-                    3,
-                    if stalk { 0.5 } else { 0.34 },
-                    if stalk { 0.82 } else { 0.64 },
-                ),
+    // A strip or a grille takes at most half the hull's width where it sits;
+    // a strip with no room for that is a slot instead.
+    let mut most = if tee {
+        hull.jaw_w - 9.0
+    } else {
+        mouth_room(hull, my, mh, span)
+    };
+    if kind == MouthKind::Strip && min(most, hull.hw_at(my) * 0.5) - 6.0 < 9.0 {
+        kind = MouthKind::Slot;
+    }
+    if kind != MouthKind::Slot {
+        most = min(most, hull.hw_at(my) * 0.5) - if kind == MouthKind::Strip { 6.0 } else { 0.0 };
+    }
+    let mw = max(
+        7.0,
+        min(
+            most,
+            span * r.lin(
+                om,
+                0,
+                3,
+                if stalk { 0.5 } else { 0.34 },
+                if stalk { 0.82 } else { 0.64 },
             ),
-        );
-        let dh = match kind {
-            MouthKind::Strip => min(mw * 0.36, 5.2),
-            MouthKind::Grid => min(mw * 0.34, 7.0),
-            _ => min(mw * 0.4, if stalk { 11.0 } else { 8.0 }),
-        };
-        f.mouth = Mouth {
-            kind,
-            form: form(),
-            rest: rest(),
-            x: 0.0,
-            y: my,
-            w: mw,
-            dh,
-            ..Mouth::none()
-        };
-        if kind == MouthKind::Strip {
-            f.mouth.panel = rrect(-mw - 6.0, my - 8.2, mw + 6.0, my + 8.2, 6.0);
-        }
-        if kind == MouthKind::Grid {
-            f.mouth.t = r.lin(om, 3, 2, 7.5, 10.5);
-            f.mouth.bars = 3 + r.raw(om, 5, 1) * 2;
-        }
+        ),
+    );
+    let dh = match kind {
+        MouthKind::Strip => min(mw * 0.36, 5.2),
+        MouthKind::Grid => min(mw * 0.34, 7.0),
+        _ => min(mw * 0.4, if stalk { 11.0 } else { 8.0 }),
+    };
+    f.mouth = Mouth {
+        kind,
+        form: form(),
+        rest: rest(),
+        x: 0.0,
+        y: my,
+        w: mw,
+        dh,
+        ..Mouth::none()
+    };
+    if kind == MouthKind::Strip {
+        f.mouth.panel = rrect(-mw - 6.0, my - 8.2, mw + 6.0, my + 8.2, 6.0);
+    }
+    if kind == MouthKind::Grid {
+        f.mouth.t = r.lin(om, 3, 2, 7.5, 10.5);
+        f.mouth.bars = 3 + r.raw(om, 5, 1) * 2;
     }
     f.bx = FaceBox {
         cy: if f.eyes.is_empty() { my } else { f.eyes[0].y },
