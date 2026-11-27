@@ -173,7 +173,8 @@ fn the_stage_camera_is_the_three_quarter_view() {
     assert!(close(d.map(|v| v / l), [s11 * c12, s12, c11 * c12]));
 }
 
-/// The stage camera of wild-port-0005.
+/// The stage camera of the first corpus genome, wild-port-0005 in
+/// `vectors/small-robots/corpus.tsv`.
 const PINNED_EYE: V3 = [1.7941724449515872, 3.2345367603992283, 9.204325157627393];
 const PINNED_TARGET: V3 = [0.005032875407895765, 1.2414789671881963, 0.0];
 
