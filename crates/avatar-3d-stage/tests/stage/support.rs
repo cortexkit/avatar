@@ -79,7 +79,8 @@ pub fn binding_mood(content: TextureContent) -> Option<Mood> {
 }
 
 /// Stand-in pixels, `px` × `px` RGBA8 of zeros, for each binding of
-/// `robot` that is a mark, a chest, or a face of one of `moods`.
+/// `robot` that is a mark, a chest, or a head face or stalk eye of one of
+/// `moods`.
 pub fn stand_in_pixels(robot: &Robot, moods: MoodSet, px: u32) -> Vec<(usize, Vec<u8>)> {
     robot
         .textures
@@ -91,8 +92,8 @@ pub fn stand_in_pixels(robot: &Robot, moods: MoodSet, px: u32) -> Vec<(usize, Ve
 }
 
 /// The robot a genome builds with stand-in pixels at `px` for its marks,
-/// its chest and the face sets of `moods`, as a build rasterizing those
-/// moods at that edge has.
+/// its chest and the face sets (head face and stalk eyes) of `moods`, as a
+/// build rasterizing those moods at that edge has.
 pub fn textured(genome: &[u8], moods: MoodSet, px: u32) -> Robot {
     let mut robot = robot(genome);
     let pixels = stand_in_pixels(&robot, moods, px);

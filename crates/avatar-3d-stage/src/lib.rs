@@ -42,7 +42,8 @@
 //!   needs them instead, so a script driving the stage with a virtual
 //!   clock gets the same frames every run. Face sets and new texture edges
 //!   are rasterized the same way, on the workers or inline. A robot's
-//!   reach box and stage camera are worked out on the thread that builds
+//!   reach box (the space it moves through, which the stage camera
+//!   frames) and stage camera are worked out on the thread that builds
 //!   it, never in a command or a read. [`Stage::events`] reports each
 //!   creature ready.
 //! - **Faces.** A face changes only to a face set already on the GPU, and
@@ -56,8 +57,8 @@
 //!
 //! # Not yet here
 //!
-//! Every robot stands at the origin until the plaza is laid out, and
-//! frames carry no camera until the stage camera is added. With the camera
+//! Every robot stands at the origin until the plaza (the view of the whole
+//! cast, [`StageView::Plaza`]) is laid out, and frames carry no camera until the stage camera is added. With the camera
 //! come the reads that depend on it: each drawn creature's head, face and
 //! ground positions on screen, and the shapes a tap is tested against.
 //! Until then a robot's texture edge follows the frame only when it is

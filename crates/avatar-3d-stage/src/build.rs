@@ -307,9 +307,9 @@ fn work(
     }
 }
 
-/// Runs one job. A job that panics yields nothing: a robot stays unbuilt,
-/// and a face set or new edge is asked for again while still needed,
-/// rather than the panic taking the thread down.
+/// Runs one job. A job that panics yields nothing, rather than the panic
+/// taking the thread down: its robot stays unbuilt, or the face set or
+/// new edge it was making never lands and is not asked for again.
 fn run(builder: &dyn Builder, job: &Job) -> Option<Built> {
     let (key, generation, genome, px) = (&job.key, job.generation, &*job.genome, job.texture_px);
     let output = panic::catch_unwind(AssertUnwindSafe(|| match job.task {
