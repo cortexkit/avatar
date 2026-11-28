@@ -32,11 +32,11 @@ pub const FRAME_PX: u32 = 288;
 /// poses between samples, and one reaction cutting another short.
 pub const FILL: f64 = 0.9;
 /// How often the poses that bound the stage are sampled
-/// ([`super::Robot::reach`]). Thirty a second keeps the sampling within
-/// a robot's build budget; the robot tests check, 120 times a second, that
-/// no posed vertex of the 33 robots of the plaza leaves the frame through
-/// every mood, reaction and status loop with the idle layer on, which is
-/// what the margin outside [`FILL`] is for.
+/// ([`super::Robot::reach`]). Thirty a second keeps the first call to
+/// `reach` short; the robot tests check, 120 times a second, that no posed
+/// vertex of 33 test robots leaves the frame through every mood, reaction
+/// and status loop with the idle layer on, which is what the margin outside
+/// [`FILL`] is for.
 pub const REACH_SAMPLES_PER_SECOND: f64 = 30.0;
 
 /// A perspective camera as plain data, in model units.

@@ -27,11 +27,12 @@
 #   scripts/wild-cross-platform.sh robots-3d
 #       Run the 3D robots' pins example (crates/avatar-3d, robot_pins) on
 #       the same three platforms. Each prints the labelled SHA-256 digests
-#       of the robots' rest meshes and of their poses in the motion scripts;
-#       the digests must be identical on every platform and equal to the
-#       committed vectors/robots-3d/digests.tsv followed by
-#       vectors/robots-3d/poses.tsv. The digests leave out texture pixels,
-#       which come from the rasterizer, so they are exact everywhere.
+#       of the robots' rest meshes and of their poses in the motion scripts,
+#       then the exact bits of each robot's stage camera; the output must be
+#       identical on every platform and equal to the committed
+#       vectors/robots-3d/digests.tsv, poses.tsv and cameras.tsv, in that
+#       order. The digests leave out texture pixels, which come from the
+#       rasterizer, so they are exact everywhere.
 set -euo pipefail
 usage() {
     echo "usage: $0 [image [WINDOWS_HASHES [WINDOWS_DUMP]] | robots-3d]" >&2
@@ -110,7 +111,7 @@ if [[ $mode == robots-3d ]]; then
                     --example robot_pins >/out/robots-3d.tsv 2>/out/robots-3d.stats
             ' bash "$arch"
     done
-    cat vectors/robots-3d/digests.tsv vectors/robots-3d/poses.tsv | grep -v '^#' >"$run/committed.tsv"
+    cat vectors/robots-3d/digests.tsv vectors/robots-3d/poses.tsv vectors/robots-3d/cameras.tsv | grep -v '^#' >"$run/committed.tsv"
     status=0
     for platform in "$host" linux-arm64 linux-amd64; do
         if cmp -s "$run/committed.tsv" "$run/$platform/robots-3d.tsv"; then
