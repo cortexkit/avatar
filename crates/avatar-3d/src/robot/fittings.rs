@@ -199,6 +199,17 @@ pub(super) fn rounded_rect(
     pts
 }
 
+/// The bone a stalk hangs on, named by its side: `stalk.L` on the −x side,
+/// `stalk.R` on the +x side. Its parts are this name followed by `.stem`
+/// and `.eye`.
+pub(super) fn stalk_name(s: &StalkLayout) -> &'static str {
+    if s.side < 0 {
+        "stalk.L"
+    } else {
+        "stalk.R"
+    }
+}
+
 /// The stalks and their lens pods. Each pod is its lens housing extruded,
 /// built in head-local 2D units so its texture's binding applies directly;
 /// its front cap carries the stalk-eye texture.
@@ -208,7 +219,7 @@ pub(super) fn stalks(b: &mut Builder) {
     let head = b.find("head");
     let oy = b.oy(Frame::Head);
     for s in &stalks {
-        let name = if s.side < 0 { "stalk.L" } else { "stalk.R" };
+        let name = stalk_name(s);
         let stem = s.rest.stem;
         let bone = b.bone(name, Some(head), b.at(Frame::Head, stem.base, 0.0));
         let path: Vec<V3> = [stem.base, stem.bend, stem.end]

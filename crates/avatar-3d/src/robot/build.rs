@@ -160,7 +160,7 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
     fittings::back(&mut b);
     let grounded = gear::build(&mut b);
     let anchors = skeleton::anchors(&b);
-    let textures = textures::build(&b, options.textures);
+    let textures = textures::build(&b, options);
     let bones = skeleton::finish(&b.bones);
     let motion = rigging::motion(&b, genome, &bones);
     let status = b.mats.table();

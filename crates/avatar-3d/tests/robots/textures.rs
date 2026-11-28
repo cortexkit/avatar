@@ -1,11 +1,11 @@
 //! Textures and their bindings, from the exported data alone.
 
 use avatar_3d::robot::{
-    build, build_with, BuildOptions, Robot, TextureBinding, TextureContent, TextureSurface,
-    TEXTURE_BYTES,
+    build, build_with, face_set, BuildOptions, MoodSet, Robot, TextureBinding, TextureContent,
+    TextureSurface, TEXTURE_BYTES, TEXTURE_PX,
 };
 use avatar_small_robots::layout::{Layout, LAYER_MARGIN};
-use avatar_small_robots::{decode, Mood};
+use avatar_small_robots::{decode, Mood, MOODS};
 
 use crate::cases;
 
@@ -181,6 +181,7 @@ fn built_textures_hold_their_pixels() {
     );
     assert_eq!(robot.textures.len(), 17);
     for t in &robot.textures {
+        assert_eq!(t.px, TEXTURE_PX);
         let pixels = t.pixels.as_ref().expect("a full build draws every texture");
         assert_eq!(pixels.len(), TEXTURE_BYTES);
         assert!(
@@ -249,4 +250,162 @@ fn chest_plates_carry_their_drawing_and_lit_chests_do_not() {
         }
     }
     assert!(painted > 0, "no case has a plate chest");
+}
+
+/// The first committed case on stalks, whose face sets hold stalk eyes too.
+fn stalk_case() -> (String, cases::Genome) {
+    cases::cases(cases::committed_prefix())
+        .into_iter()
+        .find(|(_, genome)| !Layout::new(&decode(genome)).top.stalks.is_empty())
+        .expect("a committed case stands on stalks")
+}
+
+/// The mood a face or stalk-eye texture is drawn in; `None` for the marks
+/// and the chest, which every mood shares.
+fn face_mood(content: TextureContent) -> Option<Mood> {
+    match content {
+        TextureContent::Face { mood, .. } | TextureContent::StalkEye { mood, .. } => Some(mood),
+        _ => None,
+    }
+}
+
+/// The indices of a robot's textures that belong to one mood's face set.
+fn set_indices(robot: &Robot, mood: Mood) -> Vec<usize> {
+    (0..robot.textures.len())
+        .filter(|i| face_mood(robot.textures[*i].binding.content) == Some(mood))
+        .collect()
+}
+
+#[test]
+fn a_face_set_is_the_head_face_and_each_stalk_eye_open_and_blinking() {
+    for (n, (label, genome)) in cases::cases(cases::committed_prefix())
+        .into_iter()
+        .enumerate()
+    {
+        // Each case checks one mood, and the cases go round all seven.
+        let mood = MOODS[n % MOODS.len()];
+        let robot = build_with(&genome, BuildOptions::untextured());
+        let set = face_set(&genome, mood, 64);
+        let indices: Vec<usize> = set.iter().map(|(i, _)| *i).collect();
+        assert_eq!(indices, set_indices(&robot, mood), "{label}");
+        let mut want = vec![
+            TextureContent::Face {
+                mood,
+                blinking: false,
+            },
+            TextureContent::Face {
+                mood,
+                blinking: true,
+            },
+        ];
+        let stalks = Layout::new(&decode(&genome)).top.stalks.len();
+        for eye in 0..stalks {
+            for blinking in [false, true] {
+                want.push(TextureContent::StalkEye {
+                    eye,
+                    mood,
+                    blinking,
+                });
+            }
+        }
+        let contents: Vec<_> = indices
+            .iter()
+            .map(|i| robot.textures[*i].binding.content)
+            .collect();
+        assert_eq!(contents, want, "{label}");
+    }
+}
+
+#[test]
+fn face_sets_keep_their_bindings_at_every_edge() {
+    let (_, stalks) = stalk_case();
+    for (label, genome) in [
+        ("wild-port-0031".to_owned(), corpus("wild-port-0031")),
+        ("stalks".to_owned(), stalks),
+    ] {
+        let at = |px: u32| face_set(&genome, Mood::Working, px);
+        let indices = |set: &[(usize, Vec<u8>)]| set.iter().map(|(i, _)| *i).collect::<Vec<_>>();
+        let first = indices(&at(64));
+        assert!(!first.is_empty(), "{label}");
+        for px in [64, 128, 256, 512] {
+            let set = at(px);
+            assert_eq!(indices(&set), first, "{label} at {px} px");
+            for (index, pixels) in &set {
+                assert_eq!(
+                    pixels.len(),
+                    (px * px * 4) as usize,
+                    "{label}: binding {index} at {px} px"
+                );
+                assert!(
+                    pixels.chunks(4).any(|p| p[3] > 0),
+                    "{label}: binding {index} is blank at {px} px"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_build_with_some_moods_keeps_every_binding_and_draws_only_their_faces() {
+    let moods: MoodSet = [Mood::Happy, Mood::Sleepy].into_iter().collect();
+    let options = BuildOptions::default()
+        .with_texture_px(128)
+        .with_moods(moods);
+    let (_, stalks) = stalk_case();
+    for (label, genome) in [
+        ("wild-port-0031".to_owned(), corpus("wild-port-0031")),
+        ("stalks".to_owned(), stalks),
+    ] {
+        let robot = build_with(&genome, options);
+        let untextured = build_with(&genome, BuildOptions::untextured());
+        let bindings = |r: &Robot| r.textures.iter().map(|t| t.binding).collect::<Vec<_>>();
+        assert_eq!(bindings(&robot), bindings(&untextured), "{label}");
+        let (mut drawn_faces, mut undrawn_faces) = (0, 0);
+        for t in &robot.textures {
+            assert_eq!(t.px, 128, "{label}");
+            let mood = face_mood(t.binding.content);
+            let drawn = mood.is_none_or(|m| moods.contains(m));
+            match &t.pixels {
+                Some(pixels) => {
+                    assert!(drawn, "{label}: {:?} is drawn", t.binding.content);
+                    assert_eq!(pixels.len(), 128 * 128 * 4, "{label}");
+                    drawn_faces += usize::from(mood.is_some());
+                }
+                None => {
+                    assert!(!drawn, "{label}: {:?} is not drawn", t.binding.content);
+                    undrawn_faces += 1;
+                }
+            }
+        }
+        assert!(drawn_faces > 0 && undrawn_faces > 0, "{label}");
+        assert_eq!(
+            robot.texture_bytes(),
+            robot.textures.len() * 128 * 128 * 4,
+            "{label}"
+        );
+        // A face set drawn alone matches the build's own faces. The pixels
+        // are compared with assert! so that a failure does not print them.
+        for mood in [Mood::Happy, Mood::Sleepy] {
+            let built: Vec<_> = set_indices(&robot, mood)
+                .into_iter()
+                .map(|i| (i, robot.textures[i].pixels.clone().unwrap()))
+                .collect();
+            assert!(face_set(&genome, mood, 128) == built, "{label}: {mood:?}");
+        }
+    }
+}
+
+#[test]
+#[should_panic(expected = "power of two")]
+fn a_face_set_refuses_an_edge_that_is_not_a_power_of_two() {
+    face_set(&corpus("wild-port-0031"), Mood::Neutral, 100);
+}
+
+#[test]
+#[should_panic(expected = "power of two")]
+fn a_build_refuses_an_edge_beyond_the_largest() {
+    build_with(
+        &corpus("wild-port-0031"),
+        BuildOptions::untextured().with_texture_px(1024),
+    );
 }

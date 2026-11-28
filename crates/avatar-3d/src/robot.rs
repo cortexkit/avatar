@@ -54,11 +54,15 @@
 //! # Textures
 //!
 //! Faces, stalk eyes, hull marks and a chest plate's drawing are drawn by
-//! the 2D type into separate layers and rasterized to 256×256 RGBA8 ([`TEXTURE_PX`]), sRGB colour
-//! premultiplied by alpha, as [`avatar_raster::rasterize_tree`] returns them.
-//! Each texture has a [`TextureBinding`]: the part it lies on, its canvas
-//! origin and edge C in robot units, so `uv = (projection − origin) / C` on
-//! both axes and a fragment outside `[0, 1]²` gets nothing from it.
+//! the 2D type into separate layers and rasterized to square RGBA8 images,
+//! sRGB colour premultiplied by alpha, as [`avatar_raster::rasterize_tree`]
+//! returns them. All of a robot's textures share one pixel edge,
+//! [`BuildOptions::texture_px`] ([`TEXTURE_PX`] by default). Each texture
+//! has a [`TextureBinding`]: the part it lies on, its canvas origin and edge
+//! C in robot units, so `uv = (projection − origin) / C` on both axes and a
+//! fragment outside `[0, 1]²` gets nothing from it. A robot lists every
+//! binding whichever textures were rasterized, and [`face_set`] draws any
+//! mood's faces at any allowed edge from the genome alone.
 #![deny(missing_docs)]
 
 mod build;
@@ -82,7 +86,7 @@ pub use digest::mesh_bytes;
 pub use materials::{Emission, Finish, LightKind, Material, StatusLight, StatusTable, FINISHES};
 
 use avatar_small_robots::layout::Frame;
-use avatar_small_robots::{Mood, GENOME_LEN};
+use avatar_small_robots::{Mood, GENOME_LEN, MOODS};
 
 use crate::mesh::Mesh;
 use crate::motion::Motion;
@@ -91,10 +95,19 @@ use crate::motion::Motion;
 /// one model unit.
 pub const UNIT: f64 = 0.01;
 
-/// The edge of every texture in pixels.
+/// The edge of every texture in pixels when built with the default
+/// [`BuildOptions`].
 pub const TEXTURE_PX: u32 = 256;
 
-/// Bytes of one RGBA8 texture.
+/// The smallest texture edge in pixels a robot or a face set may be drawn
+/// at.
+pub const TEXTURE_PX_MIN: u32 = 64;
+
+/// The largest texture edge in pixels a robot or a face set may be drawn
+/// at.
+pub const TEXTURE_PX_MAX: u32 = 512;
+
+/// Bytes of one RGBA8 texture at the default edge, [`TEXTURE_PX`].
 pub const TEXTURE_BYTES: usize = (TEXTURE_PX * TEXTURE_PX * 4) as usize;
 
 /// Moves a point of a 2D drawing frame, with depth `z` in robot units, to
@@ -127,8 +140,13 @@ pub struct Robot {
     pub grounded: Vec<usize>,
     /// The running gear's kind and whether it hovers.
     pub gear: GearInfo,
-    /// Textures with their bindings. Pixels are present unless the robot was
-    /// built with [`BuildOptions::textures`] off.
+    /// Every texture with its binding, whichever were rasterized, in a fixed
+    /// order: for each mood its face pair (as drawn, then blinking); on a
+    /// stalk robot a pair for each stalk eye in each mood; then the head's
+    /// and the chassis's marks; then a chest plate's drawing. Pixels are
+    /// present for the marks, the chest and the face sets of
+    /// [`BuildOptions::moods`], unless the robot was built with
+    /// [`BuildOptions::textures`] off.
     pub textures: Vec<Texture>,
     /// The three-quarter stage camera that frames this robot at rest and
     /// through every reaction and status loop.
@@ -149,9 +167,13 @@ impl Robot {
         self.parts.iter().map(|p| p.mesh.triangles.len()).sum()
     }
 
-    /// The bytes of every texture, whether or not its pixels were drawn.
+    /// The bytes of every texture at its edge, whether or not its pixels
+    /// were drawn.
     pub fn texture_bytes(&self) -> usize {
-        self.textures.len() * TEXTURE_BYTES
+        self.textures
+            .iter()
+            .map(|t| t.px as usize * t.px as usize * 4)
+            .sum()
     }
 
     /// The index of the bone with this name.
@@ -172,18 +194,97 @@ pub struct BuildOptions {
     /// Whether to rasterize the textures. Off, every texture keeps its
     /// binding and has no pixels; the geometry is the same.
     pub textures: bool,
+    /// The edge in pixels every rasterized texture is drawn at: a power of
+    /// two from [`TEXTURE_PX_MIN`] to [`TEXTURE_PX_MAX`]. [`TEXTURE_PX`] by
+    /// default.
+    pub texture_px: u32,
+    /// The moods whose face sets are rasterized: the head face and each
+    /// stalk eye, as drawn and blinking. The other moods' faces keep their
+    /// bindings without pixels; marks and the chest are always rasterized
+    /// when [`Self::textures`] is on. Every mood by default.
+    pub moods: MoodSet,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
-        Self { textures: true }
+        Self {
+            textures: true,
+            texture_px: TEXTURE_PX,
+            moods: MoodSet::ALL,
+        }
     }
 }
 
 impl BuildOptions {
     /// Options that leave the textures undrawn.
     pub fn untextured() -> Self {
-        Self { textures: false }
+        Self {
+            textures: false,
+            ..Self::default()
+        }
+    }
+
+    /// These options with every texture drawn at `px` pixels a side.
+    pub fn with_texture_px(self, px: u32) -> Self {
+        Self {
+            texture_px: px,
+            ..self
+        }
+    }
+
+    /// These options with only the face sets of `moods` rasterized.
+    pub fn with_moods(self, moods: MoodSet) -> Self {
+        Self { moods, ..self }
+    }
+}
+
+/// A set of moods, such as the moods whose face sets a build rasterizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MoodSet {
+    /// Bit i stands for the i-th mood of [`MOODS`].
+    bits: u8,
+}
+
+impl MoodSet {
+    /// Every mood.
+    pub const ALL: Self = Self {
+        bits: (1 << MOODS.len()) - 1,
+    };
+
+    /// No mood.
+    pub const NONE: Self = Self { bits: 0 };
+
+    fn bit(mood: Mood) -> u8 {
+        let index = MOODS
+            .iter()
+            .position(|m| *m == mood)
+            .expect("MOODS lists every mood");
+        1 << index
+    }
+
+    /// This set with `mood` added.
+    pub fn with(self, mood: Mood) -> Self {
+        Self {
+            bits: self.bits | Self::bit(mood),
+        }
+    }
+
+    /// Whether `mood` is in the set.
+    pub fn contains(self, mood: Mood) -> bool {
+        self.bits & Self::bit(mood) != 0
+    }
+}
+
+impl Default for MoodSet {
+    /// Every mood, as a default build rasterizes.
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
+impl FromIterator<Mood> for MoodSet {
+    fn from_iter<I: IntoIterator<Item = Mood>>(moods: I) -> Self {
+        moods.into_iter().fold(Self::NONE, Self::with)
     }
 }
 
@@ -194,8 +295,38 @@ pub fn build(genome: &[u8; GENOME_LEN]) -> Robot {
 }
 
 /// Builds the robot a stored genome describes with the given options.
+///
+/// # Panics
+///
+/// Panics unless [`BuildOptions::texture_px`] is a power of two from
+/// [`TEXTURE_PX_MIN`] to [`TEXTURE_PX_MAX`].
 pub fn build_with(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
+    check_texture_px(options.texture_px);
     build::robot(genome, options)
+}
+
+/// Rasterizes one mood's face set at `px` pixels a side from the genome
+/// alone, without building the robot: the head face and each stalk eye, as
+/// drawn and blinking. Each texture comes with the index of its binding in
+/// [`Robot::textures`] of the robot the genome builds, in that order, and
+/// its pixels are the ones a build at that edge draws: `px` × `px` RGBA8,
+/// rows top first, sRGB premultiplied by alpha.
+///
+/// # Panics
+///
+/// Panics unless `px` is a power of two from [`TEXTURE_PX_MIN`] to
+/// [`TEXTURE_PX_MAX`].
+pub fn face_set(genome: &[u8; GENOME_LEN], mood: Mood, px: u32) -> Vec<(usize, Vec<u8>)> {
+    check_texture_px(px);
+    textures::face_set(genome, mood, px)
+}
+
+/// Refuses a texture edge outside the allowed powers of two.
+fn check_texture_px(px: u32) {
+    assert!(
+        px.is_power_of_two() && (TEXTURE_PX_MIN..=TEXTURE_PX_MAX).contains(&px),
+        "a texture edge is a power of two from {TEXTURE_PX_MIN} to {TEXTURE_PX_MAX} px, not {px}"
+    );
 }
 
 /// One mesh of a robot with one material, hung on one bone or skinned.
@@ -286,14 +417,18 @@ pub struct GearInfo {
     pub hover: bool,
 }
 
-/// One 256×256 RGBA8 texture and where it lies.
+/// One square RGBA8 texture and where it lies.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Texture {
     /// Where the texture is sampled.
     pub binding: TextureBinding,
-    /// `TEXTURE_BYTES` bytes, rows top first, sRGB premultiplied by alpha;
-    /// `None` when built without textures.
+    /// The texture's edge in pixels, which every texture of the robot
+    /// shares: [`BuildOptions::texture_px`] of its build.
+    pub px: u32,
+    /// `px` × `px` × 4 bytes, rows top first, sRGB premultiplied by alpha;
+    /// `None` when not rasterized: built without textures, or a face of a
+    /// mood outside [`BuildOptions::moods`].
     pub pixels: Option<Vec<u8>>,
 }
 
