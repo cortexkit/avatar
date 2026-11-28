@@ -6,11 +6,15 @@
 //! cargo run --release -p cortexkit-avatar-3d-wgpu --example review_sheets -- \
 //!     --out DIR [--only random,random-509,moods,reactions,views,plaza]
 //! cargo run --release -p cortexkit-avatar-3d-wgpu --example review_sheets -- --numbers
+//! cargo run --release -p cortexkit-avatar-3d-wgpu --example review_sheets -- \
+//!     --film DIR [--only stage,variety,plaza]
 //! ```
 //!
 //! With `--numbers` it draws no sheet and prints the first numbers of the
 //! stage and the plaza instead: frame times, build and upload times and
-//! memory (see the `numbers` module).
+//! memory (see the `numbers` module). With `--film` it draws no sheet and
+//! films the robots moving instead, to MP4 videos encoded with the
+//! `ffmpeg` found on `PATH` (see the `film` module).
 //!
 //! The sheets:
 //!
@@ -35,6 +39,7 @@
 //! posture and the face exactly, never a passing blink or glance.
 //! Single-robot frames are 288 px square.
 
+mod film;
 mod numbers;
 mod sheet;
 
@@ -44,6 +49,7 @@ use std::process::ExitCode;
 
 use avatar_3d::motion::{Actor, Pose, REACTIONS};
 use avatar_3d::robot::{build, Robot};
+use avatar_3d_wgpu::plaza::{Footprint, Plaza};
 use avatar_3d_wgpu::view::View;
 use avatar_3d_wgpu::{plaza, GpuRobot, Image, Item, Renderer, Scene};
 use avatar_small_robots::{mood_name, Mood, Rgb, GENOME_LEN, MOODS};
@@ -279,10 +285,57 @@ fn views_sheet(renderer: &Renderer, b: &Built) -> (Sheet, Vec<Row>) {
     (sheet, rows)
 }
 
+/// The plaza's robots placed by `plaza::layout` in the plaza's frame, from
+/// each robot's footprint in its neutral rest pose without idle, with
+/// those footprints. A placement that breaks the plaza's rules is reported
+/// and used all the same.
+fn place_plaza<'r>(robots: impl IntoIterator<Item = &'r Robot>) -> (Vec<Footprint>, Plaza) {
+    let prints: Vec<Footprint> = robots
+        .into_iter()
+        .map(|robot| {
+            let pose = Actor::new(robot, Mood::Neutral)
+                .without_idle()
+                .evaluate(0.0);
+            plaza::footprint(robot, &pose)
+        })
+        .collect();
+    let (width, height) = PLAZA_SIZE;
+    let placed = plaza::layout(&prints, width, height);
+    let clashes = plaza::clashes(&placed, &prints);
+    if !clashes.is_empty() {
+        eprintln!("review_sheets: the plaza breaks its rules: {clashes:?}");
+    }
+    (prints, placed)
+}
+
+/// Labels plaza robot `i` ("01" for the first) centred above `top`, a
+/// point in the robot's model space, at the plaza's label size.
+fn plaza_label(sheet: &mut Sheet, placed: &Plaza, i: usize, top: [f64; 3]) {
+    let text = format!("{:02}", i + 1);
+    let o = placed.offsets[i];
+    let [x, y] = placed
+        .view
+        .to_screen(
+            [top[0] + o[0], top[1] + o[1], top[2] + o[2]],
+            placed.width,
+            placed.height,
+        )
+        .expect("every anchor is in front of the camera");
+    let scale = placed.label_scale;
+    let (w, h) = Sheet::label_size(&text, scale);
+    sheet.label(
+        &text,
+        x.round() as i64 - i64::from(w / 2),
+        y.round() as i64 - i64::from(h),
+        scale,
+    );
+}
+
 fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
     let built: Vec<Built> = (0..33)
         .map(|i| Built::new(renderer, PLAZA_SEED, i))
         .collect();
+    let (prints, placed) = place_plaza(built.iter().map(|b| &b.robot));
     let poses: Vec<Pose> = built
         .iter()
         .map(|b| {
@@ -291,17 +344,7 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
                 .evaluate(0.0)
         })
         .collect();
-    let prints: Vec<_> = built
-        .iter()
-        .zip(&poses)
-        .map(|(b, pose)| plaza::footprint(&b.robot, pose))
-        .collect();
     let (width, height) = PLAZA_SIZE;
-    let placed = plaza::layout(&prints, width, height);
-    let clashes = plaza::clashes(&placed, &prints);
-    if !clashes.is_empty() {
-        eprintln!("review_sheets: the plaza breaks its rules: {clashes:?}");
-    }
     let items: Vec<Item> = built
         .iter()
         .zip(&poses)
@@ -324,24 +367,10 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
         .unwrap_or_else(|e| panic!("render the plaza: {e}"));
     let mut sheet = Sheet::of(&image);
     let mut rows = Vec::new();
-    let scale = placed.label_scale;
     for (i, b) in built.iter().enumerate() {
-        let text = format!("{:02}", i + 1);
-        let o = placed.offsets[i];
-        let top = prints[i].head_top;
-        let [x, y] = placed
-            .view
-            .to_screen([top[0] + o[0], top[1] + o[1], top[2] + o[2]], width, height)
-            .expect("every anchor is in front of the camera");
-        let (w, h) = Sheet::label_size(&text, scale);
-        sheet.label(
-            &text,
-            x.round() as i64 - i64::from(w / 2),
-            y.round() as i64 - i64::from(h),
-            scale,
-        );
+        plaza_label(&mut sheet, &placed, i, prints[i].head_top);
         rows.push(Row {
-            cell: text,
+            cell: format!("{:02}", i + 1),
             seed: b.seed,
             index: b.index,
             mood: Mood::Neutral,
@@ -355,12 +384,14 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
 
 fn main() -> ExitCode {
     let mut out: Option<PathBuf> = None;
+    let mut film: Option<PathBuf> = None;
     let mut only: Option<Vec<String>> = None;
     let mut numbers = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--out" => out = args.next().map(PathBuf::from),
+            "--film" => film = args.next().map(PathBuf::from),
             "--only" => {
                 only = args
                     .next()
@@ -383,9 +414,19 @@ fn main() -> ExitCode {
             }
         };
     }
+    let wanted = |name: &str| only.as_ref().is_none_or(|o| o.iter().any(|s| s == name));
+    if let Some(dir) = film {
+        return match film::run(&dir, &wanted) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("review_sheets: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let Some(out) = out else {
         eprintln!(
-            "usage: review_sheets --out DIR [--only random,random-509,moods,reactions,views,plaza]\n       review_sheets --numbers"
+            "usage: review_sheets --out DIR [--only random,random-509,moods,reactions,views,plaza]\n       review_sheets --numbers\n       review_sheets --film DIR [--only stage,variety,plaza]"
         );
         return ExitCode::FAILURE;
     };
@@ -393,7 +434,6 @@ fn main() -> ExitCode {
         eprintln!("review_sheets: create {}: {e}", out.display());
         return ExitCode::FAILURE;
     }
-    let wanted = |name: &str| only.as_ref().is_none_or(|o| o.iter().any(|s| s == name));
     let renderer = match Renderer::new() {
         Ok(r) => r,
         Err(e) => {

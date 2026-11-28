@@ -34,10 +34,10 @@ use avatar_3d::motion::{Actor, Pose, REACTIONS, STATUS_LOOPS};
 use avatar_3d::robot::{build, build_with, BuildOptions, Robot, Skin, TextureContent, TEXTURE_PX};
 use avatar_3d_wgpu::upload::mip_levels;
 use avatar_3d_wgpu::view::View;
-use avatar_3d_wgpu::{plaza, target_bytes, GpuRobot, Item, RenderError, Renderer, Scene};
+use avatar_3d_wgpu::{target_bytes, GpuRobot, Item, RenderError, Renderer, Scene};
 use avatar_small_robots::{Mood, GENOME_LEN, MOODS};
 
-use crate::{genome, BACKGROUND, FRAME, PLAZA_SEED, PLAZA_SIZE, STATED};
+use crate::{genome, place_plaza, BACKGROUND, FRAME, PLAZA_SEED, PLAZA_SIZE, STATED};
 
 /// Seconds of animation a frame advances.
 const STEP: f64 = 1.0 / 30.0;
@@ -156,7 +156,7 @@ fn untextured_build(genome: &[u8; GENOME_LEN]) -> (Robot, f64) {
 }
 
 /// Times `start`, `start + period`, … up to `until`, with their count.
-fn every(start: f64, period: f64, until: f64) -> impl Iterator<Item = (usize, f64)> {
+pub(crate) fn every(start: f64, period: f64, until: f64) -> impl Iterator<Item = (usize, f64)> {
     (0..)
         .map(move |k| (k, start + period * k as f64))
         .take_while(move |(_, t)| *t <= until)
@@ -205,13 +205,48 @@ struct Times {
 
 /// What one scene draws: its robots, where they stand, the camera and the
 /// frame size.
-struct Stage<'a> {
-    actors: Vec<Actor<'a>>,
-    gpus: Vec<&'a GpuRobot>,
-    offsets: Vec<[f64; 3]>,
-    view: View,
-    width: u32,
-    height: u32,
+pub(crate) struct Stage<'a> {
+    pub(crate) actors: Vec<Actor<'a>>,
+    pub(crate) gpus: Vec<&'a GpuRobot>,
+    pub(crate) offsets: Vec<[f64; 3]>,
+    pub(crate) view: View,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
+impl Stage<'_> {
+    /// Every actor's pose at `t` seconds, in actor order.
+    pub(crate) fn poses(&self, t: f64) -> Vec<Pose> {
+        self.actors.iter().map(|a| a.evaluate(t)).collect()
+    }
+
+    /// The robots in `poses`, one per actor in actor order, each where it
+    /// stands.
+    pub(crate) fn items<'s>(&'s self, poses: &'s [Pose]) -> Vec<Item<'s>> {
+        self.actors
+            .iter()
+            .zip(&self.gpus)
+            .zip(poses)
+            .zip(&self.offsets)
+            .map(|(((actor, gpu), pose), offset)| Item {
+                robot: actor.robot(),
+                gpu,
+                pose,
+                offset: *offset,
+            })
+            .collect()
+    }
+
+    /// The frame that draws `items` from the stage's camera at its size.
+    pub(crate) fn scene<'s>(&self, items: &'s [Item<'s>]) -> Scene<'s> {
+        Scene {
+            view: self.view,
+            width: self.width,
+            height: self.height,
+            background: BACKGROUND,
+            items,
+        }
+    }
 }
 
 /// Draws `warmup + measured` frames, each `STEP` seconds of animation on
@@ -225,28 +260,10 @@ fn measure(
     for f in 0..warmup + measured {
         let t = f as f64 * STEP;
         let start = Instant::now();
-        let poses: Vec<Pose> = stage.actors.iter().map(|a| a.evaluate(t)).collect();
+        let poses = stage.poses(t);
         let posing = start.elapsed().as_secs_f64();
-        let items: Vec<Item<'_>> = stage
-            .actors
-            .iter()
-            .zip(&stage.gpus)
-            .zip(&poses)
-            .zip(&stage.offsets)
-            .map(|(((actor, gpu), pose), offset)| Item {
-                robot: actor.robot(),
-                gpu,
-                pose,
-                offset: *offset,
-            })
-            .collect();
-        let submitted = renderer.draw(&Scene {
-            view: stage.view,
-            width: stage.width,
-            height: stage.height,
-            background: BACKGROUND,
-            items: &items,
-        });
+        let items = stage.items(&poses);
+        let submitted = renderer.draw(&stage.scene(&items));
         let cpu = start.elapsed().as_secs_f64();
         let gpu = submitted.wait()?;
         if f >= warmup {
@@ -668,19 +685,9 @@ pub fn run(renderer: &Renderer) -> Result<(), RenderError> {
         built.push(build_and_upload(renderer, &g)?);
         bare.push(untextured_build(&g).1);
     }
-    // Placed by `plaza::layout` from each robot's footprint in its neutral
-    // rest pose, without idle, as the plaza review sheet does.
-    let prints: Vec<_> = built
-        .iter()
-        .map(|b| {
-            let pose = Actor::new(&b.robot, Mood::Neutral)
-                .without_idle()
-                .evaluate(0.0);
-            plaza::footprint(&b.robot, &pose)
-        })
-        .collect();
+    // Placed as the plaza review sheet places them.
+    let (_, placed) = place_plaza(built.iter().map(|b| &b.robot));
     let (width, height) = PLAZA_SIZE;
-    let placed = plaza::layout(&prints, width, height);
     let until = (PLAZA_FRAMES.0 + PLAZA_FRAMES.1) as f64 * STEP;
     let stage = Stage {
         actors: built
