@@ -177,7 +177,8 @@ pub(crate) struct Job {
 
 /// What a finished job made.
 pub(crate) enum Output {
-    Robot(Robot),
+    /// Boxed, as a robot is much larger than a set of pixel buffers.
+    Robot(Box<Robot>),
     Faces {
         mood: Mood,
         pixels: Vec<(usize, Vec<u8>)>,
@@ -312,13 +313,13 @@ fn work(
 fn run(builder: &dyn Builder, job: &Job) -> Option<Built> {
     let (key, generation, genome, px) = (&job.key, job.generation, &*job.genome, job.texture_px);
     let output = panic::catch_unwind(AssertUnwindSafe(|| match job.task {
-        Task::Build { mood } => Output::Robot(builder.build(&BuildRequest {
+        Task::Build { mood } => Output::Robot(Box::new(builder.build(&BuildRequest {
             key,
             generation,
             genome,
             mood,
             texture_px: px,
-        })),
+        }))),
         Task::Faces { mood } => Output::Faces {
             mood,
             pixels: builder.face_set(&FaceRequest {

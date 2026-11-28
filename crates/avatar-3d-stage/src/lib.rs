@@ -40,22 +40,29 @@
 //!   which depends on wall-clock time. [`StageOptions`] with
 //!   [`BuildMode::Inline`] builds them inside the first render call that
 //!   needs them instead, so a script driving the stage with a virtual
-//!   clock gets the same frames every run. A robot's reach box and stage
-//!   camera are worked out on the thread that builds it, never in a
-//!   command or a read. [`Stage::events`] reports each creature ready.
+//!   clock gets the same frames every run. Face sets and new texture edges
+//!   are rasterized the same way, on the workers or inline. A robot's
+//!   reach box and stage camera are worked out on the thread that builds
+//!   it, never in a command or a read. [`Stage::events`] reports each
+//!   creature ready.
+//! - **Faces.** A face changes only to a face set already on the GPU, and
+//!   only under a blink, so no frame shows a missing face, two faces, or
+//!   lights from another mood than the face. [`Stage`] documents the rules:
+//!   drawn moods, face commands held until their set is drawable, which
+//!   sets stay resident, and the texture edge a robot is drawn at.
 //!
 //! [`Stage`] documents the order of steps within a render call, the commit
 //! point, the creatures' lifecycle and destroy's bound.
 //!
 //! # Not yet here
 //!
-//! Faces are drawn as each pose gives them, from sets built in the key's
-//! mood at the time of its build, until drawn moods and face sets loaded
-//! on demand are added. Every robot stands at the origin until the plaza
-//! is laid out, and frames carry no camera until the stage camera is
-//! added. With the camera come the reads that depend on it: each drawn
-//! creature's head, face and ground positions on screen, and the shapes
-//! a tap is tested against.
+//! Every robot stands at the origin until the plaza is laid out, and
+//! frames carry no camera until the stage camera is added. With the camera
+//! come the reads that depend on it: each drawn creature's head, face and
+//! ground positions on screen, and the shapes a tap is tested against.
+//! Until then a robot's texture edge follows the frame only when it is
+//! shown alone at the default view ([`StageView::Stage`]); in the plaza
+//! robots keep the edge they have, [`FIRST_EDGE`] unless staged before.
 
 pub mod fake;
 

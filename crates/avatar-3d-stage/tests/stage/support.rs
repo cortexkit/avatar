@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use avatar_3d::motion::{ActorState, Pose};
 use avatar_3d::robot::{build_with, BuildOptions, MoodSet, Robot, TextureContent};
-use avatar_3d_stage::fake::{FakeControl, FakeFrame, FakeRenderer};
+use avatar_3d_stage::fake::{FakeControl, FakeFrame, FakeItem, FakeRenderer};
 use avatar_3d_stage::{
     BuildMode, BuildRequest, Builder, CreatureSpec, Event, FaceRequest, LayersRequest,
     RenderStatus, Stage, StageOptions, Target,
@@ -48,16 +48,26 @@ pub fn spec(key: &str, seed: u32) -> CreatureSpec {
 
 /// The untextured robot a genome builds, built once per genome.
 pub fn robot(genome: &[u8]) -> Robot {
+    (*cached(genome)).clone()
+}
+
+fn cached(genome: &[u8]) -> Arc<Robot> {
     static CACHE: OnceLock<Mutex<HashMap<Vec<u8>, Arc<Robot>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let lock = || cache.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(robot) = lock().get(genome) {
-        return (**robot).clone();
+        return Arc::clone(robot);
     }
     let genome_array: &[u8; GENOME_LEN] = genome.try_into().expect("a full genome");
     let robot = Arc::new(build_with(genome_array, BuildOptions::untextured()));
-    lock().insert(genome.to_vec(), Arc::clone(&robot));
-    (*robot).clone()
+    Arc::clone(lock().entry(genome.to_vec()).or_insert(robot))
+}
+
+/// Works out the reach box of the robot `genome` builds once, so the
+/// robots the test builder makes from it carry it, as the stage's own
+/// builder's robots do, and the frame thread never works it out.
+pub fn warm_reach(genome: &[u8]) {
+    let _ = cached(genome).reach();
 }
 
 /// The mood of a face or stalk-eye binding; `None` for marks and chests.
@@ -416,6 +426,30 @@ impl Harness {
     /// A render call one 60 Hz tick after the last.
     pub fn frame(&mut self) -> Result<(), RenderStatus> {
         self.render_at(self.t + TICK)
+    }
+
+    /// A render call `dt` seconds after the last, which must draw.
+    pub fn step(&mut self, dt: f64) {
+        let t = self.t + dt;
+        self.render_at(t).expect("the frame draws");
+    }
+
+    /// The item drawn for `key` in the latest frame.
+    pub fn item(&self, key: &str) -> FakeItem {
+        self.last()
+            .and_then(|f| f.item(key).cloned())
+            .unwrap_or_else(|| panic!("{key} is drawn"))
+    }
+
+    /// Lets held texture work go and waits until `calls` texture calls have
+    /// been made in all and every one has finished, so the next frame
+    /// installs what they made.
+    pub fn land_textures(&self, calls: usize) {
+        self.builder.release_textures();
+        self.builder
+            .wait_for_textures(&format!("{calls} texture calls"), |made| {
+                made.len() >= calls && made.iter().all(|c| c.finished)
+            });
     }
 
     /// Renders frames until `done` holds, sleeping a little between them so

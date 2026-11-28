@@ -625,7 +625,7 @@ impl<R: Renderer> Core<R> {
                 continue;
             };
             let mut robot = match built.output {
-                Output::Robot(robot) => robot,
+                Output::Robot(robot) => *robot,
                 Output::Faces { mood, pixels } => {
                     if let Some(body) = creature.body(built.generation) {
                         body.faces.land_faces(mood, built.texture_px, pixels);
@@ -886,5 +886,108 @@ impl<R: Renderer> Core<R> {
                 gpu_memory_bytes: self.renderer.memory_bytes(),
             },
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use avatar_3d::robot::{build_with, BuildOptions, TextureContent};
+
+    use super::*;
+    use crate::build::{BuildMode, BuildRequest, Builder, FaceRequest, StageOptions};
+    use crate::fake::FakeRenderer;
+    use crate::spec::{self, CreatureSpec};
+
+    /// Builds robots untextured, with zeroed pixels standing in for the
+    /// textures a build or a face set would rasterize.
+    struct StandIn;
+
+    fn stand_in(robot: &Robot, mood: Mood, px: u32, marks: bool) -> Vec<(usize, Vec<u8>)> {
+        robot
+            .textures
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| match t.binding.content {
+                TextureContent::Face { mood: m, .. } | TextureContent::StalkEye { mood: m, .. } => {
+                    m == mood
+                }
+                _ => marks,
+            })
+            .map(|(i, _)| (i, vec![0; 4 * px as usize * px as usize]))
+            .collect()
+    }
+
+    impl Builder for StandIn {
+        fn build(&self, request: &BuildRequest<'_>) -> Robot {
+            let mut robot = build_with(request.genome, BuildOptions::untextured());
+            let px = request.texture_px;
+            for (i, pixels) in stand_in(&robot, request.mood, px, true) {
+                robot.textures[i].pixels = Some(pixels);
+            }
+            for texture in &mut robot.textures {
+                texture.px = px;
+            }
+            robot
+        }
+
+        fn face_set(&self, request: &FaceRequest<'_>) -> Vec<(usize, Vec<u8>)> {
+            let robot = build_with(request.genome, BuildOptions::untextured());
+            stand_in(&robot, request.mood, request.texture_px, false)
+        }
+    }
+
+    #[test]
+    fn each_frame_forgets_what_ended_ten_seconds_of_stage_time_before() {
+        let options = StageOptions {
+            build: BuildMode::Inline,
+            build_threads: 1,
+        };
+        let builds = Builds::new(options, Arc::new(StandIn));
+        let (renderer, _) = FakeRenderer::new(Target::Image, false);
+        let mut core = Core::new(renderer, 64, 48, 1.0, builds);
+        let shared = Shared::new();
+        let cast = spec::check(&[CreatureSpec::small_robot("a", vec![7; GENOME_LEN])]);
+        shared
+            .commands
+            .push(Command::Scene(SceneCommand::SetCreatures(cast)));
+        let set_state = |mood| {
+            shared.commands.push(Command::Scene(SceneCommand::SetState {
+                key: "a".into(),
+                mood,
+                status_loop: None,
+            }));
+        };
+        let mut at = Vec::new();
+        // Frames 0.1 s apart; frame n is at about n / 10 s of stage time.
+        for n in 0..=200 {
+            match n {
+                10 => set_state(Mood::Happy),
+                95 => set_state(Mood::Sad),
+                102 => set_state(Mood::Blocked),
+                _ => {}
+            }
+            core.render(&shared, 100.0 + 0.1 * f64::from(n), Instant::now())
+                .expect("the frame draws");
+            if [10, 95, 102].contains(&n) {
+                at.push(core.clock.time());
+            }
+            let actor = &core.creatures["a"].shown.as_ref().expect("shown").actor;
+            let changes: Vec<Mood> = actor.mood_changes().iter().map(|c| c.1).collect();
+            match n {
+                // At 12 s the cutoff is 2 s: happy, settled by 1.5 s, is the
+                // base now.
+                120 => {
+                    assert_eq!(actor.base(), Mood::Happy);
+                    assert_eq!(changes, [Mood::Sad, Mood::Blocked]);
+                }
+                // At 20 s the cutoff is 10 s: sad, from 9.5 s, settled by
+                // then and is the base; blocked, from 10.2 s, had not.
+                200 => {
+                    assert_eq!(actor.base(), Mood::Sad);
+                    assert_eq!(actor.mood_changes(), [(at[2], Mood::Blocked)]);
+                }
+                _ => {}
+            }
+        }
     }
 }

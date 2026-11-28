@@ -1,6 +1,8 @@
 //! A renderer without a GPU, for tests of the scene core: it records what
-//! the stage uploads, retires and draws, can fail at any step on request,
-//! and can hold a frame at its present or read-back.
+//! the stage uploads, retires and draws, and which texture layers each
+//! robot holds; it refuses, by panicking, a layer change that leaves a
+//! newly resident layer without pixels; it can fail at any step on
+//! request, and can hold a frame at its present or read-back.
 
 use std::collections::{HashMap, VecDeque};
 use std::mem;
