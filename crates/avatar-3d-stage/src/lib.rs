@@ -62,16 +62,23 @@ pub mod fake;
 mod build;
 mod clock;
 mod events;
+mod faces;
+mod held;
 mod renderer;
 mod scene;
 mod spec;
 mod stage;
 mod stats;
 
-pub use build::{BuildMode, BuildRequest, Builder, RobotBuilder, StageOptions};
+pub use build::{
+    BuildMode, BuildRequest, Builder, FaceRequest, LayersRequest, RobotBuilder, StageOptions,
+};
 pub use clock::{DUE_SLACK, MAX_STEP, UNCAPPED_PERIOD};
 pub use events::{CommandKind, Event, EVENT_CAPACITY};
-pub use renderer::{DrawItem, Failure, Frame, Image, RenderError, Renderer, Target};
+pub use faces::{
+    edge_target, FIRST_EDGE, HOLD_AT_MOST, LATE_AFTER, RELEASE_AFTER, SHRINK_AFTER, SHUT,
+};
+pub use renderer::{DrawItem, Failure, Frame, Image, LayerChange, RenderError, Renderer, Target};
 pub use spec::{CreatureSpec, SkipReason, SMALL_ROBOTS, SMALL_ROBOTS_VERSION};
 pub use stage::{InvalidArgument, RenderStatus, Stage, StageError, StageView};
 pub use stats::{FrameStats, Series, Times, STATS_WINDOW};

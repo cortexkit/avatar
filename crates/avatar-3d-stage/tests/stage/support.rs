@@ -7,11 +7,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use avatar_3d::motion::{ActorState, Pose};
-use avatar_3d::robot::{build_with, BuildOptions, Robot};
+use avatar_3d::robot::{build_with, BuildOptions, MoodSet, Robot, TextureContent};
 use avatar_3d_stage::fake::{FakeControl, FakeFrame, FakeRenderer};
 use avatar_3d_stage::{
-    BuildMode, BuildRequest, Builder, CreatureSpec, Event, RenderStatus, Stage, StageOptions,
-    Target,
+    BuildMode, BuildRequest, Builder, CreatureSpec, Event, FaceRequest, LayersRequest,
+    RenderStatus, Stage, StageOptions, Target,
 };
 use avatar_small_robots::{Mood, GENOME_LEN};
 
@@ -60,6 +60,41 @@ pub fn robot(genome: &[u8]) -> Robot {
     (*robot).clone()
 }
 
+/// The mood of a face or stalk-eye binding; `None` for marks and chests.
+pub fn binding_mood(content: TextureContent) -> Option<Mood> {
+    match content {
+        TextureContent::Face { mood, .. } | TextureContent::StalkEye { mood, .. } => Some(mood),
+        _ => None,
+    }
+}
+
+/// Stand-in pixels, `px` × `px` RGBA8 of zeros, for each binding of
+/// `robot` that is a mark, a chest, or a face of one of `moods`.
+pub fn stand_in_pixels(robot: &Robot, moods: MoodSet, px: u32) -> Vec<(usize, Vec<u8>)> {
+    robot
+        .textures
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| binding_mood(t.binding.content).is_none_or(|m| moods.contains(m)))
+        .map(|(i, _)| (i, vec![0; 4 * px as usize * px as usize]))
+        .collect()
+}
+
+/// The robot a genome builds with stand-in pixels at `px` for its marks,
+/// its chest and the face sets of `moods`, as a build rasterizing those
+/// moods at that edge has.
+pub fn textured(genome: &[u8], moods: MoodSet, px: u32) -> Robot {
+    let mut robot = robot(genome);
+    let pixels = stand_in_pixels(&robot, moods, px);
+    for texture in &mut robot.textures {
+        texture.px = px;
+    }
+    for (i, p) in pixels {
+        robot.textures[i].pixels = Some(p);
+    }
+    robot
+}
+
 /// The pose a fresh actor in `mood`, with `status_loop` started at `t0`,
 /// has at `t`, as the stage starts a robot that appears at `t0`.
 pub fn fresh_pose(
@@ -84,10 +119,31 @@ pub struct BuildCall {
     pub generation: u64,
     pub tag: [u8; 8],
     pub mood: Mood,
+    pub px: u32,
     pub finished: bool,
 }
 
-/// A builder whose builds of a key can be held, and which logs each call.
+/// What a texture call of the test builder rasterized.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextureWork {
+    /// One mood's face set.
+    Faces(Mood),
+    /// The marks, chest and these face sets at a new edge.
+    Layers(MoodSet),
+}
+
+/// One texture call of the test builder: a face set or a new edge.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextureCall {
+    pub key: String,
+    pub generation: u64,
+    pub work: TextureWork,
+    pub px: u32,
+    pub finished: bool,
+}
+
+/// A builder whose builds of a key, and whose texture work, can be held,
+/// and which logs each call. Its robots carry stand-in pixels.
 #[derive(Default)]
 pub struct TestBuilder {
     state: Mutex<BuilderState>,
@@ -98,6 +154,8 @@ pub struct TestBuilder {
 struct BuilderState {
     held: HashSet<String>,
     calls: Vec<BuildCall>,
+    textures_held: bool,
+    texture_calls: Vec<TextureCall>,
 }
 
 impl Builder for TestBuilder {
@@ -109,6 +167,7 @@ impl Builder for TestBuilder {
                 generation: request.generation,
                 tag: tag(request.genome),
                 mood: request.mood,
+                px: request.texture_px,
                 finished: false,
             });
             self.changed.notify_all();
@@ -120,10 +179,42 @@ impl Builder for TestBuilder {
             }
             state.calls.len() - 1
         };
-        let robot = robot(request.genome);
+        let robot = textured(
+            request.genome,
+            MoodSet::NONE.with(request.mood),
+            request.texture_px,
+        );
         self.lock().calls[index].finished = true;
         self.changed.notify_all();
         robot
+    }
+
+    fn face_set(&self, request: &FaceRequest<'_>) -> Vec<(usize, Vec<u8>)> {
+        let work = TextureWork::Faces(request.mood);
+        self.texture_work(
+            request.key,
+            request.generation,
+            work,
+            request.texture_px,
+            || {
+                let robot = robot(request.genome);
+                stand_in_pixels(&robot, MoodSet::NONE.with(request.mood), request.texture_px)
+                    .into_iter()
+                    .filter(|(i, _)| binding_mood(robot.textures[*i].binding.content).is_some())
+                    .collect()
+            },
+        )
+    }
+
+    fn layers(&self, request: &LayersRequest<'_>) -> Vec<(usize, Vec<u8>)> {
+        let work = TextureWork::Layers(request.moods);
+        self.texture_work(
+            request.key,
+            request.generation,
+            work,
+            request.texture_px,
+            || stand_in_pixels(&robot(request.genome), request.moods, request.texture_px),
+        )
     }
 }
 
@@ -144,8 +235,76 @@ impl TestBuilder {
 
     /// Lets every held build go on.
     pub fn release_all(&self) {
-        self.lock().held.clear();
+        let mut state = self.lock();
+        state.held.clear();
+        state.textures_held = false;
+        drop(state);
         self.changed.notify_all();
+    }
+
+    /// Holds every face set and new edge until
+    /// [`TestBuilder::release_textures`].
+    pub fn hold_textures(&self) {
+        self.lock().textures_held = true;
+    }
+
+    pub fn release_textures(&self) {
+        self.lock().textures_held = false;
+        self.changed.notify_all();
+    }
+
+    /// Every texture call so far.
+    pub fn texture_calls(&self) -> Vec<TextureCall> {
+        self.lock().texture_calls.clone()
+    }
+
+    /// Waits until the texture calls satisfy `done`.
+    pub fn wait_for_textures(&self, what: &str, done: impl Fn(&[TextureCall]) -> bool) {
+        let deadline = Instant::now() + WAIT;
+        let mut state = self.lock();
+        while !done(&state.texture_calls) {
+            let left = deadline.saturating_duration_since(Instant::now());
+            assert!(!left.is_zero(), "timed out waiting for {what}");
+            state = self
+                .changed
+                .wait_timeout(state, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+
+    /// Logs a texture call, waits while texture work is held, then makes
+    /// its pixels.
+    fn texture_work(
+        &self,
+        key: &str,
+        generation: u64,
+        work: TextureWork,
+        px: u32,
+        make: impl FnOnce() -> Vec<(usize, Vec<u8>)>,
+    ) -> Vec<(usize, Vec<u8>)> {
+        let index = {
+            let mut state = self.lock();
+            state.texture_calls.push(TextureCall {
+                key: key.to_owned(),
+                generation,
+                work,
+                px,
+                finished: false,
+            });
+            self.changed.notify_all();
+            while state.textures_held {
+                state = self
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+            state.texture_calls.len() - 1
+        };
+        let pixels = make();
+        self.lock().texture_calls[index].finished = true;
+        self.changed.notify_all();
+        pixels
     }
 
     /// Every call so far.

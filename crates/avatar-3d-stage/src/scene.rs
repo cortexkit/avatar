@@ -10,13 +10,16 @@ use std::time::Instant;
 
 use arc_swap::ArcSwap;
 use avatar_3d::motion::{ActorState, Pose, Reaction, StatusLoop};
+use avatar_3d::robot::camera::{frame_box, AZIMUTH, ELEVATION};
 use avatar_3d::robot::Robot;
 use avatar_small_robots::{Mood, GENOME_LEN};
 use crossbeam_queue::SegQueue;
 
-use crate::build::{Builds, Job};
+use crate::build::{Builds, Job, Output, Task};
 use crate::clock::{Clock, Tick};
 use crate::events::{CommandKind, Event, EventQueue};
+use crate::faces::{edge_target, Ask, Faces, FIRST_EDGE};
+use crate::held::{FaceCommand, Held};
 use crate::renderer::{DrawItem, Failure, Frame, Image, Renderer, Target};
 use crate::spec::Cast;
 use crate::stats::{FrameStats, Window};
@@ -98,8 +101,13 @@ struct Creature<G> {
     wanted: Option<u64>,
     /// Cancels that build while it waits for a worker.
     cancel: Option<Arc<AtomicBool>>,
+    /// The edge the key's next build is rasterized at: the latest edge of
+    /// its robot, or [`FIRST_EDGE`] before it had one.
+    edge: u32,
+    /// Face commands waiting for their face sets, in the host's order.
+    held: Held,
     /// That build once uploaded, until it takes over.
-    landed: Option<Landed<G>>,
+    landed: Option<Body<G>>,
     /// The robot frames draw for the key.
     shown: Option<Shown<G>>,
 }
@@ -112,6 +120,8 @@ impl<G> Creature<G> {
             status_loop: None,
             wanted: None,
             cancel: None,
+            edge: FIRST_EDGE,
+            held: Held::default(),
             landed: None,
             shown: None,
         }
@@ -125,22 +135,72 @@ impl<G> Creature<G> {
         }
         self.wanted = None;
     }
+
+    /// The uploaded robot of `generation`, shown or waiting to take over.
+    fn body(&mut self, generation: u64) -> Option<&mut Body<G>> {
+        let shown = self.shown.as_mut().map(|s| &mut s.body);
+        shown
+            .into_iter()
+            .chain(self.landed.as_mut())
+            .find(|b| b.generation == generation)
+    }
 }
 
-struct Landed<G> {
+/// A robot uploaded for a key.
+struct Body<G> {
     generation: u64,
     robot: Arc<Robot>,
+    /// The genome it was built from, which its other face sets and new
+    /// edges are rasterized from.
+    genome: Arc<[u8; GENOME_LEN]>,
     gpu: G,
+    faces: Faces,
+}
+
+impl<G> Body<G> {
+    /// Asks the workers for the texture work `asks` names.
+    fn ask(&self, builds: &Builds, key: &str, asks: Vec<Ask>) {
+        for ask in asks {
+            let (texture_px, task) = match ask {
+                Ask::Faces { mood, edge } => (edge, Task::Faces { mood }),
+                Ask::Layers { moods, edge } => (edge, Task::Layers { moods }),
+            };
+            builds.request(Job {
+                key: key.to_owned(),
+                generation: self.generation,
+                genome: Arc::clone(&self.genome),
+                texture_px,
+                task,
+                cancelled: Arc::clone(&self.faces.cancel),
+            });
+        }
+    }
 }
 
 struct Shown<G> {
-    generation: u64,
-    robot: Arc<Robot>,
-    gpu: G,
+    body: Body<G>,
     actor: ActorState,
     /// Whether a successful frame has shown this generation, and so its
     /// `Ready` event has gone out.
     announced: bool,
+}
+
+/// Gives a robot back to the renderer and cancels its queued work.
+fn retire<R: Renderer>(renderer: &mut R, body: Body<R::Robot>) {
+    body.faces.cancel.store(true, Ordering::Release);
+    renderer.retire(body.gpu);
+}
+
+/// `pose` as drawn in `drawn`: the face shows that mood's set, and the
+/// status lights, LEDs, `lit` and `rays` are that mood's own.
+fn as_drawn(robot: &Robot, mut pose: Pose, drawn: Mood) -> Pose {
+    let lights = robot.motion.mood(drawn);
+    pose.face = drawn;
+    pose.status = lights.status;
+    pose.leds = lights.leds;
+    pose.lit = lights.lit;
+    pose.rays = lights.rays;
+    pose
 }
 
 /// The frame thread's state.
@@ -168,6 +228,10 @@ pub(crate) struct Core<R: Renderer> {
     gpu: Window,
     readback: Window,
     frames_dropped: u64,
+    /// Face commands held since creation.
+    held_face_commands: u64,
+    /// Drawn moods switched off a blink since creation.
+    late_face_switches: u64,
     /// Dropped last, so destroying the stage waits for running builds
     /// after everything else is gone.
     builds: Builds,
@@ -193,6 +257,8 @@ impl<R: Renderer> Core<R> {
             gpu: Window::default(),
             readback: Window::default(),
             frames_dropped: 0,
+            held_face_commands: 0,
+            late_face_switches: 0,
             builds,
         }
     }
@@ -234,36 +300,56 @@ impl<R: Renderer> Core<R> {
         let t = self.clock.time();
         self.apply_commands(shared, t, target_time);
         self.request_builds();
-        self.land_builds()?;
+        self.land(t)?;
+        // A robot waiting to take over needs the face set of the key's
+        // latest mood first; built inline, it lands at once.
+        self.ask_for_landed(t);
+        self.land(t)?;
+        self.change_layers(t)?;
         self.take_over(t);
+        self.serve_held(t);
         for creature in self.creatures.values_mut() {
             if let Some(shown) = &mut creature.shown {
-                shown.actor.forget_before(&shown.robot, t - ACTOR_MEMORY);
+                shown
+                    .actor
+                    .forget_before(&shown.body.robot, t - ACTOR_MEMORY);
             }
         }
 
         let drawn = self.drawn();
-        let poses: Vec<Pose> = drawn
-            .iter()
-            .map(|key| {
-                let shown = self.shown(key);
-                shown.actor.evaluate(&shown.robot, t)
-            })
-            .collect();
+        let mut poses = Vec::with_capacity(drawn.len());
+        for key in &drawn {
+            let shown = self
+                .creatures
+                .get_mut(key)
+                .and_then(|c| c.shown.as_mut())
+                .expect("drawn keys are shown");
+            let robot = &shown.body.robot;
+            let pose = shown.actor.evaluate(robot, t);
+            if shown.body.faces.choose(&pose, t) {
+                self.late_face_switches += 1;
+            }
+            let posed_face = pose.face;
+            poses.push((as_drawn(robot, pose, shown.body.faces.drawn()), posed_face));
+        }
+        self.look_after(&drawn, &poses, t);
+
         let items: Vec<DrawItem<'_, R::Robot>> = drawn
             .iter()
             .zip(&poses)
-            .map(|(key, pose)| {
-                let shown = self.creatures[key]
+            .map(|(key, (pose, posed_face))| {
+                let body = &self.creatures[key]
                     .shown
                     .as_ref()
-                    .expect("drawn keys are shown");
+                    .expect("drawn keys are shown")
+                    .body;
                 DrawItem {
                     key,
-                    generation: shown.generation,
-                    robot: &shown.robot,
-                    gpu: &shown.gpu,
+                    generation: body.generation,
+                    robot: &body.robot,
+                    gpu: &body.gpu,
                     pose,
+                    posed_face: *posed_face,
                     offset: [0.0; 3],
                 }
             })
@@ -353,15 +439,17 @@ impl<R: Renderer> Core<R> {
 
     /// Drops every robot and cancels every build, so each creature is built
     /// again: retired through the renderer, or, after a lost device, simply
-    /// dropped.
-    fn drop_robots(&mut self, retire: bool) {
+    /// dropped. Each key keeps its held commands and its edge.
+    fn drop_robots(&mut self, retire_them: bool) {
         for creature in self.creatures.values_mut() {
             creature.cancel_build();
-            let landed = creature.landed.take().map(|l| l.gpu);
-            let shown = creature.shown.take().map(|s| s.gpu);
-            if retire {
-                for gpu in landed.into_iter().chain(shown) {
-                    self.renderer.retire(gpu);
+            let landed = creature.landed.take();
+            let shown = creature.shown.take().map(|s| s.body);
+            for body in landed.into_iter().chain(shown) {
+                if retire_them {
+                    retire(&mut self.renderer, body);
+                } else {
+                    body.faces.cancel.store(true, Ordering::Release);
                 }
             }
         }
@@ -369,11 +457,6 @@ impl<R: Renderer> Core<R> {
 
     /// Applies the scene commands in the host's order at stage time `t`.
     fn apply_commands(&mut self, shared: &Shared, t: f64, target_time: f64) {
-        let dropped = |key, command| Event::CommandDropped {
-            key,
-            command,
-            time: target_time,
-        };
         while let Some(command) = self.pending.pop_front() {
             match command {
                 SceneCommand::SetCreatures(cast) => self.set_cast(shared, cast, target_time),
@@ -381,27 +464,79 @@ impl<R: Renderer> Core<R> {
                     key,
                     mood,
                     status_loop,
-                } => match self.creatures.get_mut(&key) {
-                    None => shared.events.push(dropped(key, CommandKind::SetState)),
-                    Some(creature) => {
-                        // A key not shown yet keeps it for the robot that
-                        // appears; a shown one also changes now.
-                        creature.mood = mood;
-                        creature.status_loop = status_loop;
-                        if let Some(shown) = &mut creature.shown {
-                            shown.actor.set_mood(t, mood);
-                            shown.actor.set_loop(t, status_loop);
-                        }
-                    }
-                },
+                } => {
+                    let command = FaceCommand::SetState { mood, status_loop };
+                    self.face_command(shared, key, command, t, target_time);
+                }
                 SceneCommand::Play { key, reaction } => {
-                    match self.creatures.get_mut(&key).and_then(|c| c.shown.as_mut()) {
-                        Some(shown) => shown.actor.play(t, reaction),
-                        None => shared.events.push(dropped(key, CommandKind::Play)),
-                    }
+                    let command = FaceCommand::Play(reaction);
+                    self.face_command(shared, key, command, t, target_time);
                 }
                 SceneCommand::SetView(view) => self.view = view,
             }
+        }
+    }
+
+    /// Gives a `set_state` or `play` to the key's actor at `t`, or holds it
+    /// while the face set it needs is not drawable or an earlier command of
+    /// the key waits; a held command's set is asked for at once.
+    ///
+    /// A key not shown yet keeps a `set_state` for the robot that appears
+    /// and drops a `play`, unless commands of the key wait from before a
+    /// pause or a lost device, which it then waits behind. A key not in the
+    /// cast drops both. Dropped commands are reported.
+    fn face_command(
+        &mut self,
+        shared: &Shared,
+        key: String,
+        command: FaceCommand,
+        t: f64,
+        target_time: f64,
+    ) {
+        let kind = match command {
+            FaceCommand::SetState { .. } => CommandKind::SetState,
+            FaceCommand::Play(_) => CommandKind::Play,
+        };
+        let Some(creature) = self.creatures.get_mut(&key) else {
+            shared.events.push(Event::CommandDropped {
+                key,
+                command: kind,
+                time: target_time,
+            });
+            return;
+        };
+        if let FaceCommand::SetState { mood, status_loop } = command {
+            // The robot that appears next starts in the latest state.
+            creature.mood = mood;
+            creature.status_loop = status_loop;
+        }
+        let Some(shown) = &mut creature.shown else {
+            if !creature.held.is_empty() {
+                creature.held.hold(command, t);
+                self.held_face_commands += 1;
+            } else if matches!(command, FaceCommand::Play(_)) {
+                shared.events.push(Event::CommandDropped {
+                    key,
+                    command: kind,
+                    time: target_time,
+                });
+            }
+            return;
+        };
+        let needs = command.needs(&shown.body.robot, &shown.actor);
+        let drawable = match needs {
+            Some(mood) => shown.body.faces.drawable(mood),
+            None => true,
+        };
+        if creature.held.is_empty() && drawable {
+            command.apply(&mut shown.actor, t);
+            return;
+        }
+        creature.held.hold(command, t);
+        self.held_face_commands += 1;
+        if let Some(mood) = needs {
+            let asks = shown.body.faces.asks(&[mood], t);
+            shown.body.ask(&self.builds, &key, asks);
         }
     }
 
@@ -423,10 +558,9 @@ impl<R: Renderer> Core<R> {
             }
             if let Some(mut creature) = self.creatures.remove(key) {
                 creature.cancel_build();
-                let landed = creature.landed.map(|l| l.gpu);
-                let shown = creature.shown.map(|s| s.gpu);
-                for gpu in landed.into_iter().chain(shown) {
-                    self.renderer.retire(gpu);
+                let shown = creature.shown.map(|s| s.body);
+                for body in creature.landed.into_iter().chain(shown) {
+                    retire(&mut self.renderer, body);
                 }
             }
         }
@@ -440,7 +574,7 @@ impl<R: Renderer> Core<R> {
                         creature.genome = row.genome;
                         creature.cancel_build();
                         if let Some(landed) = creature.landed.take() {
-                            self.renderer.retire(landed.gpu);
+                            retire(&mut self.renderer, landed);
                         }
                     }
                 }
@@ -453,7 +587,8 @@ impl<R: Renderer> Core<R> {
         }
     }
 
-    /// Asks for a build of every key that needs one, in cast order.
+    /// Asks for a build of every key that needs one, in cast order, in the
+    /// key's latest mood and at its edge.
     fn request_builds(&mut self) {
         for key in &self.order {
             let creature = self
@@ -472,36 +607,59 @@ impl<R: Renderer> Core<R> {
                 key: key.clone(),
                 generation,
                 genome: Arc::clone(&creature.genome),
-                mood: creature.mood,
+                texture_px: creature.edge,
+                task: Task::Build {
+                    mood: creature.mood,
+                },
                 cancelled: cancel,
             });
         }
     }
 
-    /// Uploads every build that landed and is still wanted; the rest are
-    /// discarded unseen.
-    fn land_builds(&mut self) -> Result<(), RenderStatus> {
+    /// Takes every job that landed: uploads each build still wanted, and
+    /// hands each face set or new edge to the robot it was made for. The
+    /// rest are discarded unseen.
+    fn land(&mut self, t: f64) -> Result<(), RenderStatus> {
         while let Some(built) = self.builds.next_landed() {
             let Some(creature) = self.creatures.get_mut(&built.key) else {
                 continue;
+            };
+            let mut robot = match built.output {
+                Output::Robot(robot) => robot,
+                Output::Faces { mood, pixels } => {
+                    if let Some(body) = creature.body(built.generation) {
+                        body.faces.land_faces(mood, built.texture_px, pixels);
+                    }
+                    continue;
+                }
+                Output::Layers { pixels } => {
+                    if let Some(body) = creature.body(built.generation) {
+                        body.faces.land_layers(built.texture_px, pixels);
+                    }
+                    continue;
+                }
             };
             if creature.wanted != Some(built.generation) {
                 continue;
             }
             creature.cancel = None;
-            let mut robot = built.robot;
+            // Read before the upload takes the pixels.
+            let edge = robot.textures.first().map_or(built.texture_px, |t| t.px);
+            let faces = Faces::new(&robot, edge, creature.mood, t);
             match self
                 .renderer
                 .upload(&built.key, built.generation, &mut robot)
             {
                 Ok(gpu) => {
-                    let landed = Landed {
+                    let landed = Body {
                         generation: built.generation,
                         robot: Arc::new(robot),
+                        genome: Arc::clone(&creature.genome),
                         gpu,
+                        faces,
                     };
                     if let Some(old) = creature.landed.replace(landed) {
-                        self.renderer.retire(old.gpu);
+                        retire(&mut self.renderer, old);
                     }
                 }
                 Err(failure) => {
@@ -514,33 +672,147 @@ impl<R: Renderer> Core<R> {
         Ok(())
     }
 
-    /// Lets each landed robot take over its key, with an actor in the key's
-    /// latest mood and status loop. A robot takes over in the frame it
-    /// lands until faces load on demand and the plaza is laid out, which
-    /// add their own conditions here.
+    /// Asks for the face set of its key's latest mood for each robot
+    /// waiting to take over, unless it has it or it is on its way.
+    fn ask_for_landed(&mut self, t: f64) {
+        for (key, creature) in &mut self.creatures {
+            if let Some(landed) = &mut creature.landed {
+                let asks = landed.faces.asks(&[creature.mood], t);
+                landed.ask(&self.builds, key, asks);
+            }
+        }
+    }
+
+    /// Makes, at the start of the frame at `t`, each robot's change to its
+    /// resident layers: face sets landed since the last frame, sets
+    /// released, or a move to a new edge.
+    fn change_layers(&mut self, t: f64) -> Result<(), RenderStatus> {
+        let mut failure = None;
+        'creatures: for creature in self.creatures.values_mut() {
+            let shown = creature.shown.as_mut().map(|s| &mut s.body);
+            for body in shown.into_iter().chain(creature.landed.as_mut()) {
+                let Some(plan) = body.faces.plan(&body.robot, t) else {
+                    continue;
+                };
+                let (change, kept) = plan.split();
+                match self.renderer.set_layers(&mut body.gpu, change) {
+                    Ok(()) => body.faces.commit(kept, t),
+                    Err(f) => {
+                        body.faces.refused();
+                        failure = Some(f);
+                        break 'creatures;
+                    }
+                }
+            }
+        }
+        match failure {
+            Some(f) => Err(self.failed(f)),
+            None => Ok(()),
+        }
+    }
+
+    /// Lets each landed robot take over its key once the face set of the
+    /// key's latest mood is drawable, with an actor in that mood and the
+    /// key's status loop, so it first draws the latest mood's face.
     fn take_over(&mut self, t: f64) {
         for key in &self.order {
             let creature = self
                 .creatures
                 .get_mut(key)
                 .expect("every listed key has a creature");
-            let Some(landed) = creature.landed.take() else {
+            if !creature
+                .landed
+                .as_ref()
+                .is_some_and(|l| l.faces.drawable(creature.mood))
+            {
                 continue;
-            };
-            let mut actor = ActorState::new(&landed.robot, creature.mood);
+            }
+            let mut body = creature.landed.take().expect("checked above");
+            let mut actor = ActorState::new(&body.robot, creature.mood);
             if creature.status_loop.is_some() {
                 actor.set_loop(t, creature.status_loop);
             }
+            body.faces.show(creature.mood, t);
             let shown = Shown {
-                generation: landed.generation,
-                robot: landed.robot,
-                gpu: landed.gpu,
+                body,
                 actor,
                 announced: false,
             };
             if let Some(old) = creature.shown.replace(shown) {
-                self.renderer.retire(old.gpu);
+                retire(&mut self.renderer, old.body);
             }
+        }
+    }
+
+    /// Gives each key's held commands that are due on the frame at `t` to
+    /// its actor, in order.
+    fn serve_held(&mut self, t: f64) {
+        for creature in self.creatures.values_mut() {
+            let Some(shown) = &mut creature.shown else {
+                continue;
+            };
+            let (robot, faces) = (&shown.body.robot, &shown.body.faces);
+            let actor = &shown.actor;
+            let due = creature
+                .held
+                .due(t, |command| match command.needs(robot, actor) {
+                    Some(mood) => faces.drawable(mood),
+                    None => true,
+                });
+            for command in due {
+                command.apply(&mut shown.actor, t);
+            }
+        }
+    }
+
+    /// After the drawn frame at `t` has chosen its faces: keeps resident,
+    /// and asks for, each robot's drawn set, its pose's set, the sets its
+    /// coming face changes show and those its held commands need; and
+    /// aims each robot's edge at the size it is drawn at. `drawn` are the
+    /// keys drawn and `poses` their poses with the face each pose asks for.
+    fn look_after(&mut self, drawn: &[String], poses: &[(Pose, Mood)], t: f64) {
+        let staged = match &self.view {
+            StageView::Stage { key } => Some(key.as_str()),
+            StageView::Plaza => None,
+        };
+        let (width_px, height_px) = (self.width_px, self.height_px);
+        for (key, creature) in &mut self.creatures {
+            let Some(shown) = &mut creature.shown else {
+                continue;
+            };
+            let robot = &shown.body.robot;
+            let drawn_at = drawn.iter().position(|k| k == key);
+            let face = match drawn_at {
+                Some(i) => poses[i].1,
+                None => shown.actor.face(robot, t),
+            };
+            let mut needed = vec![shown.body.faces.drawn(), face];
+            needed.extend(
+                shown
+                    .actor
+                    .face_moments(robot, t)
+                    .into_iter()
+                    .map(|(_, m)| m),
+            );
+            needed.extend(
+                creature
+                    .held
+                    .commands()
+                    .filter_map(|c| c.needs(robot, &shown.actor)),
+            );
+            let target = match (drawn_at, staged) {
+                (Some(_), Some(staged)) if staged == key => {
+                    let reach = robot.reach();
+                    let aspect = f64::from(width_px) / f64::from(height_px);
+                    let camera = frame_box(reach.lo, reach.hi, AZIMUTH, ELEVATION, aspect, 1.0);
+                    Some(edge_target(robot, &camera, [0.0; 3], height_px))
+                }
+                _ => None,
+            };
+            shown.body.faces.aim(target, t);
+            let asks = shown.body.faces.asks(&needed, t);
+            shown.body.ask(&self.builds, key, asks);
+            creature.edge = shown.body.faces.edge();
         }
     }
 
@@ -562,13 +834,6 @@ impl<R: Renderer> Core<R> {
                 .into_iter()
                 .collect(),
         }
-    }
-
-    fn shown(&self, key: &str) -> &Shown<R::Robot> {
-        self.creatures[key]
-            .shown
-            .as_ref()
-            .expect("drawn keys are shown")
     }
 
     /// Publishes a frame that was presented or read back: its timings and
@@ -616,8 +881,8 @@ impl<R: Renderer> Core<R> {
                 gpu_timestamps: self.renderer.timestamps(),
                 readback: self.readback.series(),
                 frames_dropped: self.frames_dropped,
-                held_face_commands: 0,
-                late_face_switches: 0,
+                held_face_commands: self.held_face_commands,
+                late_face_switches: self.late_face_switches,
                 gpu_memory_bytes: self.renderer.memory_bytes(),
             },
         }));

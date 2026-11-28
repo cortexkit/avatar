@@ -2,17 +2,20 @@
 //! the stage uploads, retires and draws, can fail at any step on request,
 //! and can hold a frame at its present or read-back.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use avatar_3d::motion::Pose;
-use avatar_3d::robot::Robot;
+use avatar_3d::robot::{Robot, TextureContent};
+use avatar_small_robots::Mood;
 
-use crate::renderer::{Failure, Frame, Image, Renderer, Target};
+use crate::faces::SHUT;
+use crate::renderer::{Failure, Frame, Image, LayerChange, Renderer, Target};
 
-/// The bytes the fake counts for each uploaded robot.
+/// The bytes the fake counts for each uploaded robot, besides its texture
+/// layers.
 pub const FAKE_ROBOT_BYTES: u64 = 1 << 20;
 
 /// The GPU time the fake gives a frame when no times are scripted, in
@@ -50,10 +53,46 @@ pub struct FakeItem {
     pub key: String,
     /// The build drawn.
     pub generation: u64,
-    /// Its pose.
+    /// Its pose as drawn: `face` is the drawn mood.
     pub pose: Pose,
+    /// The face set the actor's pose asked for.
+    pub posed_face: Mood,
     /// Where the robot stands.
     pub offset: [f64; 3],
+    /// The edge of its layers when drawn.
+    pub edge: u32,
+    /// The face bindings it showed: the head face and each stalk eye in the
+    /// drawn mood, blinking when the pose's blink is at least 0.5.
+    pub faces: Vec<usize>,
+    /// Those of [`FakeItem::faces`] that had no resident layer.
+    pub missing: Vec<usize>,
+}
+
+/// The layers of one robot the fake holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FakeLayers {
+    /// Their edge in pixels.
+    pub edge: u32,
+    /// The resident bindings, in binding order.
+    pub resident: Vec<usize>,
+}
+
+impl FakeLayers {
+    /// The bytes they take, without mip levels.
+    pub fn bytes(&self) -> u64 {
+        self.resident.len() as u64 * 4 * u64::from(self.edge) * u64::from(self.edge)
+    }
+}
+
+/// A change the stage made to a robot's layers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FakeLayerChange {
+    /// The robot.
+    pub robot: FakeRobot,
+    /// Its layers after the change.
+    pub layers: FakeLayers,
+    /// The bindings given pixels.
+    pub fresh: Vec<usize>,
 }
 
 /// A frame the stage submitted.
@@ -93,6 +132,9 @@ struct Log {
     uploads: Vec<FakeRobot>,
     retired: Vec<FakeRobot>,
     resident: Vec<FakeRobot>,
+    /// The layers of each resident robot, by key and generation.
+    layers: HashMap<(String, u64), FakeLayers>,
+    layer_changes: Vec<FakeLayerChange>,
     /// The frame targets' size, from the first frame after a release.
     targets: Option<(u32, u32)>,
     releases: usize,
@@ -105,13 +147,17 @@ struct Log {
 }
 
 impl Log {
-    /// [`FAKE_ROBOT_BYTES`] per resident robot and 8 bytes per pixel of the
-    /// frame targets.
+    /// [`FAKE_ROBOT_BYTES`] and the layers' bytes per resident robot, and 8
+    /// bytes per pixel of the frame targets.
     fn memory_bytes(&self) -> u64 {
         let targets = self
             .targets
             .map_or(0, |(w, h)| 8 * u64::from(w) * u64::from(h));
-        self.resident.len() as u64 * FAKE_ROBOT_BYTES + targets
+        self.resident.len() as u64 * FAKE_ROBOT_BYTES + self.layer_bytes() + targets
+    }
+
+    fn layer_bytes(&self) -> u64 {
+        self.layers.values().map(FakeLayers::bytes).sum()
     }
 
     /// Takes the failure set for `step`, if any.
@@ -165,6 +211,34 @@ impl FakeShared {
     fn log(&self) -> MutexGuard<'_, Log> {
         self.log.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// The bytes of one RGBA8 layer `edge` pixels a side.
+fn layer_len(edge: u32) -> usize {
+    4 * edge as usize * edge as usize
+}
+
+/// The bindings of `robot`'s head face and stalk eyes in `mood`, blinking
+/// or not, in binding order.
+pub fn face_bindings(robot: &Robot, mood: Mood, blinking: bool) -> Vec<usize> {
+    robot
+        .textures
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| match t.binding.content {
+            TextureContent::Face {
+                mood: m,
+                blinking: b,
+            }
+            | TextureContent::StalkEye {
+                mood: m,
+                blinking: b,
+                ..
+            } => m == mood && b == blinking,
+            _ => false,
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// A [`Renderer`] that records instead of drawing.
@@ -242,9 +316,15 @@ impl Renderer for FakeRenderer {
     ) -> Result<FakeRobot, Failure> {
         let mut log = self.shared.log();
         log.fault(Step::Upload)?;
+        let edge = robot.textures.first().map_or(0, |t| t.px);
+        let mut resident = Vec::new();
         // Take the pixels, as a renderer that frees them on upload does.
-        for texture in &mut robot.textures {
-            texture.pixels = None;
+        for (i, texture) in robot.textures.iter_mut().enumerate() {
+            assert_eq!(texture.px, edge, "every texture of a robot shares one edge");
+            if let Some(pixels) = texture.pixels.take() {
+                assert_eq!(pixels.len(), layer_len(edge), "binding {i} at {edge} px");
+                resident.push(i);
+            }
         }
         let gpu = FakeRobot {
             key: key.to_owned(),
@@ -252,12 +332,55 @@ impl Renderer for FakeRenderer {
         };
         log.uploads.push(gpu.clone());
         log.resident.push(gpu.clone());
+        log.layers
+            .insert((key.to_owned(), generation), FakeLayers { edge, resident });
         Ok(gpu)
+    }
+
+    fn set_layers(&mut self, robot: &mut FakeRobot, change: LayerChange) -> Result<(), Failure> {
+        let mut log = self.shared.log();
+        let id = (robot.key.clone(), robot.generation);
+        let before = log
+            .layers
+            .get(&id)
+            .cloned()
+            .expect("set_layers on a robot the fake holds");
+        assert!(
+            change.resident.windows(2).all(|w| w[0] < w[1]),
+            "resident bindings in binding order"
+        );
+        for (i, pixels) in &change.fresh {
+            assert!(
+                change.resident.contains(i),
+                "pixels for binding {i}, which is not resident"
+            );
+            assert_eq!(pixels.len(), layer_len(change.edge), "binding {i}");
+        }
+        for i in &change.resident {
+            let kept = change.edge == before.edge && before.resident.contains(i);
+            assert!(
+                kept || change.fresh.iter().any(|(j, _)| j == i),
+                "binding {i} newly resident at {} px without pixels",
+                change.edge
+            );
+        }
+        let layers = FakeLayers {
+            edge: change.edge,
+            resident: change.resident,
+        };
+        log.layer_changes.push(FakeLayerChange {
+            robot: robot.clone(),
+            layers: layers.clone(),
+            fresh: change.fresh.iter().map(|(i, _)| *i).collect(),
+        });
+        log.layers.insert(id, layers);
+        Ok(())
     }
 
     fn retire(&mut self, robot: FakeRobot) {
         let mut log = self.shared.log();
         log.resident.retain(|r| *r != robot);
+        log.layers.remove(&(robot.key.clone(), robot.generation));
         log.retired.push(robot);
     }
 
@@ -267,11 +390,28 @@ impl Renderer for FakeRenderer {
         let items = frame
             .items
             .iter()
-            .map(|item| FakeItem {
-                key: item.key.to_owned(),
-                generation: item.generation,
-                pose: item.pose.clone(),
-                offset: item.offset,
+            .map(|item| {
+                let layers = log
+                    .layers
+                    .get(&(item.key.to_owned(), item.generation))
+                    .cloned()
+                    .expect("a drawn robot is resident");
+                let faces = face_bindings(item.robot, item.pose.face, item.pose.blink >= SHUT);
+                let missing = faces
+                    .iter()
+                    .copied()
+                    .filter(|i| !layers.resident.contains(i))
+                    .collect();
+                FakeItem {
+                    key: item.key.to_owned(),
+                    generation: item.generation,
+                    pose: item.pose.clone(),
+                    posed_face: item.posed_face,
+                    offset: item.offset,
+                    edge: layers.edge,
+                    faces,
+                    missing,
+                }
             })
             .collect();
         log.frames.push(FakeFrame {
@@ -312,6 +452,7 @@ impl Renderer for FakeRenderer {
     fn release(&mut self) {
         let mut log = self.shared.log();
         log.resident.clear();
+        log.layers.clear();
         log.targets = None;
         log.releases += 1;
     }
@@ -320,6 +461,7 @@ impl Renderer for FakeRenderer {
         let mut log = self.shared.log();
         log.fault(Step::Recover)?;
         log.resident.clear();
+        log.layers.clear();
         log.targets = None;
         log.gpu_pending = None;
         log.recoveries += 1;
@@ -362,6 +504,25 @@ impl FakeControl {
         self.shared.log().resident.clone()
     }
 
+    /// The layers the fake holds for the robot of `key` and `generation`.
+    pub fn layers(&self, key: &str, generation: u64) -> Option<FakeLayers> {
+        self.shared
+            .log()
+            .layers
+            .get(&(key.to_owned(), generation))
+            .cloned()
+    }
+
+    /// Every change to a robot's layers, in order.
+    pub fn layer_changes(&self) -> Vec<FakeLayerChange> {
+        self.shared.log().layer_changes.clone()
+    }
+
+    /// The bytes of every resident layer, without mip levels.
+    pub fn layer_bytes(&self) -> u64 {
+        self.shared.log().layer_bytes()
+    }
+
     /// How many times the stage released everything.
     pub fn releases(&self) -> usize {
         self.shared.log().releases
@@ -372,8 +533,9 @@ impl FakeControl {
         self.shared.log().recoveries
     }
 
-    /// The memory the fake counts: [`FAKE_ROBOT_BYTES`] per resident robot
-    /// and 8 bytes per pixel of the frame targets.
+    /// The memory the fake counts: [`FAKE_ROBOT_BYTES`] and the layers'
+    /// bytes per resident robot, and 8 bytes per pixel of the frame
+    /// targets.
     pub fn memory_bytes(&self) -> u64 {
         self.shared.log().memory_bytes()
     }
