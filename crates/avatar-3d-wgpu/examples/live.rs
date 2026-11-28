@@ -35,7 +35,7 @@ use avatar_3d::motion::{Actor, Pose, Reaction, StatusLoop};
 use avatar_3d::robot::{build, Robot, AZIMUTH, ELEVATION};
 use avatar_3d_wgpu::plaza::{self, Plaza};
 use avatar_3d_wgpu::view::View;
-use avatar_3d_wgpu::{GpuRobot, Item, RenderError, Renderer, Scene};
+use avatar_3d_wgpu::{Background, GpuRobot, Item, RenderError, Renderer, Scene};
 use avatar_small_robots::{mood_name, Mood, MOODS};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -227,8 +227,10 @@ impl Gfx {
         let renderer = Renderer::for_surface(&instance, &surface).map_err(|e| e.to_string())?;
         let size = window.inner_size();
         let size = (size.width.max(1), size.height.max(1));
+        // The window shows an opaque background, so its surface need not
+        // composite alpha.
         renderer
-            .configure(&surface, size.0, size.1)
+            .configure(&surface, size.0, size.1, wgpu::CompositeAlphaMode::Opaque)
             .map_err(|e| e.to_string())?;
         Ok(Self {
             window,
@@ -243,7 +245,12 @@ impl Gfx {
             return Ok(());
         }
         self.size = (width, height);
-        self.renderer.configure(&self.surface, width, height)?;
+        self.renderer.configure(
+            &self.surface,
+            width,
+            height,
+            wgpu::CompositeAlphaMode::Opaque,
+        )?;
         Ok(())
     }
 }
@@ -504,7 +511,8 @@ impl Live {
                 view,
                 width,
                 height,
-                background: BACKGROUND,
+                background: Background::Opaque(BACKGROUND),
+                shadows: true,
                 items: &items,
             },
             frame,

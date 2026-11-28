@@ -57,36 +57,59 @@
 //! that covers it ([`BLIT_SHADER`]), so the robot pipelines keep their one
 //! target format whatever format the window takes, and nothing is read
 //! back.
+//!
+//! # Transparent frames
+//!
+//! A scene with a [`Background::Transparent`] background clears to
+//! nothing, and its robots and their shadows are drawn as linear colour
+//! premultiplied by coverage. The copy onto a window keeps that alpha, for
+//! a surface configured to composite premultiplied alpha. Read back, the
+//! frame comes as straight or premultiplied sRGB colour ([`Alpha`]).
+//!
+//! # Without a GPU
+//!
+//! The renderer sits behind the default `gpu` feature. Without it, the
+//! crate keeps only the modules that work on the CPU ([`colour`],
+//! [`frame`], [`layers`], [`plaza`], [`upload`] and [`view`]) and the WGSL
+//! sources, and depends on no wgpu or naga.
 
 pub mod colour;
 pub mod frame;
+#[cfg(feature = "gpu")]
 mod gpu;
 pub mod layers;
 pub mod plaza;
 pub mod upload;
 pub mod view;
 
+#[cfg(feature = "gpu")]
 pub use gpu::{
-    target_bytes, vertex_data, GpuRobot, Image, Item, RenderError, Renderer, Scene, Submitted,
+    target_bytes, transparent_image_bytes, vertex_data, Alpha, Background, GpuRobot, Image, Item,
+    RenderError, Renderer, Scene, Submitted, SurfaceSetup,
 };
 
 /// The WGSL source of the robot and shadow pipelines.
 pub const SHADER: &str = include_str!("shader.wgsl");
 
 /// The WGSL source of the pipelines that copy a drawn frame onto a
-/// window's surface.
+/// window's surface, or into the image a transparent frame is read back
+/// from.
 pub const BLIT_SHADER: &str = include_str!("blit.wgsl");
 
 /// The format of every robot texture: sampling decodes sRGB to linear.
+#[cfg(feature = "gpu")]
 pub const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 /// The format frames are drawn into: shading writes linear light, which the
 /// target encodes to sRGB.
+#[cfg(feature = "gpu")]
 pub const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 /// The depth buffer's format.
+#[cfg(feature = "gpu")]
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// Samples per pixel: frames are drawn multisampled and resolved before
 /// readback, so silhouettes are antialiased.
+#[cfg(feature = "gpu")]
 pub const SAMPLE_COUNT: u32 = 4;

@@ -34,7 +34,7 @@ use avatar_3d::motion::{Actor, Pose, REACTIONS, STATUS_LOOPS};
 use avatar_3d::robot::{build, build_with, BuildOptions, Robot, Skin, TextureContent, TEXTURE_PX};
 use avatar_3d_wgpu::upload::mip_levels;
 use avatar_3d_wgpu::view::View;
-use avatar_3d_wgpu::{target_bytes, GpuRobot, Item, RenderError, Renderer, Scene};
+use avatar_3d_wgpu::{target_bytes, Background, GpuRobot, Item, RenderError, Renderer, Scene};
 use avatar_small_robots::{Mood, GENOME_LEN, MOODS};
 
 use crate::{genome, place_plaza, BACKGROUND, FRAME, PLAZA_ROBOTS, PLAZA_SEED, PLAZA_SIZE, STATED};
@@ -241,7 +241,8 @@ impl Stage<'_> {
             view: self.view,
             width: self.width,
             height: self.height,
-            background: BACKGROUND,
+            background: Background::Opaque(BACKGROUND),
+            shadows: true,
             items,
         }
     }

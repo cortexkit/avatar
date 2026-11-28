@@ -53,7 +53,7 @@ use avatar_3d::motion::{Actor, Pose, REACTIONS};
 use avatar_3d::robot::{build, Robot};
 use avatar_3d_wgpu::plaza::Plaza;
 use avatar_3d_wgpu::view::View;
-use avatar_3d_wgpu::{GpuRobot, Image, Item, Renderer, Scene};
+use avatar_3d_wgpu::{Background, GpuRobot, Image, Item, Renderer, Scene};
 use avatar_small_robots::{mood_name, Mood, MOODS};
 use robots::{genome, place_plaza, BACKGROUND, PLAZA_ROBOTS, PLAZA_SEED, PLAZA_SIZE, STATED};
 use sheet::Sheet;
@@ -90,7 +90,8 @@ impl Built {
                 view,
                 width: FRAME,
                 height: FRAME,
-                background: BACKGROUND,
+                background: Background::Opaque(BACKGROUND),
+                shadows: true,
                 items: &[Item {
                     robot: &self.robot,
                     gpu: &self.gpu,
@@ -313,7 +314,8 @@ fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
             view: placed.view,
             width,
             height,
-            background: BACKGROUND,
+            background: Background::Opaque(BACKGROUND),
+            shadows: true,
             items: &items,
         })
         .unwrap_or_else(|e| panic!("render the plaza: {e}"));

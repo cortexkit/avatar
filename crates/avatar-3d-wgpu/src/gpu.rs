@@ -3,6 +3,8 @@
 
 mod surface;
 
+pub use surface::SurfaceSetup;
+
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -57,8 +59,34 @@ pub struct Image {
     pub width: u32,
     /// Height in pixels.
     pub height: u32,
-    /// `width × height × 4` bytes, RGBA8 sRGB, rows top first, opaque.
+    /// `width × height × 4` bytes, RGBA8 sRGB, rows top first. Alpha is 255
+    /// throughout under an opaque background; under a transparent one it
+    /// is each pixel's coverage, and the colour is straight or
+    /// premultiplied as read back ([`Alpha`]).
     pub pixels: Vec<u8>,
+}
+
+/// What a frame shows behind its robots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Background {
+    /// An sRGB colour. Every pixel of the frame has alpha 1.
+    Opaque(Rgb),
+    /// Nothing: the frame clears to (0, 0, 0, 0), and the robots and their
+    /// ground shadows are drawn as linear colour premultiplied by their
+    /// coverage, with that coverage as alpha.
+    Transparent,
+}
+
+/// How the colour of a frame with a transparent background is read back
+/// ([`Renderer::render_as`]). A frame with an opaque background reads back
+/// the same either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Alpha {
+    /// The sRGB colour multiplied by alpha: the usual premultiplied form
+    /// of an RGBA8 image.
+    Premultiplied,
+    /// The sRGB colour itself, with RGB 0 where alpha is 0.
+    Straight,
 }
 
 /// One robot in a scene, in a pose, standing at an offset from the origin.
@@ -84,8 +112,13 @@ pub struct Scene<'a> {
     pub width: u32,
     /// Frame height in pixels.
     pub height: u32,
-    /// The sRGB colour behind everything.
-    pub background: Rgb,
+    /// What shows behind the robots.
+    pub background: Background,
+    /// Whether each robot's ground shadow is drawn. With shadows off a frame
+    /// shows the robots alone: the 3D counterpart of dropping the 2D
+    /// creatures' `ground_shadow` role, for a host that shows the robots
+    /// with no ground plane under them.
+    pub shadows: bool,
     /// The robots, each at most once: a robot's per-frame buffers hold one
     /// pose.
     pub items: &'a [Item<'a>],
@@ -198,6 +231,16 @@ struct Targets {
     depth: wgpu::TextureView,
     readback: wgpu::Buffer,
     padded_row: u32,
+    /// Where a frame with a transparent background is converted to the
+    /// alpha it is read back with, made for the first such frame at this
+    /// size.
+    image: Option<ImageTarget>,
+}
+
+/// An RGBA8 texture the alpha pass draws a read-back image into.
+struct ImageTarget {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 /// One vertex as the robot pipeline reads it.
@@ -206,12 +249,16 @@ const VERTEX_BYTES: u64 = 80;
 const SHADOW_BYTES: u64 = 24;
 /// The no-texture marker of a vertex's marks slot.
 const NO_TEXTURE: u32 = u32::MAX;
+/// The format a frame with a transparent background is converted into
+/// before it is read back: plain RGBA8, as the alpha pass encodes sRGB
+/// itself.
+const IMAGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 /// What a submitted frame is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Purpose {
-    /// An image to read back.
-    Image,
+    /// An image to read back, its colour with this alpha.
+    Image(Alpha),
     /// A frame timed on the GPU, not read back.
     Timed,
     /// A frame drawn onto a window, neither read back nor timed.
@@ -279,7 +326,8 @@ impl Submitted<'_> {
 
 /// The bytes of the frame targets [`Renderer`] keeps for a frame of this
 /// size: the multisampled colour and depth, the resolved colour, and the
-/// readback buffer with its rows padded for the copy.
+/// readback buffer with its rows padded for the copy. Reading back a frame
+/// with a transparent background adds [`transparent_image_bytes`].
 pub fn target_bytes(width: u32, height: u32) -> u64 {
     let pixels = u64::from(width) * u64::from(height);
     let samples = u64::from(SAMPLE_COUNT);
@@ -288,6 +336,14 @@ pub fn target_bytes(width: u32, height: u32) -> u64 {
     // Rgba8UnormSrgb colour and Depth32Float depth both take four bytes a
     // sample.
     4 * pixels * samples + 4 * pixels * samples + 4 * pixels + padded_row * u64::from(height)
+}
+
+/// The bytes [`Renderer`] adds to a frame's targets ([`target_bytes`]) once
+/// a frame of this size with a transparent background has been read back:
+/// the RGBA8 image its colour is converted into before the copy out
+/// ([`Renderer::render_as`]). They stay until the frame size changes.
+pub fn transparent_image_bytes(width: u32, height: u32) -> u64 {
+    4 * u64::from(width) * u64::from(height)
 }
 
 impl Renderer {
@@ -921,14 +977,35 @@ impl Renderer {
         }
     }
 
-    /// Draws a scene and reads it back.
+    /// Draws a scene and reads it back. A frame with a transparent
+    /// background comes back premultiplied; [`Renderer::render_as`] reads
+    /// it back either way.
     ///
     /// # Panics
     ///
     /// Panics when an item's robot and uploaded robot disagree on their
     /// bones or materials, or when one uploaded robot appears twice.
     pub fn render(&self, scene: &Scene<'_>) -> Result<Image, RenderError> {
-        let targets = self.submit(scene, Purpose::Image);
+        self.render_as(scene, Alpha::Premultiplied)
+    }
+
+    /// Draws a scene and reads it back with its colour in the form `alpha`
+    /// names.
+    ///
+    /// The frame is drawn as linear colour premultiplied by coverage, and
+    /// stored sRGB-encoded. Under an opaque background every pixel has
+    /// alpha 1, so the pixels are copied out as drawn. Under a transparent
+    /// one a last pass on the GPU decodes each pixel, divides its colour by
+    /// its alpha in linear light, encodes the result to sRGB and, for
+    /// [`Alpha::Premultiplied`], multiplies it by alpha. That pass draws
+    /// into an image the renderer keeps from then on
+    /// ([`transparent_image_bytes`]).
+    ///
+    /// # Panics
+    ///
+    /// As [`Renderer::render`].
+    pub fn render_as(&self, scene: &Scene<'_>, alpha: Alpha) -> Result<Image, RenderError> {
+        let targets = self.submit(scene, Purpose::Image(alpha));
         self.read_back(targets.as_ref().expect("the frame targets were just made"))
     }
 
@@ -965,9 +1042,10 @@ impl Renderer {
     }
 
     /// Writes a scene's per-frame buffers, records its pass and submits it:
-    /// for an image with the copy to the readback buffer, for a timed frame
-    /// with the timestamps when the device has them. Returns the frame
-    /// targets, still locked, for the readback.
+    /// for an image with the copy to the readback buffer (after the alpha
+    /// pass, under a transparent background), for a timed frame with the
+    /// timestamps when the device has them. Returns the frame targets,
+    /// still locked, for the readback.
     fn submit(&self, scene: &Scene<'_>, purpose: Purpose) -> MutexGuard<'_, Option<Targets>> {
         for (i, a) in scene.items.iter().enumerate() {
             assert!(
@@ -983,6 +1061,9 @@ impl Renderer {
         let mut shadows = Vec::with_capacity(scene.items.len() * SHADOW_BYTES as usize);
         for item in scene.items {
             self.write_item(item);
+            if !scene.shadows {
+                continue;
+            }
             let Shadow {
                 centre,
                 radii,
@@ -1015,10 +1096,10 @@ impl Renderer {
         {
             *guard = Some(self.targets(scene.width, scene.height));
         }
-        let targets = guard.as_ref().expect("the frame targets were just made");
+        let targets = guard.as_mut().expect("the frame targets were just made");
         let timer = match purpose {
             Purpose::Timed => self.timer.as_ref(),
-            Purpose::Image | Purpose::Shown => None,
+            Purpose::Image(_) | Purpose::Shown => None,
         };
 
         let mut encoder = self
@@ -1027,7 +1108,13 @@ impl Renderer {
                 label: Some("frame"),
             });
         {
-            let bg = linear(scene.background);
+            let clear = match scene.background {
+                Background::Opaque(colour) => {
+                    let [r, g, b] = linear(colour);
+                    wgpu::Color { r, g, b, a: 1.0 }
+                }
+                Background::Transparent => wgpu::Color::TRANSPARENT,
+            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1035,12 +1122,7 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: Some(&targets.resolve_view),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0],
-                            g: bg[1],
-                            b: bg[2],
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(clear),
                         store: wgpu::StoreOp::Discard,
                     },
                 })],
@@ -1074,10 +1156,23 @@ impl Renderer {
                 pass.draw(0..6, 0..scene.items.len() as u32);
             }
         }
-        if purpose == Purpose::Image {
+        if let Purpose::Image(alpha) = purpose {
+            // Under an opaque background every pixel has alpha 1, so the
+            // frame is the same straight or premultiplied and is copied out
+            // as drawn.
+            let source = match scene.background {
+                Background::Opaque(_) => &targets.resolve,
+                Background::Transparent => {
+                    let image = targets
+                        .image
+                        .get_or_insert_with(|| self.image_target(scene.width, scene.height));
+                    self.alpha_pass(&mut encoder, &targets.resolve_view, &image.view, alpha);
+                    &image.texture
+                }
+            };
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
-                    texture: &targets.resolve,
+                    texture: source,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
@@ -1225,6 +1320,30 @@ impl Renderer {
             depth: depth.create_view(&Default::default()),
             readback,
             padded_row,
+            image: None,
+        }
+    }
+
+    /// The texture a frame with a transparent background is converted into
+    /// before it is read back ([`IMAGE_FORMAT`]).
+    fn image_target(&self, width: u32, height: u32) -> ImageTarget {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("image"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: IMAGE_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        ImageTarget {
+            view: texture.create_view(&Default::default()),
+            texture,
         }
     }
 

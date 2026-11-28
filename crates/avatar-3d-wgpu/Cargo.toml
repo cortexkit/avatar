@@ -12,6 +12,15 @@ publish = false
 [lib]
 name = "avatar_3d_wgpu"
 
+[features]
+default = ["gpu"]
+# The wgpu renderer. Without it the crate builds only what a frame works
+# out on the CPU (colour, frame, layers, plaza, upload and view) and links
+# no wgpu or naga, so a GPU-free scene, its tests or a native renderer can
+# use those alone. A crate that depends on this one without the renderer
+# turns default features off.
+gpu = ["dep:wgpu", "dep:pollster"]
+
 [dependencies]
 # The robots as plain data: meshes, materials, the status colour table,
 # textures with their bindings, the skeleton, the stage camera and poses.
@@ -20,9 +29,9 @@ avatar-3d = { version = "0.1.0", path = "../avatar-3d", package = "cortexkit-ava
 avatar-small-robots = { version = "0.1.0", path = "../avatar-small-robots", package = "cortexkit-avatar-small-robots" }
 # Pinned to the 30.0 series, the version the desktop apps link, so a
 # desktop build carries one copy.
-wgpu = "~30.0"
+wgpu = { version = "~30.0", optional = true }
 # Waits for wgpu's adapter, device and readback futures.
-pollster = "1"
+pollster = { version = "1", optional = true }
 
 [dev-dependencies]
 # Parses and validates the WGSL without a GPU.
@@ -38,3 +47,12 @@ png = "0.17"
 # features less the Adwaita-styled Wayland title bar, so its font stack is
 # not pulled in; Wayland windows get winit's plain decorations instead.
 winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+
+# Both examples draw with the renderer.
+[[example]]
+name = "live"
+required-features = ["gpu"]
+
+[[example]]
+name = "review_sheets"
+required-features = ["gpu"]

@@ -11,7 +11,7 @@ use avatar_3d::robot::{
 };
 use avatar_3d_wgpu::layers::{layer_bytes, Residency};
 use avatar_3d_wgpu::view::View;
-use avatar_3d_wgpu::{GpuRobot, Image, Item, Renderer, Scene};
+use avatar_3d_wgpu::{frame, Alpha, Background, GpuRobot, Image, Item, Renderer, Scene};
 use avatar_small_robots::{Mood, Rgb, GENOME_LEN};
 
 use crate::genomes;
@@ -34,7 +34,8 @@ fn a_render_returns_rgba8_of_the_requested_size_with_the_robot_on_it() {
             view: View::from(&robot.camera()).with_aspect(f64::from(width) / f64::from(height)),
             width,
             height,
-            background,
+            background: Background::Opaque(background),
+            shadows: true,
             items: &[Item {
                 robot: &robot,
                 gpu: &gpu,
@@ -83,7 +84,8 @@ fn every_drawn_frame_is_timed_on_the_gpu_when_the_device_has_timestamps() {
             view: View::from(&robot.camera()),
             width: 288,
             height: 288,
-            background,
+            background: Background::Opaque(background),
+            shadows: true,
             items: &[Item {
                 robot: &robot,
                 gpu: &gpu,
@@ -118,7 +120,8 @@ fn draw(renderer: &Renderer, view: View, robot: &Robot, gpu: &GpuRobot, mood: Mo
             view,
             width: 288,
             height: 288,
-            background: BACKGROUND,
+            background: Background::Opaque(BACKGROUND),
+            shadows: true,
             items: &[Item {
                 robot,
                 gpu,
@@ -349,4 +352,157 @@ fn a_128_px_build_of_two_moods_uploads_at_its_edge_with_layers_left_to_fill() {
     assert_eq!(gpu.residency(), &Residency::every(n, 128));
     let diff = worst(&draw(&renderer, view, &two, &gpu, Mood::Sad), &sad);
     assert!(diff <= 1, "sad, filled: a channel differs by {diff}");
+}
+
+/// A robot at rest in the neutral mood, alone at 288 × 288 px over a
+/// transparent background, with or without its ground shadow, read back
+/// with `alpha`, or as [`Renderer::render`] reads it back when `None`.
+fn transparent(
+    renderer: &Renderer,
+    robot: &Robot,
+    gpu: &GpuRobot,
+    shadows: bool,
+    alpha: Option<Alpha>,
+) -> Image {
+    let pose = Actor::new(robot, Mood::Neutral).evaluate(0.0);
+    let scene = Scene {
+        view: View::from(&robot.camera()),
+        width: 288,
+        height: 288,
+        background: Background::Transparent,
+        shadows,
+        items: &[Item {
+            robot,
+            gpu,
+            pose: &pose,
+            offset: [0.0; 3],
+        }],
+    };
+    match alpha {
+        Some(alpha) => renderer.render_as(&scene, alpha),
+        None => renderer.render(&scene),
+    }
+    .expect("the frame reads back")
+}
+
+#[test]
+#[ignore = "needs a GPU adapter"]
+fn a_transparent_frame_reads_back_premultiplied_and_clear_around_the_robot() {
+    let renderer = Renderer::new().expect("a GPU adapter and device");
+    let robot = build(&genomes::corpus()[0]);
+    let gpu = renderer.upload(&robot);
+    let image = transparent(&renderer, &robot, &gpu, true, Some(Alpha::Premultiplied));
+    assert_eq!((image.width, image.height), (288, 288));
+    let pixels = image.pixels.as_chunks::<4>().0;
+    for (i, p) in pixels.iter().enumerate() {
+        assert!(
+            p[..3].iter().all(|c| *c <= p[3]),
+            "pixel {i} is {p:?}: premultiplied colour never exceeds alpha"
+        );
+    }
+    for (x, y) in [(0, 0), (287, 0), (0, 287), (287, 287)] {
+        assert_eq!(pixels[288 * y + x], [0; 4], "corner ({x}, {y})");
+    }
+    let clear = pixels.iter().filter(|p| **p == [0; 4]).count();
+    let covered = pixels.iter().filter(|p| p[3] == 255).count();
+    let total = pixels.len();
+    assert!(
+        clear > total / 10 && covered > total / 20,
+        "{clear} clear and {covered} fully covered of {total} pixels"
+    );
+    assert_eq!(
+        transparent(&renderer, &robot, &gpu, true, None),
+        image,
+        "a plain render reads a transparent frame back premultiplied"
+    );
+}
+
+#[test]
+#[ignore = "needs a GPU adapter"]
+fn the_ground_shadow_reads_back_partly_transparent() {
+    let renderer = Renderer::new().expect("a GPU adapter and device");
+    let robot = build(&genomes::corpus()[0]);
+    let gpu = renderer.upload(&robot);
+    let with = transparent(&renderer, &robot, &gpu, true, Some(Alpha::Premultiplied));
+    let alone = transparent(&renderer, &robot, &gpu, false, Some(Alpha::Premultiplied));
+    // The pixels the robot alone leaves clear and the shadow covers show
+    // the shadow alone.
+    let shadow: Vec<u8> = with
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(alone.pixels.as_chunks::<4>().0)
+        .filter(|(s, r)| r[3] == 0 && s[3] > 0)
+        .map(|(s, _)| s[3])
+        .collect();
+    assert!(
+        shadow.len() > 100,
+        "{} pixels show the shadow alone",
+        shadow.len()
+    );
+    // Its alpha never exceeds its opacity at the centre.
+    let pose = Actor::new(&robot, Mood::Neutral).evaluate(0.0);
+    let most = (frame::shadow(&robot, &pose).opacity * 255.0).round() as u8 + 1;
+    let top = shadow.iter().copied().max().unwrap_or(0);
+    assert!(
+        top <= most && top < 255,
+        "the shadow's alpha reaches {top}, above {most}"
+    );
+
+    // Pixels the robot fully covers show the robot alone.
+    let changed = with
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(alone.pixels.as_chunks::<4>().0)
+        .filter(|(s, r)| r[3] == 255 && s != r)
+        .count();
+    assert_eq!(changed, 0, "covered pixels the shadow changes");
+}
+
+#[test]
+#[ignore = "needs a GPU adapter"]
+fn straight_read_back_matches_premultiplied() {
+    let renderer = Renderer::new().expect("a GPU adapter and device");
+    let robot = build(&genomes::corpus()[0]);
+    let gpu = renderer.upload(&robot);
+    let straight = transparent(&renderer, &robot, &gpu, true, Some(Alpha::Straight));
+    let premultiplied = transparent(&renderer, &robot, &gpu, true, Some(Alpha::Premultiplied));
+    let mut partly = 0;
+    for (i, (s, p)) in straight
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(premultiplied.pixels.as_chunks::<4>().0)
+        .enumerate()
+    {
+        assert_eq!(s[3], p[3], "pixel {i}: alpha");
+        let a = f64::from(s[3]);
+        if s[3] == 0 {
+            assert_eq!((s, p), (&[0; 4], &[0; 4]), "pixel {i}: nothing covers it");
+            continue;
+        }
+        partly += usize::from(s[3] < 255);
+        for k in 0..3 {
+            let (s, p) = (f64::from(s[k]), f64::from(p[k]));
+            // Both come from one straight colour, each rounded to a byte
+            // once, so straight times alpha lands within a level of
+            // premultiplied.
+            assert!(
+                (s * a / 255.0 - p).abs() <= 1.0,
+                "pixel {i}, channel {k}: straight {s} times alpha {a} against {p}"
+            );
+            // Divided back, premultiplied's rounding grows by 255 / alpha:
+            // within a level of straight where the pixel is fully covered,
+            // and within half a level plus that growth elsewhere.
+            assert!(
+                (p * 255.0 / a - s).abs() <= 0.5 + 127.5 / a + 1e-6,
+                "pixel {i}, channel {k}: premultiplied {p} divided by alpha {a} against {s}"
+            );
+        }
+    }
+    assert!(partly > 100, "{partly} partly covered pixels");
 }

@@ -1,7 +1,9 @@
 //! The WGSL is valid without a GPU, and the texture and target formats are
 //! the stated sRGB ones.
 
-use avatar_3d_wgpu::{BLIT_SHADER, SHADER, TARGET_FORMAT, TEXTURE_FORMAT};
+use avatar_3d_wgpu::{BLIT_SHADER, SHADER};
+#[cfg(feature = "gpu")]
+use avatar_3d_wgpu::{TARGET_FORMAT, TEXTURE_FORMAT};
 
 /// Parses and validates WGSL with naga, and returns its entry points by
 /// name.
@@ -49,12 +51,15 @@ fn the_blit_wgsl_parses_and_validates_with_naga() {
         [
             ("fs_encode", naga::ShaderStage::Fragment),
             ("fs_linear", naga::ShaderStage::Fragment),
+            ("fs_premultiplied", naga::ShaderStage::Fragment),
+            ("fs_straight", naga::ShaderStage::Fragment),
             ("vs_blit", naga::ShaderStage::Vertex),
         ]
     );
 }
 
 #[test]
+#[cfg(feature = "gpu")]
 fn textures_and_targets_are_rgba8_srgb() {
     assert_eq!(TEXTURE_FORMAT, wgpu::TextureFormat::Rgba8UnormSrgb);
     assert_eq!(TARGET_FORMAT, wgpu::TextureFormat::Rgba8UnormSrgb);
