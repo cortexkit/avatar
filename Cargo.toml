@@ -3,6 +3,7 @@ members = [
     "crates/avatar",
     "crates/avatar-3d",
     "crates/avatar-3d-wgpu",
+    "crates/avatar-3d-stage",
     "crates/avatar-drawn-heads",
     "crates/avatar-ffi",
     "crates/avatar-genome",

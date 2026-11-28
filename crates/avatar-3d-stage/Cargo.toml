@@ -1,0 +1,28 @@
+[package]
+name = "cortexkit-avatar-3d-stage"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The 3D stage: a scene of robots keyed by the caller, their motion and a clock, drawn through a renderer."
+publish = false
+
+# The library keeps its short Rust name, so code imports it as
+# `avatar_3d_stage`.
+[lib]
+name = "avatar_3d_stage"
+
+[dependencies]
+# The robots as plain data, and the actors that pose them.
+avatar-3d = { version = "0.1.0", path = "../avatar-3d", package = "cortexkit-avatar-3d" }
+# Moods, and the genome length the one accepted creature type stores.
+avatar-small-robots = { version = "0.1.0", path = "../avatar-small-robots", package = "cortexkit-avatar-small-robots" }
+# The published frame data that reads load without a lock.
+arc-swap = "1.7"
+# The lock-free command queue and the bounded event queue.
+crossbeam-queue = "0.3.6"
+
+[dev-dependencies]
+# Checks that the type and version the stage accepts are the ones the 2D
+# dispatch names. The library itself does not link the 2D generators.
+avatar = { version = "0.1.0", path = "../avatar", package = "cortexkit-avatar" }
