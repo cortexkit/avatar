@@ -137,7 +137,8 @@ impl std::error::Error for StageError {}
 /// than the previous frame's advances nothing.
 ///
 /// A command takes effect at the first frame drawn after it: scene
-/// commands at that frame's stage time, each exactly once, and
+/// commands at that frame's stage time, each exactly once (a held face
+/// command when it reaches the actor, below), and
 /// [`Stage::pause`], [`Stage::resume`], [`Stage::resize`] and
 /// [`Stage::set_max_fps`] at the start of the next render call, drawn or
 /// not. Events carry that frame's `target_time`.
@@ -160,19 +161,71 @@ impl std::error::Error for StageError {}
 ///    states and clock reference change together and are never replayed,
 ///    even if the rest of the frame fails, so retrying the same
 ///    `target_time` advances nothing.
-/// 7. Builds are asked for, landed builds are uploaded and take over, and
-///    the frame is drawn, submitted, then presented or read back.
+/// 7. Builds are asked for; landed builds are uploaded; face sets and new
+///    edges that landed, and sets released, change each robot's layers;
+///    robots whose face is drawable take over; held commands that are due
+///    reach their actors; each drawn robot's mood is chosen; and the frame
+///    is drawn, submitted, then presented or read back.
 /// 8. Only a presented or read-back frame publishes its statistics and the
 ///    [`Event::Ready`] of each robot it showed for the first time.
 ///
 /// # Creatures
 ///
 /// Each build of a key is a new generation. A robot appears in the first
-/// frame after its build lands; a changed spec keeps the old robot drawn
-/// until the new one takes over, in the key's latest mood and status loop.
-/// A build whose spec has since changed, or whose key was removed, is
-/// discarded unseen. Robots build on worker threads, or inside the render
-/// call that first needs them ([`crate::BuildMode::Inline`]).
+/// frame after its build lands with the face set of the key's latest mood
+/// drawable; a changed spec keeps the old robot drawn until the new one
+/// takes over, in the key's latest mood and status loop. A build whose
+/// spec has since changed, or whose key was removed, is discarded unseen.
+/// Robots build on worker threads, or inside the render call that first
+/// needs them ([`crate::BuildMode::Inline`]).
+///
+/// # Faces
+///
+/// A robot is built with the face set (the head face and each stalk eye,
+/// open and blinking) of the key's latest mood. Each other set is
+/// rasterized from the genome on a worker when first needed and uploaded
+/// at the start of a frame; none stays on the CPU after upload.
+///
+/// - **Drawn mood.** Each robot has a drawn mood: the mood whose set its
+///   head and stalk eyes show, and whose status lights, LEDs, bulb and
+///   beacon the robot shows, so lights and face never disagree. When the
+///   pose asks for another face and that set is resident, the drawn mood
+///   becomes it on the first frame whose blink is at least [`crate::SHUT`],
+///   or [`crate::LATE_AFTER`] seconds of stage time after the later of the
+///   pose asking for it and the set becoming drawable, whichever comes
+///   first. A frame step that skips a blink (at 1 fps, say) defers the
+///   switch rather than showing it with open eyes. A request superseded
+///   before its set lands never switches in. [`FrameStats`] counts each
+///   switch made off a blink.
+/// - **Held commands.** A [`Stage::set_state`] that changes the mood, or a
+///   [`Stage::play`] whose reaction shows a face, whose face set is not
+///   drawable is held instead of reaching the actor, and the set is
+///   rasterized at once. Once a key has a held command, its later
+///   `set_state` and `play` calls wait behind it in the host's order; a
+///   later `set_state` replaces a waiting one (mood and status loop
+///   together), and a later `play` a waiting one, joining the tail: held
+///   `set_state(A)`, `play(R)`, `set_state(B)` deliver R, then B, and never
+///   A. The head of the queue reaches the actor at the start of the first
+///   frame its set is drawable, or the first frame at least
+///   [`crate::HOLD_AT_MOST`] seconds of stage time after the frame that
+///   took it; the commands behind it follow in the same frame while each
+///   one's set is drawable or its own time is up. [`FrameStats`] counts
+///   held commands.
+/// - **Resident sets.** A robot keeps resident its drawn mood's set (never
+///   released), its pose's set, the sets of the face changes its actor has
+///   coming, and those its held commands need. Any other set is released
+///   once no frame has drawn or needed it for [`crate::RELEASE_AFTER`]
+///   seconds of stage time.
+/// - **Texture edge.** All of a robot's layers share one edge, a power of
+///   two from 64 to 512 px ([`crate::edge_target`]). A robot shown alone
+///   ([`StageView::Stage`]) aims at the edge its canvases need on the
+///   frame, worked out on every drawn frame: a larger one is rasterized
+///   at once, a smaller one once the target has stayed at or below half
+///   the edge for [`crate::SHRINK_AFTER`] seconds. The old layers keep
+///   showing, scaled, until the whole new set is uploaded, a robot has at
+///   most one new edge on its way, and one that is no longer wanted when
+///   it lands is dropped. Robots not drawn keep their edge. A robot is
+///   first built at its key's edge, or [`crate::FIRST_EDGE`].
 ///
 /// # Pause
 ///
@@ -286,10 +339,13 @@ impl<R: Renderer> Stage<R> {
         self.scene(SceneCommand::SetCreatures(cast));
     }
 
-    /// Sets a creature's mood and status loop. For a key in the cast whose
-    /// robot is not built yet, the latest call is kept and the robot starts
-    /// in it. For a key not in the cast, the call is dropped and reported
-    /// as an [`Event::CommandDropped`].
+    /// Sets a creature's mood and status loop. A mood change whose face set
+    /// is not drawable yet is held until it is, for at most
+    /// [`crate::HOLD_AT_MOST`] seconds of stage time (see the type's
+    /// Faces section). For a key in the cast whose robot is not built yet,
+    /// the latest call is kept and the robot starts in it. For a key not in
+    /// the cast, the call is dropped and reported as an
+    /// [`Event::CommandDropped`].
     pub fn set_state(&self, key: &str, mood: Mood, status_loop: Option<StatusLoop>) {
         self.scene(SceneCommand::SetState {
             key: key.to_owned(),
@@ -298,9 +354,12 @@ impl<R: Renderer> Stage<R> {
         });
     }
 
-    /// Plays a reaction. For a key whose robot is not built yet, or not in
-    /// the cast, the call is dropped and reported as an
-    /// [`Event::CommandDropped`].
+    /// Plays a reaction. A reaction showing a face whose set is not
+    /// drawable yet is held until it is, for at most
+    /// [`crate::HOLD_AT_MOST`] seconds of stage time, as is any call behind
+    /// a held one (see the type's Faces section). For a key whose robot is
+    /// not built yet, or not in the cast, the call is dropped and reported
+    /// as an [`Event::CommandDropped`].
     pub fn play(&self, key: &str, reaction: Reaction) {
         self.scene(SceneCommand::Play {
             key: key.to_owned(),

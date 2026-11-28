@@ -53,11 +53,11 @@ pub struct FrameStats {
     /// frame's adds round(gap / period) − 1. The period is 1 / max fps, or
     /// 1/60 s uncapped.
     pub frames_dropped: u64,
-    /// Face commands held until their face set could be drawn. Always 0
-    /// until face sets load on demand.
+    /// Face commands held until their face set was drawable, or their time
+    /// was up, since creation: each `set_state` or `play` that waited.
     pub held_face_commands: u64,
-    /// Face switches made 1 s late, off a blink. Always 0 until drawn moods
-    /// are tracked.
+    /// Drawn moods switched off a blink since creation: a face set that no
+    /// blink switched in within a second of being asked for and drawable.
     pub late_face_switches: u64,
     /// The renderer's estimate of the GPU memory it holds, in bytes.
     pub gpu_memory_bytes: u64,

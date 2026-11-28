@@ -10,6 +10,7 @@ use std::fmt;
 
 use avatar_3d::motion::Pose;
 use avatar_3d::robot::Robot;
+use avatar_small_robots::Mood;
 
 /// Where a stage's frames go. A stage has one, chosen when it is made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -69,6 +70,32 @@ pub struct Image {
     pub pixels: Vec<u8>,
 }
 
+/// A change to which of a robot's texture layers the GPU holds, made at the
+/// start of a frame through [`Renderer::set_layers`].
+///
+/// Every texture binding of [`Robot::textures`] keeps its place whatever is
+/// resident: a resident binding is drawn from its layer, and a binding not
+/// resident is never drawn, because the stage draws only the face sets it
+/// keeps resident.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct LayerChange {
+    /// The edge in pixels every layer has after the change. All of a
+    /// robot's layers share one edge.
+    pub edge: u32,
+    /// The bindings resident after the change, in binding order: every
+    /// mark and chest binding, and the bindings of the face sets the stage
+    /// keeps.
+    pub resident: Vec<usize>,
+    /// The pixels of each binding that needs them, in binding order: every
+    /// binding resident after the change and not before, or, when the edge
+    /// changes, every resident binding. Each is `edge` × `edge` RGBA8, as
+    /// [`avatar_3d::robot::Texture::pixels`] holds them. A binding resident
+    /// before and after at the same edge keeps the layer it has on the GPU.
+    /// The renderer takes the pixels and keeps no copy once uploaded.
+    pub fresh: Vec<(usize, Vec<u8>)>,
+}
+
 /// One robot a frame draws.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -81,9 +108,17 @@ pub struct DrawItem<'a, G> {
     pub robot: &'a Robot,
     /// The same robot as [`Renderer::upload`] returned it.
     pub gpu: &'a G,
-    /// Its pose this frame. Its face set is drawn as the pose gives it
-    /// until drawn moods are tracked, which hold a new face until a blink.
+    /// Its pose this frame, as drawn: `face` is the robot's drawn mood,
+    /// whose face set the head and both stalk eyes show (the blinking
+    /// textures when `blink` is at least 0.5), and `status`, `leds`, `lit`
+    /// and `rays` are that mood's own, so the lights always agree with the
+    /// face. The drawn mood follows the actor's face only under a blink,
+    /// so it may lag [`DrawItem::posed_face`]. Its face set is always
+    /// resident.
     pub pose: &'a Pose,
+    /// The face set the actor's pose asks for this frame, which the drawn
+    /// mood moves to on a blink once that set is resident.
+    pub posed_face: Mood,
     /// Where its model origin stands, in model units. Every robot stands
     /// at the origin until the plaza is laid out.
     pub offset: [f64; 3],
@@ -113,8 +148,9 @@ pub struct Frame<'a, G> {
 /// runs (pause releases at once), never from two threads at a time.
 ///
 /// A drawn frame calls [`Renderer::begin`], then [`Renderer::upload`] for
-/// robots whose builds landed and [`Renderer::retire`] for robots no
-/// longer shown, then [`Renderer::submit`], then [`Renderer::present`] or
+/// robots whose builds landed, [`Renderer::set_layers`] for robots whose
+/// resident textures change and [`Renderer::retire`] for robots no longer
+/// shown, then [`Renderer::submit`], then [`Renderer::present`] or
 /// [`Renderer::read_back`] as the target is.
 pub trait Renderer: Send + 'static {
     /// A robot's resources on the GPU.
@@ -131,7 +167,9 @@ pub trait Renderer: Send + 'static {
     /// drawable. A failure here leaves the frame uncommitted.
     fn begin(&mut self, width_px: u32, height_px: u32, scale: f64) -> Result<(), Failure>;
 
-    /// Uploads a newly built robot. A renderer may take the robot's texture
+    /// Uploads a newly built robot. The textures with pixels are its
+    /// resident layers, all at one edge; the rest are not resident until
+    /// [`Renderer::set_layers`] makes them so. A renderer may take the
     /// pixels, so none stay on the CPU after upload.
     fn upload(
         &mut self,
@@ -139,6 +177,12 @@ pub trait Renderer: Send + 'static {
         generation: u64,
         robot: &mut Robot,
     ) -> Result<Self::Robot, Failure>;
+
+    /// Changes which of a robot's texture layers are resident, and their
+    /// edge, without waiting for the GPU: the layers drawn by frames
+    /// already submitted stay until those frames are done. Called at the
+    /// start of a frame, before the frame is drawn.
+    fn set_layers(&mut self, robot: &mut Self::Robot, change: LayerChange) -> Result<(), Failure>;
 
     /// Gives back a robot no later frame draws. Its resources are freed
     /// once the GPU has finished the frames already submitted with it.
