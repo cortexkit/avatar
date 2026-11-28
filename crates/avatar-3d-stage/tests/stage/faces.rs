@@ -216,29 +216,22 @@ fn drawn_mood_at_30_fps(seed: u32) {
     h.step(STEP_30);
     let mut w = Watch::new(&h, "a", seed);
     let robot = w.robot.clone();
-    let mut calls = 0;
 
     // A mood change whose set lands within half a second.
     h.builder.hold_textures();
     h.stage.set_state("a", Mood::Happy, None);
-    calls += 1;
     w.run(&mut h, 6, STEP_30);
     assert_eq!(w.posed.0, Mood::Neutral, "held until its set is drawable");
-    h.land_textures(calls);
+    h.land_textures();
     w.run(&mut h, 60, STEP_30);
     assert_eq!(w.drawn, Mood::Happy);
 
     // Each reaction; one whose face set is not resident waits for it.
     for reaction in REACTIONS {
         h.builder.hold_textures();
-        if let Some(face) = robot.motion.reaction(reaction).face {
-            if !resident(&h, &robot, "a", face) {
-                calls += 1;
-            }
-        }
         h.stage.play("a", reaction);
         w.run(&mut h, 6, STEP_30);
-        h.land_textures(calls);
+        h.land_textures();
         w.run(&mut h, 90, STEP_30);
     }
     assert_eq!(w.drawn, Mood::Happy);
@@ -247,7 +240,6 @@ fn drawn_mood_at_30_fps(seed: u32) {
     // set, and the swap blink passes with nothing to switch to.
     h.builder.hold_textures();
     h.stage.set_state("a", Mood::Sad, None);
-    calls += 1;
     w.run(&mut h, 1, STEP_30);
     let drained = h.last().unwrap().stage_time;
     while h.last().unwrap().stage_time - drained < 0.8 {
@@ -262,7 +254,7 @@ fn drawn_mood_at_30_fps(seed: u32) {
         .find(|&k| shut(k) && !(k - 4..k).any(shut))
         .expect("an idle blink within 20 s");
     w.run(&mut h, k - 4, STEP_30);
-    h.land_textures(calls);
+    h.land_textures();
     let switches = w.switches.len();
     w.run(&mut h, 8, STEP_30);
     assert_eq!(w.switches[switches..], [(times[k], Mood::Sad, false)]);
@@ -271,7 +263,6 @@ fn drawn_mood_at_30_fps(seed: u32) {
     // a second after it became drawable, counted late.
     h.builder.hold_textures();
     h.stage.set_state("a", Mood::Blocked, None);
-    calls += 1;
     w.run(&mut h, 1, STEP_30);
     let drained = h.last().unwrap().stage_time;
     while h.last().unwrap().stage_time - drained < 0.8 {
@@ -283,7 +274,7 @@ fn drawn_mood_at_30_fps(seed: u32) {
         .find(|&k| !(k..k + 45).any(shut))
         .expect("a second and a half without a blink within 30 s");
     w.run(&mut h, landing, STEP_30);
-    h.land_textures(calls);
+    h.land_textures();
     let switches = w.switches.len();
     w.run(&mut h, 40, STEP_30);
     let late = w.switches[switches..].to_vec();

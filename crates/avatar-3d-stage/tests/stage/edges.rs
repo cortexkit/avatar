@@ -120,7 +120,7 @@ fn a_staged_robot_moves_to_a_larger_edge_once_and_never_back_to_a_late_smaller_o
 
     // The 256 px layers land after 512 px was wanted: dropped, and the
     // 512 px ones are made next and installed.
-    h.land_textures(1);
+    h.land_textures();
     until_checked(&mut h, "512 px layers", |h| h.item("a").edge == 512);
     let calls = h.builder.texture_calls();
     assert_eq!(calls.len(), 2);

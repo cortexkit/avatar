@@ -128,6 +128,31 @@ pub trait Builder: Send + Sync + 'static {
             .filter_map(|(i, texture)| texture.pixels.map(|pixels| (i, pixels)))
             .collect()
     }
+
+    /// Told on the frame thread when the stage asks for a job, before any
+    /// worker can start it. Does nothing by default.
+    ///
+    /// With [`Builder::landed`] and [`Builder::dropped`] it lets a test
+    /// know when every job asked for has ended, so the next render call
+    /// takes each result and the frames do not depend on how threads are
+    /// scheduled.
+    fn asked(&self, job: &JobInfo<'_>) {
+        let _ = job;
+    }
+
+    /// Told once a job's result waits in the stage's queue, so the next
+    /// render call that gets past its early returns takes it. Does nothing
+    /// by default.
+    fn landed(&self, job: &JobInfo<'_>) {
+        let _ = job;
+    }
+
+    /// Told when a job ends without a result: skipped by a worker because
+    /// it was no longer wanted or the stage was closing, or panicked. Does
+    /// nothing by default.
+    fn dropped(&self, job: &JobInfo<'_>) {
+        let _ = job;
+    }
 }
 
 /// Builds each robot from its genome with the face set of its mood drawn at
@@ -152,14 +177,40 @@ impl Builder for RobotBuilder {
 }
 
 /// What a job makes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Work {
+    /// A robot, with this mood's face set: [`Builder::build`].
+    Build {
+        /// The mood whose face set the build rasterizes.
+        mood: Mood,
+    },
+    /// One mood's face set for a robot built before: [`Builder::face_set`].
+    Faces {
+        /// The mood.
+        mood: Mood,
+    },
+    /// The marks, chest and these face sets at a new edge:
+    /// [`Builder::layers`].
+    Layers {
+        /// The moods whose face sets come along.
+        moods: MoodSet,
+    },
+}
+
+/// A job the stage asked its [`Builder`] for, as the builder's hooks see
+/// it.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Task {
-    /// A robot, with this mood's face set.
-    Build { mood: Mood },
-    /// One mood's face set for a robot built before.
-    Faces { mood: Mood },
-    /// The marks, chest and these face sets at a new edge.
-    Layers { moods: MoodSet },
+#[non_exhaustive]
+pub struct JobInfo<'a> {
+    /// The creature's key.
+    pub key: &'a str,
+    /// The generation of the robot the job builds, or makes textures for.
+    pub generation: u64,
+    /// What the job makes.
+    pub work: Work,
+    /// The edge in pixels its textures are rasterized at.
+    pub texture_px: u32,
 }
 
 /// Work waiting for a worker.
@@ -169,10 +220,21 @@ pub(crate) struct Job {
     pub genome: Arc<[u8; GENOME_LEN]>,
     /// The edge the textures are rasterized at.
     pub texture_px: u32,
-    pub task: Task,
+    pub task: Work,
     /// Set when the work is no longer wanted, so a worker skips it if it
     /// has not started.
     pub cancelled: Arc<AtomicBool>,
+}
+
+impl Job {
+    fn info(&self) -> JobInfo<'_> {
+        JobInfo {
+            key: &self.key,
+            generation: self.generation,
+            work: self.task,
+            texture_px: self.texture_px,
+        }
+    }
 }
 
 /// What a finished job made.
@@ -243,17 +305,22 @@ impl Builds {
     /// Starts a job: queues it for a worker, or runs it now when building
     /// inline. Either way what it makes lands in [`Builds::landed`].
     pub fn request(&self, job: Job) {
+        self.builder.asked(&job.info());
         match &self.jobs {
             Some(jobs) => {
                 // The workers outlive the sender, so this fails only once
                 // shut down, when no build is wanted.
-                let _ = jobs.send(job);
-            }
-            None => {
-                if let Some(built) = run(&*self.builder, &job) {
-                    let _ = self.finished.send(built);
+                if let Err(mpsc::SendError(job)) = jobs.send(job) {
+                    self.builder.dropped(&job.info());
                 }
             }
+            None => match run(&*self.builder, &job) {
+                Some(built) => {
+                    let _ = self.finished.send(built);
+                    self.builder.landed(&job.info());
+                }
+                None => self.builder.dropped(&job.info()),
+            },
         }
     }
 
@@ -284,7 +351,8 @@ impl Drop for Builds {
     }
 }
 
-/// A worker's loop: take a job, skip it if cancelled or closing, build it.
+/// A worker's loop: take a job, skip it if cancelled or closing, run it,
+/// and tell the builder how each ended.
 fn work(
     builder: &dyn Builder,
     queue: &Mutex<mpsc::Receiver<Job>>,
@@ -297,12 +365,18 @@ fn work(
             return;
         };
         if closing.load(Ordering::Acquire) || job.cancelled.load(Ordering::Acquire) {
+            builder.dropped(&job.info());
             continue;
         }
-        if let Some(built) = run(builder, &job) {
-            if finished.send(built).is_err() {
-                return;
+        match run(builder, &job) {
+            Some(built) => {
+                if finished.send(built).is_err() {
+                    builder.dropped(&job.info());
+                    return;
+                }
+                builder.landed(&job.info());
             }
+            None => builder.dropped(&job.info()),
         }
     }
 }
@@ -313,14 +387,14 @@ fn work(
 fn run(builder: &dyn Builder, job: &Job) -> Option<Built> {
     let (key, generation, genome, px) = (&job.key, job.generation, &*job.genome, job.texture_px);
     let output = panic::catch_unwind(AssertUnwindSafe(|| match job.task {
-        Task::Build { mood } => Output::Robot(Box::new(builder.build(&BuildRequest {
+        Work::Build { mood } => Output::Robot(Box::new(builder.build(&BuildRequest {
             key,
             generation,
             genome,
             mood,
             texture_px: px,
         }))),
-        Task::Faces { mood } => Output::Faces {
+        Work::Faces { mood } => Output::Faces {
             mood,
             pixels: builder.face_set(&FaceRequest {
                 key,
@@ -330,7 +404,7 @@ fn run(builder: &dyn Builder, job: &Job) -> Option<Built> {
                 texture_px: px,
             }),
         },
-        Task::Layers { moods } => Output::Layers {
+        Work::Layers { moods } => Output::Layers {
             pixels: builder.layers(&LayersRequest {
                 key,
                 generation,

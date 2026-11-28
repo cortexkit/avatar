@@ -3,15 +3,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use avatar_3d::motion::{ActorState, Pose};
 use avatar_3d::robot::{build_with, BuildOptions, MoodSet, Robot, TextureContent};
 use avatar_3d_stage::fake::{FakeControl, FakeFrame, FakeItem, FakeRenderer};
 use avatar_3d_stage::{
-    BuildMode, BuildRequest, Builder, CreatureSpec, Event, FaceRequest, LayersRequest,
-    RenderStatus, Stage, StageOptions, Target,
+    BuildMode, BuildRequest, Builder, CreatureSpec, Event, FaceRequest, JobInfo, LayersRequest,
+    RenderStatus, Stage, StageOptions, Target, Work,
 };
 use avatar_small_robots::{Mood, GENOME_LEN};
 
@@ -20,6 +19,10 @@ pub const WAIT: Duration = Duration::from_secs(60);
 
 /// One frame at 60 Hz.
 pub const TICK: f64 = 1.0 / 60.0;
+
+/// The most frames [`Harness::until`] renders before it fails. Every job
+/// lands in the frame after it is asked for, so waits end in a few frames.
+pub const UNTIL_FRAMES: usize = 1000;
 
 /// A genome from a seed, by xorshift.
 pub fn genome(seed: u32) -> Vec<u8> {
@@ -131,6 +134,7 @@ pub struct BuildCall {
     pub tag: [u8; 8],
     pub mood: Mood,
     pub px: u32,
+    /// Whether its robot waits in the stage's queue, or was taken.
     pub finished: bool,
 }
 
@@ -150,11 +154,25 @@ pub struct TextureCall {
     pub generation: u64,
     pub work: TextureWork,
     pub px: u32,
+    /// Whether its pixels wait in the stage's queue, or were taken.
     pub finished: bool,
+}
+
+/// What a job waits behind.
+enum Hold {
+    /// The hold on one key's builds.
+    Build(String),
+    /// The hold on every face set and new edge.
+    Textures,
 }
 
 /// A builder whose builds of a key, and whose texture work, can be held,
 /// and which logs each call. Its robots carry stand-in pixels.
+///
+/// It also counts, through the builder hooks, the jobs the stage asked for
+/// that have not ended, and those of them waiting behind a hold, so a test
+/// can wait until every other job has landed ([`TestBuilder::settle`])
+/// and its frames do not depend on how threads are scheduled.
 #[derive(Default)]
 pub struct TestBuilder {
     state: Mutex<BuilderState>,
@@ -167,11 +185,66 @@ struct BuilderState {
     calls: Vec<BuildCall>,
     textures_held: bool,
     texture_calls: Vec<TextureCall>,
+    /// Jobs asked for that have neither landed nor been dropped.
+    pending: usize,
+    /// Builds waiting behind a hold, by key, and texture jobs waiting
+    /// behind the texture hold. A job counts as blocked only while its hold
+    /// stands: the moment a hold is released its jobs count as running,
+    /// before their threads wake.
+    blocked_builds: HashMap<String, usize>,
+    blocked_textures: usize,
+}
+
+impl BuilderState {
+    /// The jobs still held.
+    fn blocked(&self) -> usize {
+        let builds: usize = self
+            .blocked_builds
+            .iter()
+            .filter(|(key, _)| self.held.contains(*key))
+            .map(|(_, n)| n)
+            .sum();
+        let textures = if self.textures_held {
+            self.blocked_textures
+        } else {
+            0
+        };
+        builds + textures
+    }
+
+    /// Marks the call that made `job` finished: its result is in the
+    /// stage's queue.
+    fn finish(&mut self, job: &JobInfo<'_>) {
+        let texture = match job.work {
+            Work::Faces { mood } => Some(TextureWork::Faces(mood)),
+            Work::Layers { moods } => Some(TextureWork::Layers(moods)),
+            _ => None,
+        };
+        let finished = match texture {
+            None => self
+                .calls
+                .iter_mut()
+                .find(|c| !c.finished && c.key == job.key && c.generation == job.generation)
+                .map(|c| &mut c.finished),
+            Some(work) => self
+                .texture_calls
+                .iter_mut()
+                .find(|c| {
+                    !c.finished
+                        && c.key == job.key
+                        && c.generation == job.generation
+                        && c.work == work
+                        && c.px == job.texture_px
+                })
+                .map(|c| &mut c.finished),
+        };
+        *finished.expect("a job that landed was logged when it ran") = true;
+    }
 }
 
 impl Builder for TestBuilder {
     fn build(&self, request: &BuildRequest<'_>) -> Robot {
-        let index = {
+        {
             let mut state = self.lock();
             state.calls.push(BuildCall {
                 key: request.key.to_owned(),
@@ -182,22 +255,14 @@ impl Builder for TestBuilder {
                 finished: false,
             });
             self.changed.notify_all();
-            while state.held.contains(request.key) {
-                state = self
-                    .changed
-                    .wait(state)
-                    .unwrap_or_else(PoisonError::into_inner);
-            }
-            state.calls.len() - 1
-        };
-        let robot = textured(
+            let key = request.key.to_owned();
+            self.wait_while(state, Hold::Build(key));
+        }
+        textured(
             request.genome,
             MoodSet::NONE.with(request.mood),
             request.texture_px,
-        );
-        self.lock().calls[index].finished = true;
-        self.changed.notify_all();
-        robot
+        )
     }
 
     fn face_set(&self, request: &FaceRequest<'_>) -> Vec<(usize, Vec<u8>)> {
@@ -227,11 +292,81 @@ impl Builder for TestBuilder {
             || stand_in_pixels(&robot(request.genome), request.moods, request.texture_px),
         )
     }
+
+    fn asked(&self, _job: &JobInfo<'_>) {
+        self.lock().pending += 1;
+        self.changed.notify_all();
+    }
+
+    fn landed(&self, job: &JobInfo<'_>) {
+        let mut state = self.lock();
+        state.finish(job);
+        state.pending -= 1;
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    fn dropped(&self, _job: &JobInfo<'_>) {
+        self.lock().pending -= 1;
+        self.changed.notify_all();
+    }
 }
 
 impl TestBuilder {
     fn lock(&self) -> MutexGuard<'_, BuilderState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Waits, counted as blocked, while `hold` stands.
+    fn wait_while(&self, mut state: MutexGuard<'_, BuilderState>, hold: Hold) {
+        let held = |s: &BuilderState| match &hold {
+            Hold::Build(key) => s.held.contains(key),
+            Hold::Textures => s.textures_held,
+        };
+        if !held(&state) {
+            return;
+        }
+        match &hold {
+            Hold::Build(key) => *state.blocked_builds.entry(key.clone()).or_default() += 1,
+            Hold::Textures => state.blocked_textures += 1,
+        }
+        self.changed.notify_all();
+        while held(&state) {
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        match &hold {
+            Hold::Build(key) => {
+                *state
+                    .blocked_builds
+                    .get_mut(key)
+                    .expect("counted when it began to wait") -= 1;
+            }
+            Hold::Textures => state.blocked_textures -= 1,
+        }
+    }
+
+    /// Waits until every job the stage asked for has landed or been
+    /// dropped, but those waiting behind a hold that still stands. The
+    /// next render call then takes every result there is to take.
+    pub fn settle(&self) {
+        let deadline = Instant::now() + WAIT;
+        let mut state = self.lock();
+        while state.pending > state.blocked() {
+            let left = deadline.saturating_duration_since(Instant::now());
+            assert!(
+                !left.is_zero(),
+                "timed out waiting for {} jobs to land",
+                state.pending - state.blocked()
+            );
+            state = self
+                .changed
+                .wait_timeout(state, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
     }
 
     /// Holds every build of `key` until [`TestBuilder::release`].
@@ -294,7 +429,7 @@ impl TestBuilder {
         px: u32,
         make: impl FnOnce() -> Vec<(usize, Vec<u8>)>,
     ) -> Vec<(usize, Vec<u8>)> {
-        let index = {
+        {
             let mut state = self.lock();
             state.texture_calls.push(TextureCall {
                 key: key.to_owned(),
@@ -304,18 +439,9 @@ impl TestBuilder {
                 finished: false,
             });
             self.changed.notify_all();
-            while state.textures_held {
-                state = self
-                    .changed
-                    .wait(state)
-                    .unwrap_or_else(PoisonError::into_inner);
-            }
-            state.texture_calls.len() - 1
-        };
-        let pixels = make();
-        self.lock().texture_calls[index].finished = true;
-        self.changed.notify_all();
-        pixels
+            self.wait_while(state, Hold::Textures);
+        }
+        make()
     }
 
     /// Every call so far.
@@ -361,8 +487,11 @@ pub struct Harness {
 pub const WIDTH: u32 = 64;
 pub const HEIGHT: u32 = 48;
 
+/// A harness over `build`. Under [`BuildMode::Workers`] it starts four
+/// workers, so a job waiting behind a hold never keeps another job from
+/// starting, which [`TestBuilder::settle`] relies on.
 pub fn harness(target: Target, build: BuildMode) -> Harness {
-    harness_with(target, build, 1, true)
+    harness_with(target, build, 4, true)
 }
 
 pub fn harness_with(target: Target, build: BuildMode, threads: usize, timestamps: bool) -> Harness {
@@ -413,8 +542,12 @@ impl Drop for Unblock<'_> {
 
 impl Harness {
     /// A render call at `t` to the harness's target, and the events it
-    /// left.
+    /// left. It first waits until every job asked for has landed, but those
+    /// held, so what the call draws never depends on how the workers were
+    /// scheduled: a job lands in the first call after it was asked for or
+    /// released.
     pub fn render_at(&mut self, t: f64) -> Result<(), RenderStatus> {
+        self.builder.settle();
         self.t = t;
         let result = match self.target {
             Target::Surface => self.stage.render_to_surface(t),
@@ -442,29 +575,20 @@ impl Harness {
             .unwrap_or_else(|| panic!("{key} is drawn"))
     }
 
-    /// Lets held texture work go and waits until `calls` texture calls have
-    /// been made in all and every one has finished, so the next frame
-    /// installs what they made.
-    pub fn land_textures(&self, calls: usize) {
+    /// Lets held texture work go; the next render call takes what it made.
+    pub fn land_textures(&self) {
         self.builder.release_textures();
-        self.builder
-            .wait_for_textures(&format!("{calls} texture calls"), |made| {
-                made.len() >= calls && made.iter().all(|c| c.finished)
-            });
     }
 
-    /// Renders frames until `done` holds, sleeping a little between them so
-    /// worker builds land.
+    /// Renders frames until `done` holds, at most [`UNTIL_FRAMES`].
     pub fn until(&mut self, what: &str, done: impl Fn(&Harness) -> bool) {
-        let deadline = Instant::now() + WAIT;
-        loop {
+        for _ in 0..UNTIL_FRAMES {
             self.frame().expect("the frame draws");
             if done(self) {
                 return;
             }
-            assert!(Instant::now() < deadline, "timed out waiting for {what}");
-            thread::sleep(Duration::from_millis(1));
         }
+        panic!("{what} not within {UNTIL_FRAMES} frames");
     }
 
     /// Renders until the latest frame draws every one of `keys`.

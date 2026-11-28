@@ -3,7 +3,6 @@
 //! lost device.
 
 use std::thread;
-use std::time::Duration;
 
 use avatar_3d::motion::Reaction;
 use avatar_3d_stage::fake::{FakeRenderer, Step};
@@ -204,9 +203,7 @@ fn lost_device_setup() -> (Harness, u64) {
     h.stage.play("zz", Reaction::Poke);
     h.builder.release("b");
     h.builder
-        .wait_for("b's new build to finish", |calls| calls[2].finished);
-    // Let the result reach the landing queue.
-    thread::sleep(Duration::from_millis(20));
+        .wait_for("b's new build to land", |calls| calls[2].finished);
     (h, landing)
 }
 

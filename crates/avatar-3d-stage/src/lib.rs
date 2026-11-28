@@ -79,7 +79,8 @@ mod stage;
 mod stats;
 
 pub use build::{
-    BuildMode, BuildRequest, Builder, FaceRequest, LayersRequest, RobotBuilder, StageOptions,
+    BuildMode, BuildRequest, Builder, FaceRequest, JobInfo, LayersRequest, RobotBuilder,
+    StageOptions, Work,
 };
 pub use clock::{DUE_SLACK, MAX_STEP, UNCAPPED_PERIOD};
 pub use events::{CommandKind, Event, EVENT_CAPACITY};

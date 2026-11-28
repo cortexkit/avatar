@@ -29,10 +29,9 @@ fn a_pause_during_a_build_frees_everything_and_discards_the_late_build() {
 
     h.builder.release("b");
     h.builder
-        .wait_for("b's build to finish", |calls| calls[1].finished);
+        .wait_for("b's build to land", |calls| calls[1].finished);
     let frames = h.fake.frame_count();
     for _ in 0..5 {
-        std::thread::sleep(std::time::Duration::from_millis(5));
         assert_eq!(h.frame(), Err(RenderStatus::Paused));
     }
     assert_eq!(h.fake.frame_count(), frames);

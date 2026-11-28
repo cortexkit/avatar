@@ -48,7 +48,7 @@ fn held_commands_reach_the_actor_once_their_set_is_drawable() {
     }
     assert_eq!(h.stage.frame_stats().held_face_commands, 2);
 
-    h.land_textures(1);
+    h.land_textures();
     h.frame().unwrap();
     let landed = h.last().unwrap().stage_time;
     let mut actor = base.clone();
@@ -104,7 +104,7 @@ fn a_held_mood_replaced_by_the_mood_shown_ends_there() {
     for _ in 0..30 {
         h.frame().unwrap();
     }
-    h.land_textures(1);
+    h.land_textures();
     for _ in 0..120 {
         h.frame().unwrap();
         assert_moves_as(&h, &base, "never happy");
@@ -123,7 +123,7 @@ fn a_held_set_state_then_a_play_reach_the_actor_in_that_order() {
         h.frame().unwrap();
         assert_moves_as(&h, &base, "the play waits behind the set_state");
     }
-    h.land_textures(1);
+    h.land_textures();
     h.frame().unwrap();
     let landed = h.last().unwrap().stage_time;
     let mut actor = base.clone();
@@ -148,7 +148,7 @@ fn held_set_state_play_set_state_deliver_the_play_then_the_last_set_state() {
         assert_moves_as(&h, &base, "all held");
     }
     // Hello's face and sad's.
-    h.land_textures(2);
+    h.land_textures();
     h.frame().unwrap();
     let landed = h.last().unwrap().stage_time;
     let mut actor = base.clone();
@@ -177,7 +177,7 @@ fn a_request_superseded_before_its_set_lands_never_switches_in() {
         h.frame().unwrap();
     }
     assert_eq!(h.item("a").posed_face, Mood::Sad);
-    h.land_textures(2);
+    h.land_textures();
     for _ in 0..180 {
         h.frame().unwrap();
         assert_ne!(h.item("a").pose.face, Mood::Happy);

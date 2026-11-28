@@ -15,7 +15,7 @@ use avatar_3d::robot::Robot;
 use avatar_small_robots::{Mood, GENOME_LEN};
 use crossbeam_queue::SegQueue;
 
-use crate::build::{Builds, Job, Output, Task};
+use crate::build::{Builds, Job, Output, Work};
 use crate::clock::{Clock, Tick};
 use crate::events::{CommandKind, Event, EventQueue};
 use crate::faces::{edge_target, Ask, Faces, FIRST_EDGE};
@@ -162,8 +162,8 @@ impl<G> Body<G> {
     fn ask(&self, builds: &Builds, key: &str, asks: Vec<Ask>) {
         for ask in asks {
             let (texture_px, task) = match ask {
-                Ask::Faces { mood, edge } => (edge, Task::Faces { mood }),
-                Ask::Layers { moods, edge } => (edge, Task::Layers { moods }),
+                Ask::Faces { mood, edge } => (edge, Work::Faces { mood }),
+                Ask::Layers { moods, edge } => (edge, Work::Layers { moods }),
             };
             builds.request(Job {
                 key: key.to_owned(),
@@ -608,7 +608,7 @@ impl<R: Renderer> Core<R> {
                 generation,
                 genome: Arc::clone(&creature.genome),
                 texture_px: creature.edge,
-                task: Task::Build {
+                task: Work::Build {
                     mood: creature.mood,
                 },
                 cancelled: cancel,
