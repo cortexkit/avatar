@@ -1,18 +1,20 @@
 //! Prints the labelled SHA-256 digests of the 3D small robots' rest meshes
-//! and of their poses in the motion scripts.
+//! and of their poses in the motion scripts, and the exact bits of their
+//! stage cameras.
 //!
 //! ```text
 //! cargo run -p cortexkit-avatar-3d --example robot_pins [-- --write | --check]
 //! ```
 //!
-//! Standard output is the two pins files' content without their comments:
+//! Standard output is the three pins files' content without their comments:
 //! the coverage seed and prefix and one `label<TAB>sha256` line per rest
-//! mesh (see `cases.rs`), then one line per pinned pose (see `scripts.rs`).
+//! mesh (see `cases.rs`), then one line per pinned pose (see `scripts.rs`),
+//! then one line per robot's stage camera (see `cases.rs`).
 //! Each robot's triangle count and texture bytes go to standard error.
 //! `--write` runs the coverage search and writes the pins to
-//! `vectors/robots-3d/digests.tsv` and `vectors/robots-3d/poses.tsv`, the
-//! only way those files are written. `--check` exits non-zero unless the
-//! digests equal the committed pins.
+//! `vectors/robots-3d/digests.tsv`, `vectors/robots-3d/poses.tsv` and
+//! `vectors/robots-3d/cameras.tsv`, the only way those files are written.
+//! `--check` exits non-zero unless the output equals the committed pins.
 
 mod cases;
 mod scripts;
@@ -40,7 +42,8 @@ fn main() -> ExitCode {
     };
     let lines = cases::pin_lines(count);
     let poses = scripts::pose_lines();
-    for line in lines.iter().chain(&poses) {
+    let cameras = cases::camera_lines(count);
+    for line in lines.iter().chain(&poses).chain(&cameras) {
         println!("{line}");
     }
     for (label, genome) in cases::cases(count) {
@@ -57,6 +60,7 @@ fn main() -> ExitCode {
             for (file, header, lines) in [
                 (cases::PINS, cases::HEADER, &lines),
                 (scripts::POSE_PINS, scripts::POSE_HEADER, &poses),
+                (cases::CAMERA_PINS, cases::CAMERA_HEADER, &cameras),
             ] {
                 let path = cases::vectors().join(file);
                 fs::create_dir_all(path.parent().expect("the pins file has a directory"))
@@ -66,7 +70,11 @@ fn main() -> ExitCode {
                 eprintln!("robot_pins: wrote {}", path.display());
             }
         }
-        "--check" if lines != cases::committed() || poses != scripts::committed_poses() => {
+        "--check"
+            if lines != cases::committed()
+                || poses != scripts::committed_poses()
+                || cameras != cases::committed_cameras() =>
+        {
             eprintln!("robot_pins: the digests differ from the committed pins");
             return ExitCode::FAILURE;
         }

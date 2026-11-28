@@ -1,6 +1,6 @@
 //! The pinned robot cases, shared by the `robot_pins` example and the
 //! robot tests: the corpus genomes, the coverage genomes and the digests
-//! of their rest meshes.
+//! of their rest meshes, and the bits of their stage cameras.
 //!
 //! The corpus genomes are the 12 of `vectors/small-robots/corpus.tsv`, each
 //! read from `vectors/wild/<project_id>.hex`. The coverage genomes are the
@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use avatar_3d::robot::{build_with, mesh_bytes, BuildOptions};
+use avatar_3d::robot::{build_with, mesh_bytes, BuildOptions, Camera};
 use avatar_small_robots::layout::{BackLayout, Layout, CATALOGUES};
 use avatar_small_robots::{decode, GENOME_LEN};
 use sha2::{Digest, Sha256};
@@ -27,6 +27,8 @@ pub const COVERAGE_SEED: u64 = 3301;
 pub const COVERAGE_LIMIT: u64 = 4000;
 /// The pins file, relative to the repository's `vectors/`.
 pub const PINS: &str = "robots-3d/digests.tsv";
+/// The camera pins file, relative to the repository's `vectors/`.
+pub const CAMERA_PINS: &str = "robots-3d/cameras.tsv";
 
 pub type Genome = Box<[u8; GENOME_LEN]>;
 
@@ -236,4 +238,57 @@ pub fn committed_prefix() -> u64 {
         .expect("the pins record the coverage prefix")
         .parse()
         .expect("the coverage prefix is a whole number")
+}
+
+/// The header comment of the camera pins file.
+pub const CAMERA_HEADER: &str =
+    "# Stage cameras of the 3D small robots, one line per pinned robot: its\n\
+# label, then eye x, y, z, target x, y, z, up x, y, z, the vertical field\n\
+# of view in degrees and the aspect, each as the 16 hex digits of its\n\
+# IEEE 754 binary64 bits, then the frame height in pixels. Written only by\n\
+# `cargo run -p cortexkit-avatar-3d --example robot_pins -- --write`.";
+
+/// The camera pin label of the case with this rest-mesh label:
+/// `mesh/corpus/<id>` becomes `camera/corpus/<id>`.
+pub fn camera_label(mesh_label: &str) -> String {
+    let rest = mesh_label
+        .strip_prefix("mesh/")
+        .expect("a case label starts with mesh/");
+    format!("camera/{rest}")
+}
+
+/// A camera's pin line: the label, then every field's exact bits.
+pub fn camera_line(label: &str, camera: &Camera) -> String {
+    let floats = camera
+        .eye
+        .iter()
+        .chain(&camera.target)
+        .chain(&camera.up)
+        .chain([&camera.fov_y_degrees, &camera.aspect]);
+    let mut fields = vec![label.to_owned()];
+    fields.extend(floats.map(|v| format!("{:016x}", v.to_bits())));
+    fields.push(camera.height_px.to_string());
+    fields.join("\t")
+}
+
+/// The camera pins file's lines for the given coverage count: each
+/// pinned robot's stage camera, in case order.
+pub fn camera_lines(count: u64) -> Vec<String> {
+    cases(count)
+        .into_iter()
+        .map(|(label, genome)| {
+            let robot = build_with(&genome, BuildOptions::untextured());
+            camera_line(&camera_label(&label), &robot.camera)
+        })
+        .collect()
+}
+
+/// The committed camera pins' lines, without comments.
+pub fn committed_cameras() -> Vec<String> {
+    let path = vectors().join(CAMERA_PINS);
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    text.lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
