@@ -37,6 +37,17 @@
 //! its own; [`Submitted::wait`] then gives the GPU's time for it from
 //! timestamp queries, where the device has them.
 //!
+//! # Textures on the GPU
+//!
+//! A robot's textures share one mipmapped array texture, a layer for each
+//! resident texture ([`layers`]). [`Renderer::upload`] keeps every texture
+//! resident at its own index and leaves the robot's pixels with it, as the
+//! `review_sheets` example needs; [`Renderer::upload_consuming`] uploads
+//! only the textures with pixels and frees those pixels.
+//! [`Renderer::restock`] changes which textures are resident, or their
+//! edge, without waiting for the GPU, and the replaced array texture is
+//! freed once the frames that sample it are done.
+//!
 //! # On a window
 //!
 //! [`Renderer::for_surface`] starts a renderer that can present to a
@@ -50,6 +61,7 @@
 pub mod colour;
 pub mod frame;
 mod gpu;
+pub mod layers;
 pub mod plaza;
 pub mod upload;
 pub mod view;

@@ -5,6 +5,7 @@
 mod faces;
 mod genomes;
 mod gpu;
+mod layers;
 mod plaza;
 mod shader;
 mod targets;

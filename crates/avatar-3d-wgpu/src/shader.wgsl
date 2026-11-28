@@ -72,7 +72,8 @@ struct Material {
 @group(1) @binding(0) var<uniform> robot: RobotUniform;
 @group(1) @binding(1) var<storage, read> joints: array<Joint>;
 @group(1) @binding(2) var<storage, read> materials: array<Material>;
-// Per texture: canvas origin x, origin y and edge, in projection units.
+// Per texture: canvas origin x, origin y and edge, in projection units,
+// then the layer of `layers` that holds it, or -1 when none does.
 @group(1) @binding(3) var<storage, read> bindings: array<vec4<f32>>;
 @group(1) @binding(4) var layers: texture_2d_array<f32>;
 @group(1) @binding(5) var layer_sampler: sampler;
@@ -122,15 +123,16 @@ fn vs_robot(v: VertexIn) -> VertexOut {
 }
 
 // Texture `index` at projection coordinate `p`, or nothing outside its
-// canvas. The gradients are taken before any branch, so this may run in
-// non-uniform control flow.
+// canvas or when no layer holds it. The gradients are taken before any
+// branch, so this may run in non-uniform control flow.
 fn layer_sample(index: u32, p: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
     let b = bindings[index];
+    let layer = i32(b.w);
     let uv = (p - b.xy) / b.z;
-    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) {
+    if (layer < 0 || any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) {
         return vec4<f32>(0.0);
     }
-    return textureSampleGrad(layers, layer_sampler, uv, i32(index), dx / b.z, dy / b.z);
+    return textureSampleGrad(layers, layer_sampler, uv, layer, dx / b.z, dy / b.z);
 }
 
 @fragment

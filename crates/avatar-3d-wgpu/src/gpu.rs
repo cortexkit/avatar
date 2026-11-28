@@ -5,7 +5,8 @@ mod surface;
 
 use std::borrow::Cow;
 use std::fmt;
-use std::sync::{mpsc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 
 use avatar_3d::motion::Pose;
 use avatar_3d::robot::Robot;
@@ -14,6 +15,7 @@ use wgpu::util::DeviceExt;
 
 use crate::colour::{dark_ratio, linear};
 use crate::frame::{self, Shadow};
+use crate::layers::{self, Residency};
 use crate::upload::{convert, mip_chain, mip_levels};
 use crate::view::View;
 use crate::{DEPTH_FORMAT, SAMPLE_COUNT, SHADER, TARGET_FORMAT, TEXTURE_FORMAT};
@@ -64,7 +66,8 @@ pub struct Image {
 pub struct Item<'a> {
     /// The robot as built.
     pub robot: &'a Robot,
-    /// The same robot uploaded with [`Renderer::upload`].
+    /// The same robot uploaded with [`Renderer::upload`] or
+    /// [`Renderer::upload_consuming`].
     pub gpu: &'a GpuRobot,
     /// Its pose this frame.
     pub pose: &'a Pose,
@@ -105,6 +108,22 @@ pub struct Renderer {
     timer: Option<Timer>,
     /// What draws frames onto windows, made for the first one.
     blit: Mutex<Option<surface::Blit>>,
+    /// Robot array textures replaced or given back, kept until the GPU has
+    /// finished the frames that could sample them.
+    retired: Mutex<Vec<Retired>>,
+    /// The bytes of the textures in `retired`.
+    retired_bytes: AtomicU64,
+}
+
+/// A robot array texture no later frame samples, which the GPU may still be
+/// reading.
+struct Retired {
+    texture: wgpu::Texture,
+    /// Its bytes, mip levels included.
+    bytes: u64,
+    /// Set once the GPU has finished every submission made up to its
+    /// retirement.
+    done: Arc<AtomicBool>,
 }
 
 /// The timestamp queries that time a drawn frame's scene pass on the GPU.
@@ -140,10 +159,19 @@ pub struct GpuRobot {
     uniform: wgpu::Buffer,
     joints: wgpu::Buffer,
     materials: wgpu::Buffer,
+    /// Per texture, its canvas and its layer ([`layers::binding_data`]).
+    bindings: wgpu::Buffer,
+    /// Per texture, its canvas as `bindings` holds it.
+    canvases: Vec<[f32; 3]>,
+    /// The resident textures, one layer each.
+    texture: wgpu::Texture,
+    /// Which layer of `texture` holds each texture.
+    residency: Residency,
     group: wgpu::BindGroup,
     bones: usize,
     material_count: usize,
-    /// Bytes of texture memory, mip levels included.
+    /// Bytes of the array texture holding the resident textures, mip
+    /// levels included.
     pub texture_bytes: u64,
     /// Bytes of vertex and index memory.
     pub geometry_bytes: u64,
@@ -152,6 +180,13 @@ pub struct GpuRobot {
     pub frame_bytes: u64,
     /// Triangles drawn.
     pub triangles: u32,
+}
+
+impl GpuRobot {
+    /// Which of the robot's textures are resident, at which layer and edge.
+    pub fn residency(&self) -> &Residency {
+        &self.residency
+    }
 }
 
 struct Targets {
@@ -529,13 +564,204 @@ impl Renderer {
             targets: Mutex::new(None),
             timer,
             blit: Mutex::new(None),
+            retired: Mutex::new(Vec::new()),
+            retired_bytes: AtomicU64::new(0),
         }
     }
 
     /// Uploads a robot: its geometry, its textures converted for sRGB
     /// sampling ([`crate::upload`]) with their mip chains, and per-frame
     /// buffers sized for its bones and materials.
+    ///
+    /// Every texture is resident at its own index ([`Residency::every`]),
+    /// at the edge the robot's textures share. A texture built without
+    /// pixels, such as a face of a mood outside the build's
+    /// [`avatar_3d::robot::BuildOptions::moods`], takes a transparent layer
+    /// that [`Renderer::restock`] can fill later. The robot keeps its
+    /// pixels; [`Renderer::upload_consuming`] frees them instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the robot's textures do not share one edge.
     pub fn upload(&self, robot: &Robot) -> GpuRobot {
+        let residency = Residency::every(robot.textures.len(), layers::edge(robot));
+        let texture = self.layer_texture(&residency);
+        for (binding, t) in robot.textures.iter().enumerate() {
+            if let (Some(pixels), Some(layer)) = (&t.pixels, residency.layer(binding)) {
+                self.write_layer(&texture, layer, residency.px(), pixels);
+            }
+        }
+        self.upload_with(robot, residency, texture)
+    }
+
+    /// Uploads a robot as [`Renderer::upload`] does, but takes each
+    /// texture's pixels out of the robot and frees them once uploaded, so
+    /// no copy stays on the CPU. Only the textures that had pixels are
+    /// resident, packed in binding order ([`Residency::packed`]); the
+    /// others draw nothing until [`Renderer::restock`] brings them in.
+    ///
+    /// # Panics
+    ///
+    /// As [`Renderer::upload`].
+    pub fn upload_consuming(&self, robot: &mut Robot) -> GpuRobot {
+        let resident: Vec<usize> = robot
+            .textures
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.pixels.is_some())
+            .map(|(binding, _)| binding)
+            .collect();
+        let residency = Residency::packed(robot.textures.len(), layers::edge(robot), &resident);
+        let texture = self.layer_texture(&residency);
+        for (binding, t) in robot.textures.iter_mut().enumerate() {
+            if let (Some(pixels), Some(layer)) = (t.pixels.take(), residency.layer(binding)) {
+                self.write_layer(&texture, layer, residency.px(), &pixels);
+            }
+        }
+        self.upload_with(robot, residency, texture)
+    }
+
+    /// Moves an uploaded robot to a new resident set at `px` pixels a side:
+    /// the textures in `keep`, copied from their current layers on the GPU
+    /// with every mip level, and the textures in `fresh`, uploaded from
+    /// their pixels (sRGB premultiplied by alpha, `px` × `px` RGBA8, as
+    /// [`avatar_3d::robot::face_set`] returns them), which are freed once
+    /// uploaded. A change of edge keeps nothing, so `fresh` then holds
+    /// every texture the robot needs, marks and chest included.
+    ///
+    /// The robot gets a new array texture holding exactly the new set,
+    /// packed in binding order ([`Residency::plan`]), its bindings buffer's
+    /// layer lanes are rewritten, and its bind group is rebuilt. Nothing
+    /// waits for the GPU. The old array texture is retired: it is freed
+    /// once the GPU has finished every frame submitted before this call,
+    /// the last that can sample it, and until then it counts in
+    /// [`Renderer::retired_bytes`]. A frame drawn after this call samples
+    /// the new set.
+    ///
+    /// # Panics
+    ///
+    /// As [`Residency::plan`], and when a texture in `fresh` does not have
+    /// `px` × `px` × 4 bytes.
+    pub fn restock(
+        &self,
+        gpu: &mut GpuRobot,
+        px: u32,
+        keep: &[usize],
+        fresh: Vec<(usize, Vec<u8>)>,
+    ) {
+        self.free_retired();
+        let named: Vec<usize> = fresh.iter().map(|(binding, _)| *binding).collect();
+        let plan = gpu.residency.plan(px, keep, &named);
+        if fresh.is_empty() && plan.residency == gpu.residency {
+            return;
+        }
+        let texture = self.layer_texture(&plan.residency);
+        for ((_, pixels), &layer) in fresh.into_iter().zip(&plan.uploads) {
+            self.write_layer(&texture, layer, px, &pixels);
+        }
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("robot layers"),
+            });
+        let layer_copy = |texture, mip_level, z| wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level,
+            origin: wgpu::Origin3d { x: 0, y: 0, z },
+            aspect: wgpu::TextureAspect::All,
+        };
+        for &(from, to) in &plan.copies {
+            for level in 0..mip_levels(px) {
+                let edge = (px >> level).max(1);
+                encoder.copy_texture_to_texture(
+                    layer_copy(&gpu.texture, level, from),
+                    layer_copy(&texture, level, to),
+                    wgpu::Extent3d {
+                        width: edge,
+                        height: edge,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+        self.queue.write_buffer(
+            &gpu.bindings,
+            0,
+            &layers::canvas_data(&gpu.canvases, &plan.residency),
+        );
+        // The copies, the fresh layers and the new layer lanes go to the GPU
+        // in one submission, after every frame already submitted.
+        self.queue.submit([encoder.finish()]);
+        gpu.group = self.robot_group(
+            [&gpu.uniform, &gpu.joints, &gpu.materials, &gpu.bindings],
+            &texture,
+        );
+        let old = std::mem::replace(&mut gpu.texture, texture);
+        self.retire_texture(old, gpu.texture_bytes);
+        gpu.texture_bytes = plan.residency.texture_bytes();
+        gpu.residency = plan.residency;
+    }
+
+    /// Gives back an uploaded robot that no later frame draws. Its array
+    /// texture is retired as [`Renderer::restock`] retires an old one; its
+    /// buffers are dropped at once, and wgpu keeps them for as long as
+    /// submitted frames use them.
+    pub fn retire(&self, gpu: GpuRobot) {
+        self.free_retired();
+        // Submits any upload still queued for the robot, so that the
+        // texture counts as retired until that upload is done too.
+        self.queue.submit([]);
+        self.retire_texture(gpu.texture, gpu.texture_bytes);
+    }
+
+    /// The bytes of robot array textures retired by [`Renderer::restock`]
+    /// or [`Renderer::retire`] and not freed yet, mip levels included. A
+    /// retired texture is freed on the first [`Renderer::restock`],
+    /// [`Renderer::retire`], drawn frame or [`Renderer::finish_uploads`]
+    /// after the GPU has finished the frames that could sample it.
+    pub fn retired_bytes(&self) -> u64 {
+        self.retired_bytes.load(Ordering::Acquire)
+    }
+
+    /// Keeps `texture` until the GPU has finished everything submitted so
+    /// far, then lets [`Renderer::free_retired`] drop it.
+    fn retire_texture(&self, texture: wgpu::Texture, bytes: u64) {
+        let done = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&done);
+        // wgpu runs this once the last submission so far has finished on
+        // the GPU, from whichever later submit or poll notices it.
+        self.queue
+            .on_submitted_work_done(move || flag.store(true, Ordering::Release));
+        self.retired_bytes.fetch_add(bytes, Ordering::AcqRel);
+        self.retired
+            .lock()
+            .expect("the retired textures lock")
+            .push(Retired {
+                texture,
+                bytes,
+                done,
+            });
+    }
+
+    /// Drops every retired texture the GPU has finished with, which frees
+    /// it: no bind group a later frame uses refers to it.
+    fn free_retired(&self) {
+        let finished: Vec<Retired> = self
+            .retired
+            .lock()
+            .expect("the retired textures lock")
+            .extract_if(.., |r| r.done.load(Ordering::Acquire))
+            .collect();
+        for r in finished {
+            drop(r.texture);
+            self.retired_bytes.fetch_sub(r.bytes, Ordering::AcqRel);
+        }
+    }
+
+    /// The rest of an upload once its array texture is made: the geometry,
+    /// the per-frame buffers, the bindings buffer with `residency`'s layer
+    /// lanes, and the bind group.
+    fn upload_with(&self, robot: &Robot, residency: Residency, texture: wgpu::Texture) -> GpuRobot {
         let (vertices, indices) = vertex_data(robot);
         let device = &self.device;
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -566,27 +792,44 @@ impl Renderer {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut binding_data = Vec::with_capacity(robot.textures.len().max(1) * 16);
-        for t in &robot.textures {
-            let b = t.binding;
-            for v in [b.origin[0], b.origin[1], f64::from(b.extent), 0.0] {
-                binding_data.extend_from_slice(&(v as f32).to_le_bytes());
-            }
-        }
-        if binding_data.is_empty() {
-            binding_data.resize(16, 0);
-        }
+        let canvases = layers::canvases(robot);
+        // Rewritten when the resident set changes ([`Renderer::restock`]).
         let bindings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("robot texture bindings"),
-            contents: &binding_data,
-            usage: wgpu::BufferUsages::STORAGE,
+            contents: &layers::canvas_data(&canvases, &residency),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
-        let (texture, texture_bytes) = self.upload_textures(robot);
+        let group = self.robot_group([&uniform, &joints, &materials, &bindings], &texture);
+        GpuRobot {
+            index_count: indices.len() as u32,
+            geometry_bytes: (vertices.len() + 4 * indices.len()) as u64,
+            frame_bytes: uniform.size() + joints.size() + materials.size() + bindings.size(),
+            triangles: (indices.len() / 3) as u32,
+            vertices: vertex_buffer,
+            indices: index_buffer,
+            uniform,
+            joints,
+            materials,
+            bindings,
+            canvases,
+            group,
+            bones: robot.bones.len(),
+            material_count: robot.materials.len(),
+            texture_bytes: residency.texture_bytes(),
+            texture,
+            residency,
+        }
+    }
+
+    /// A robot's bind group over its uniform, joints, materials and
+    /// bindings buffers, in that order, and its array texture.
+    fn robot_group(&self, buffers: [&wgpu::Buffer; 4], texture: &wgpu::Texture) -> wgpu::BindGroup {
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let [uniform, joints, materials, bindings] = buffers;
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("robot"),
             layout: &self.robot_layout,
             entries: &[
@@ -615,84 +858,67 @@ impl Renderer {
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
             ],
-        });
-        GpuRobot {
-            index_count: indices.len() as u32,
-            geometry_bytes: (vertices.len() + 4 * indices.len()) as u64,
-            frame_bytes: uniform.size() + joints.size() + materials.size() + bindings.size(),
-            triangles: (indices.len() / 3) as u32,
-            vertices: vertex_buffer,
-            indices: index_buffer,
-            uniform,
-            joints,
-            materials,
-            group,
-            bones: robot.bones.len(),
-            material_count: robot.materials.len(),
-            texture_bytes,
-        }
+        })
     }
 
-    /// Every texture of a robot as one array texture, a layer per texture
-    /// in [`Robot::textures`] order. A texture built without pixels is
-    /// uploaded transparent.
-    fn upload_textures(&self, robot: &Robot) -> (wgpu::Texture, u64) {
-        let size = avatar_3d::robot::TEXTURE_PX;
-        let layers = robot.textures.len().max(1) as u32;
-        let levels = mip_levels(size);
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+    /// An empty array texture for a resident set, with a full mip chain.
+    /// Its layers start transparent, as wgpu clears every new texture. It
+    /// can be copied from, so a later [`Renderer::restock`] can keep its
+    /// layers.
+    fn layer_texture(&self, residency: &Residency) -> wgpu::Texture {
+        let px = residency.px();
+        self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("robot textures"),
             size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: layers,
+                width: px,
+                height: px,
+                depth_or_array_layers: residency.texture_layers(),
             },
-            mip_level_count: levels,
+            mip_level_count: mip_levels(px),
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: TEXTURE_FORMAT,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
-        });
-        let mut bytes = 0;
-        for layer in 0..layers {
-            let converted = match robot
-                .textures
-                .get(layer as usize)
-                .and_then(|t| t.pixels.as_ref())
-            {
-                Some(pixels) => convert(pixels),
-                None => vec![0; avatar_3d::robot::TEXTURE_BYTES],
-            };
-            for (level, data) in mip_chain(converted, size).iter().enumerate() {
-                let edge = (size >> level).max(1);
-                bytes += data.len() as u64;
-                self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &texture,
-                        mip_level: level as u32,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: layer,
-                        },
-                        aspect: wgpu::TextureAspect::All,
+        })
+    }
+
+    /// Queues one texture's pixels, converted ([`convert`]) with their mip
+    /// chain, into a layer of an array texture `px` pixels a side.
+    fn write_layer(&self, texture: &wgpu::Texture, layer: u32, px: u32, pixels: &[u8]) {
+        assert_eq!(
+            pixels.len(),
+            4 * px as usize * px as usize,
+            "a texture's pixels are {px} × {px} RGBA8"
+        );
+        for (level, data) in mip_chain(convert(pixels), px).iter().enumerate() {
+            let edge = (px >> level).max(1);
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer,
                     },
-                    data,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * edge),
-                        rows_per_image: Some(edge),
-                    },
-                    wgpu::Extent3d {
-                        width: edge,
-                        height: edge,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * edge),
+                    rows_per_image: Some(edge),
+                },
+                wgpu::Extent3d {
+                    width: edge,
+                    height: edge,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
-        (texture, bytes)
     }
 
     /// Draws a scene and reads it back.
@@ -721,10 +947,13 @@ impl Renderer {
 
     /// Submits every upload still queued and waits until the GPU has
     /// finished it. [`Renderer::upload`] queues its texture copies, which
-    /// otherwise run with the next frame.
+    /// otherwise run with the next frame. Every retired texture is freed
+    /// ([`Renderer::retired_bytes`]).
     pub fn finish_uploads(&self) -> Result<(), RenderError> {
         self.queue.submit([]);
-        self.wait_idle()
+        self.wait_idle()?;
+        self.free_retired();
+        Ok(())
     }
 
     /// Waits until the GPU has finished everything submitted.
@@ -869,6 +1098,7 @@ impl Renderer {
             );
         }
         self.queue.submit([encoder.finish()]);
+        self.free_retired();
         guard
     }
 
@@ -887,6 +1117,11 @@ impl Renderer {
             item.gpu.material_count,
             robot.materials.len(),
             "the uploaded robot's materials"
+        );
+        assert_eq!(
+            item.gpu.residency.bindings(),
+            robot.textures.len(),
+            "the uploaded robot's textures"
         );
         let mut uniform = Vec::with_capacity(80);
         let mut model = [0.0; 16];
