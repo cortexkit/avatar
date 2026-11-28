@@ -6,12 +6,13 @@ use std::sync::Arc;
 
 use avatar_small_robots::GENOME_LEN;
 
-/// The one creature type the stage draws in 3D: the small robots, named as
-/// the 2D dispatch names them.
+/// The one creature type the stage draws in 3D: the small robots. A stored
+/// row names its type with this string, the same one `cortexkit-avatar`
+/// uses to draw the robot in 2D.
 pub const SMALL_ROBOTS: &str = "creature.small-robots";
 
-/// The one version of [`SMALL_ROBOTS`] the stage draws. A later version of
-/// the 2D type is refused as an unknown version until 3D supports it.
+/// The one version of [`SMALL_ROBOTS`] the stage draws. A row of a later
+/// version is refused as an unknown version until 3D supports it.
 pub const SMALL_ROBOTS_VERSION: u32 = 1;
 
 /// One creature as a host stores it.
@@ -71,7 +72,8 @@ pub(crate) struct Cast {
 }
 
 /// Why one row cannot be drawn, checking its type, then its version, then
-/// its genome's length, as the 2D dispatch does.
+/// its genome's length: the order `cortexkit-avatar` checks a row in, so an
+/// unknown type is never reported as a malformed genome.
 pub(crate) fn refusal(spec: &CreatureSpec) -> Option<SkipReason> {
     if spec.avatar_type != SMALL_ROBOTS {
         Some(SkipReason::UnknownType)
