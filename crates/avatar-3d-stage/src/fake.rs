@@ -7,8 +7,8 @@ use std::mem;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use avatar_3d::motion::Pose;
 use avatar_3d::robot::Robot;
-use avatar_small_robots::Mood;
 
 use crate::renderer::{Failure, Frame, Image, Renderer, Target};
 
@@ -50,10 +50,8 @@ pub struct FakeItem {
     pub key: String,
     /// The build drawn.
     pub generation: u64,
-    /// The pose's face set.
-    pub face: Mood,
-    /// The pose's blink.
-    pub blink: f64,
+    /// Its pose.
+    pub pose: Pose,
     /// Where the robot stands.
     pub offset: [f64; 3],
 }
@@ -272,8 +270,7 @@ impl Renderer for FakeRenderer {
             .map(|item| FakeItem {
                 key: item.key.to_owned(),
                 generation: item.generation,
-                face: item.pose.face,
-                blink: item.pose.blink,
+                pose: item.pose.clone(),
                 offset: item.offset,
             })
             .collect();

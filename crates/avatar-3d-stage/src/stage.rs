@@ -209,7 +209,13 @@ struct Turn<'a>(&'a AtomicBool);
 
 impl<'a> Turn<'a> {
     fn take(flag: &'a AtomicBool) -> Option<Self> {
-        (!flag.swap(true, Ordering::Acquire)).then_some(Self(flag))
+        // A refused call makes no turn: dropping one would clear the
+        // running call's flag.
+        if flag.swap(true, Ordering::Acquire) {
+            None
+        } else {
+            Some(Self(flag))
+        }
     }
 }
 
