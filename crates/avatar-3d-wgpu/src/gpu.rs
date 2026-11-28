@@ -1,5 +1,7 @@
 //! The wgpu side: pipelines, a robot's buffers and textures on the GPU, and
-//! offscreen frames read back as RGBA8.
+//! offscreen frames read back as RGBA8 or drawn onto a window ([`surface`]).
+
+mod surface;
 
 use std::borrow::Cow;
 use std::fmt;
@@ -28,6 +30,8 @@ pub enum RenderError {
     Readback(String),
     /// Waiting for the GPU to finish failed.
     Wait(String),
+    /// A window's surface cannot be drawn to.
+    Surface(String),
 }
 
 impl fmt::Display for RenderError {
@@ -37,6 +41,7 @@ impl fmt::Display for RenderError {
             Self::NoDevice(m) => write!(f, "no GPU device: {m}"),
             Self::Readback(m) => write!(f, "readback failed: {m}"),
             Self::Wait(m) => write!(f, "waiting for the GPU failed: {m}"),
+            Self::Surface(m) => write!(f, "the window's surface: {m}"),
         }
     }
 }
@@ -86,6 +91,7 @@ pub struct Scene<'a> {
 /// The offscreen renderer: one device, its pipelines, and the frame targets
 /// of the last size drawn.
 pub struct Renderer {
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     info: wgpu::AdapterInfo,
@@ -97,6 +103,8 @@ pub struct Renderer {
     frame_group: wgpu::BindGroup,
     targets: Mutex<Option<Targets>>,
     timer: Option<Timer>,
+    /// What draws frames onto windows, made for the first one.
+    blit: Mutex<Option<surface::Blit>>,
 }
 
 /// The timestamp queries that time a drawn frame's scene pass on the GPU.
@@ -171,6 +179,8 @@ enum Purpose {
     Image,
     /// A frame timed on the GPU, not read back.
     Timed,
+    /// A frame drawn onto a window, neither read back nor timed.
+    Shown,
 }
 
 /// A frame [`Renderer::draw`] submitted, which the GPU may still be
@@ -251,14 +261,22 @@ impl Renderer {
     pub fn new() -> Result<Self, RenderError> {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+        Self::on_instance(&instance, None)
+    }
+
+    /// Starts a renderer on `instance`'s preferred high-performance adapter
+    /// among those that can present to `surface`, if one is given.
+    fn on_instance(
+        instance: &wgpu::Instance,
+        surface: Option<&wgpu::Surface<'_>>,
+    ) -> Result<Self, RenderError> {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
-            compatible_surface: None,
+            compatible_surface: surface,
             apply_limit_buckets: false,
         }))
         .map_err(|e| RenderError::NoAdapter(e.to_string()))?;
-        let info = adapter.get_info();
         // Timestamp queries time frames on the GPU when the adapter has
         // them ([`Renderer::draw`]); without them frames draw the same.
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -267,7 +285,7 @@ impl Renderer {
             ..Default::default()
         }))
         .map_err(|e| RenderError::NoDevice(e.to_string()))?;
-        Ok(Self::with_device(device, queue, info))
+        Ok(Self::with_device(adapter, device, queue))
     }
 
     /// The adapter's name and backend.
@@ -281,7 +299,8 @@ impl Renderer {
         self.timer.is_some()
     }
 
-    fn with_device(device: wgpu::Device, queue: wgpu::Queue, info: wgpu::AdapterInfo) -> Self {
+    fn with_device(adapter: wgpu::Adapter, device: wgpu::Device, queue: wgpu::Queue) -> Self {
+        let info = adapter.get_info();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("robots"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(SHADER)),
@@ -497,6 +516,7 @@ impl Renderer {
                 period: f64::from(queue.get_timestamp_period()),
             });
         Self {
+            adapter,
             device,
             queue,
             info,
@@ -508,6 +528,7 @@ impl Renderer {
             frame_group,
             targets: Mutex::new(None),
             timer,
+            blit: Mutex::new(None),
         }
     }
 
@@ -768,7 +789,7 @@ impl Renderer {
         let targets = guard.as_ref().expect("the frame targets were just made");
         let timer = match purpose {
             Purpose::Timed => self.timer.as_ref(),
-            Purpose::Image => None,
+            Purpose::Image | Purpose::Shown => None,
         };
 
         let mut encoder = self
@@ -943,11 +964,13 @@ impl Renderer {
         };
         let attach = wgpu::TextureUsages::RENDER_ATTACHMENT;
         let colour = texture("colour", TARGET_FORMAT, SAMPLE_COUNT, attach);
+        // The resolved frame is copied out for readback, or sampled to
+        // draw it onto a window.
         let resolve = texture(
             "resolve",
             TARGET_FORMAT,
             1,
-            attach | wgpu::TextureUsages::COPY_SRC,
+            attach | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
         );
         let depth = texture("depth", DEPTH_FORMAT, SAMPLE_COUNT, attach);
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;

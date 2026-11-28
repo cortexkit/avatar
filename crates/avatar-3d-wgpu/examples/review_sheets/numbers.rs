@@ -37,7 +37,7 @@ use avatar_3d_wgpu::view::View;
 use avatar_3d_wgpu::{target_bytes, GpuRobot, Item, RenderError, Renderer, Scene};
 use avatar_small_robots::{Mood, GENOME_LEN, MOODS};
 
-use crate::{genome, place_plaza, BACKGROUND, FRAME, PLAZA_SEED, PLAZA_SIZE, STATED};
+use crate::{genome, place_plaza, BACKGROUND, FRAME, PLAZA_ROBOTS, PLAZA_SEED, PLAZA_SIZE, STATED};
 
 /// Seconds of animation a frame advances.
 const STEP: f64 = 1.0 / 30.0;
@@ -47,8 +47,6 @@ const STAGE_FRAMES: (usize, usize) = (60, 600);
 const PLAZA_FRAMES: (usize, usize) = (30, 300);
 /// How many times the stage robot is built, and uploaded, for its times.
 const STAGE_RUNS: usize = 15;
-/// The plaza's robots: genomes 0 to 32 of its seed.
-const PLAZA_ROBOTS: u64 = 33;
 /// Genomes of the plaza's seed counted, built without textures, for how
 /// many textures robots hold.
 const CENSUS: u64 = 1000;

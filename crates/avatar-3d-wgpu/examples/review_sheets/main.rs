@@ -41,6 +41,8 @@
 
 mod film;
 mod numbers;
+#[path = "../shared/robots.rs"]
+mod robots;
 mod sheet;
 
 use std::fs;
@@ -49,45 +51,18 @@ use std::process::ExitCode;
 
 use avatar_3d::motion::{Actor, Pose, REACTIONS};
 use avatar_3d::robot::{build, Robot};
-use avatar_3d_wgpu::plaza::{Footprint, Plaza};
+use avatar_3d_wgpu::plaza::Plaza;
 use avatar_3d_wgpu::view::View;
-use avatar_3d_wgpu::{plaza, GpuRobot, Image, Item, Renderer, Scene};
-use avatar_small_robots::{mood_name, Mood, Rgb, GENOME_LEN, MOODS};
+use avatar_3d_wgpu::{GpuRobot, Image, Item, Renderer, Scene};
+use avatar_small_robots::{mood_name, Mood, MOODS};
+use robots::{genome, place_plaza, BACKGROUND, PLAZA_ROBOTS, PLAZA_SEED, PLAZA_SIZE, STATED};
 use sheet::Sheet;
 
 /// The seeds of the sixteen random robots: the main sheet and a second
 /// one, so a fix is seen on robots it was not tuned on.
 const RANDOM_SEEDS: [u64; 2] = [501, 509];
-/// The stated robot of the moods, reactions and views sheets: a seed and
-/// a genome index.
-const STATED: (u64, u64) = (501, 14);
-/// The seed of the plaza's 33 robots.
-const PLAZA_SEED: u64 = 503;
 /// The edge of a single-robot frame.
 const FRAME: u32 = 288;
-/// Behind every frame: a light grey, so white parts still show.
-const BACKGROUND: Rgb = Rgb {
-    r: 0xf2,
-    g: 0xf3,
-    b: 0xf5,
-};
-/// The plaza's frame.
-const PLAZA_SIZE: (u32, u32) = (1600, 1000);
-
-/// Genome `index` of the sheet drawn with `seed`, as the `random_sheet`
-/// example derives it: the BLAKE3 extendable output of the text `avatar
-/// random_sheet genome`, keyed by the seed and the index as little-endian
-/// u64 values followed by 16 zero bytes.
-fn genome(seed: u64, index: u64) -> Box<[u8; GENOME_LEN]> {
-    let mut key = [0_u8; 32];
-    key[..8].copy_from_slice(&seed.to_le_bytes());
-    key[8..16].copy_from_slice(&index.to_le_bytes());
-    let mut hasher = blake3::Hasher::new_keyed(&key);
-    hasher.update(b"avatar random_sheet genome");
-    let mut genome = Box::new([0_u8; GENOME_LEN]);
-    hasher.finalize_xof().fill(&mut genome[..]);
-    genome
-}
 
 /// A robot built and uploaded.
 struct Built {
@@ -285,29 +260,6 @@ fn views_sheet(renderer: &Renderer, b: &Built) -> (Sheet, Vec<Row>) {
     (sheet, rows)
 }
 
-/// The plaza's robots placed by `plaza::layout` in the plaza's frame, from
-/// each robot's footprint in its neutral rest pose without idle, with
-/// those footprints. A placement that breaks the plaza's rules is reported
-/// and used all the same.
-fn place_plaza<'r>(robots: impl IntoIterator<Item = &'r Robot>) -> (Vec<Footprint>, Plaza) {
-    let prints: Vec<Footprint> = robots
-        .into_iter()
-        .map(|robot| {
-            let pose = Actor::new(robot, Mood::Neutral)
-                .without_idle()
-                .evaluate(0.0);
-            plaza::footprint(robot, &pose)
-        })
-        .collect();
-    let (width, height) = PLAZA_SIZE;
-    let placed = plaza::layout(&prints, width, height);
-    let clashes = plaza::clashes(&placed, &prints);
-    if !clashes.is_empty() {
-        eprintln!("review_sheets: the plaza breaks its rules: {clashes:?}");
-    }
-    (prints, placed)
-}
-
 /// Labels plaza robot `i` ("01" for the first) centred above `top`, a
 /// point in the robot's model space, at the plaza's label size.
 fn plaza_label(sheet: &mut Sheet, placed: &Plaza, i: usize, top: [f64; 3]) {
@@ -332,7 +284,7 @@ fn plaza_label(sheet: &mut Sheet, placed: &Plaza, i: usize, top: [f64; 3]) {
 }
 
 fn plaza_sheet(renderer: &Renderer) -> (Sheet, Vec<Row>) {
-    let built: Vec<Built> = (0..33)
+    let built: Vec<Built> = (0..PLAZA_ROBOTS)
         .map(|i| Built::new(renderer, PLAZA_SEED, i))
         .collect();
     let (prints, placed) = place_plaza(built.iter().map(|b| &b.robot));

@@ -34,3 +34,7 @@ avatar-svg = { version = "0.1.0", path = "../avatar-svg", package = "cortexkit-a
 blake3 = "1.5"
 # Writes the review sheets.
 png = "0.17"
+# Opens the live example's window and reads its keys and mouse. Default
+# features less the Adwaita-styled Wayland title bar, so its font stack is
+# not pulled in; Wayland windows get winit's plain decorations instead.
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }

@@ -31,7 +31,8 @@ use avatar_small_robots::{mood_name, Mood, MOODS};
 use crate::numbers::{every, Stage};
 use crate::sheet::Sheet;
 use crate::{
-    genome, place_plaza, plaza_label, Built, FRAME, PLAZA_SEED, PLAZA_SIZE, RANDOM_SEEDS, STATED,
+    genome, place_plaza, plaza_label, Built, FRAME, PLAZA_ROBOTS, PLAZA_SEED, PLAZA_SIZE,
+    RANDOM_SEEDS, STATED,
 };
 
 /// Frames a second.
@@ -70,8 +71,6 @@ const ROLLING: [&str; 3] = ["treads", "track", "wheels"];
 const LEGGED: [&str; 7] = [
     "biped", "piston", "spring", "quad", "hexa", "tripod", "hoses",
 ];
-/// The plaza's robots: genomes 0 to 32 of its seed.
-const PLAZA_ROBOTS: u64 = 33;
 /// The plaza film's length in seconds.
 const PLAZA_LENGTH: f64 = 25.0;
 /// Seconds between one plaza robot's reactions.

@@ -1,4 +1,4 @@
-//! Draws the 3D small robots offscreen with wgpu.
+//! Draws the 3D small robots offscreen with wgpu, or onto a window.
 //!
 //! Everything a robot looks like comes from [`avatar_3d`] as plain data,
 //! used unchanged: meshes, materials with their finishes, the status colour
@@ -36,6 +36,16 @@
 //! returns once it is submitted, so a frame's CPU time can be measured on
 //! its own; [`Submitted::wait`] then gives the GPU's time for it from
 //! timestamp queries, where the device has them.
+//!
+//! # On a window
+//!
+//! [`Renderer::for_surface`] starts a renderer that can present to a
+//! window's surface, [`Renderer::configure`] sets the surface up, and
+//! [`Renderer::present`] shows a frame on it. The frame is drawn offscreen
+//! as any other, then copied onto the surface's texture by one triangle
+//! that covers it ([`BLIT_SHADER`]), so the robot pipelines keep their one
+//! target format whatever format the window takes, and nothing is read
+//! back.
 
 pub mod colour;
 pub mod frame;
@@ -50,6 +60,10 @@ pub use gpu::{
 
 /// The WGSL source of the robot and shadow pipelines.
 pub const SHADER: &str = include_str!("shader.wgsl");
+
+/// The WGSL source of the pipelines that copy a drawn frame onto a
+/// window's surface.
+pub const BLIT_SHADER: &str = include_str!("blit.wgsl");
 
 /// The format of every robot texture: sampling decodes sRGB to linear.
 pub const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
