@@ -153,7 +153,7 @@ fn random_sheet(renderer: &Renderer, seed: u64) -> (Sheet, Vec<Row>) {
         let pose = Actor::new(&b.robot, Mood::Neutral)
             .without_idle()
             .evaluate(0.0);
-        let image = b.render(renderer, &pose, View::from(&b.robot.camera));
+        let image = b.render(renderer, &pose, View::from(&b.robot.camera()));
         let (x, y) = Sheet::cell_origin(i % 4, i / 4, FRAME, FRAME);
         sheet.blit(&image, x, y);
         label(&mut sheet, i as usize, i % 4, i / 4);
@@ -175,7 +175,7 @@ fn moods_sheet(renderer: &Renderer, b: &Built) -> (Sheet, Vec<Row>) {
     let mut rows = Vec::new();
     for (i, mood) in MOODS.into_iter().enumerate() {
         let pose = Actor::new(&b.robot, mood).without_idle().evaluate(0.0);
-        let image = b.render(renderer, &pose, View::from(&b.robot.camera));
+        let image = b.render(renderer, &pose, View::from(&b.robot.camera()));
         let (x, y) = Sheet::cell_origin(i as u32, 0, FRAME, FRAME);
         sheet.blit(&image, x, y);
         label(&mut sheet, i, i as u32, 0);
@@ -216,7 +216,7 @@ fn reactions_sheet(renderer: &Renderer, b: &Built) -> (Sheet, Vec<Row>) {
         actor.play(0.0, reaction);
         for (f, t) in strip_times(peak, clip.duration).into_iter().enumerate() {
             let pose = actor.evaluate(t);
-            let image = b.render(renderer, &pose, View::from(&b.robot.camera));
+            let image = b.render(renderer, &pose, View::from(&b.robot.camera()));
             let (x, y) = Sheet::cell_origin(f as u32, r as u32, FRAME, FRAME);
             sheet.blit(&image, x, y);
             let cell = r * 6 + f;
@@ -241,7 +241,7 @@ fn views_sheet(renderer: &Renderer, b: &Built) -> (Sheet, Vec<Row>) {
     let pose = Actor::new(&b.robot, Mood::Neutral)
         .without_idle()
         .evaluate(0.0);
-    let stage = View::from(&b.robot.camera);
+    let stage = View::from(&b.robot.camera());
     for (i, (name, azimuth, elevation)) in VIEWS.into_iter().enumerate() {
         let image = b.render(renderer, &pose, stage.orbit(azimuth, elevation));
         let (x, y) = Sheet::cell_origin(i as u32, 0, FRAME, FRAME);

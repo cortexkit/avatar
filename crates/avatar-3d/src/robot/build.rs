@@ -1,13 +1,15 @@
 //! The builder: one pass over the layout that makes every part, bone and
 //! texture.
 
+use std::sync::OnceLock;
+
 use avatar_small_robots::layout::{Frame, Layout};
 use avatar_small_robots::{decode, Creature, Mood, GENOME_LEN};
 
 use super::depth::Depth;
 use super::materials::Materials;
 use super::solids::V3;
-use super::{camera, fittings, gear, hulls, limbs, rigging, skeleton, textures};
+use super::{fittings, gear, hulls, limbs, rigging, skeleton, textures};
 use super::{BuildOptions, GearInfo, Part, Robot, Skin, UNIT};
 use crate::mesh::Mesh;
 
@@ -165,7 +167,7 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
     let motion = rigging::motion(&b, genome, &bones);
     let status = b.mats.table();
     let stand_ins = super::solids::take_stand_ins();
-    let mut robot = Robot {
+    Robot {
         depth,
         parts: b.parts,
         materials: b.mats.list,
@@ -178,12 +180,8 @@ pub(super) fn robot(genome: &[u8; GENOME_LEN], options: BuildOptions) -> Robot {
             hover: layout.gear.hover,
         },
         textures,
-        camera: camera::unset(),
         motion,
         stand_ins,
-    };
-    // The stage holds the robot through every reaction and status loop, so
-    // it is framed from the robot's own motion.
-    robot.camera = camera::stage(&robot);
-    robot
+        framing: OnceLock::new(),
+    }
 }

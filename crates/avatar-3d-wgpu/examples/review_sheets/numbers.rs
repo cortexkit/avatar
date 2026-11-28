@@ -656,7 +656,7 @@ pub fn run(renderer: &Renderer) -> Result<(), RenderError> {
         actors: vec![stage_actor(&shown.robot, until)],
         gpus: vec![&shown.gpu],
         offsets: vec![[0.0; 3]],
-        view: View::from(&shown.robot.camera),
+        view: View::from(&shown.robot.camera()),
         width: FRAME,
         height: FRAME,
     };

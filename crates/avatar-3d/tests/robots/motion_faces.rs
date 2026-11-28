@@ -170,11 +170,11 @@ fn every_face_target_is_seen_first_in_every_moods_posture() {
                 let posed_corners =
                     corners.map(|p| apply(&pose.bones[bone], local(&robot, bone, p)));
                 assert!(
-                    outward * dot(winding(posed_corners), sub(robot.camera.eye, target)) > 0.0,
+                    outward * dot(winding(posed_corners), sub(robot.camera().eye, target)) > 0.0,
                     "{label}: {target_name}'s surface faces away from the camera"
                 );
                 // Nothing else lies between the camera and the target.
-                if let Some((p, t, at)) = occluder(&robot, &occluders, robot.camera.eye, target) {
+                if let Some((p, t, at)) = occluder(&robot, &occluders, robot.camera().eye, target) {
                     panic!(
                         "{label}: the ray to {target_name} first meets {} (triangle {t}, textured front {}) at {at} of the way",
                         robot.parts[p].name, robot.parts[p].mesh.textured_front[t]

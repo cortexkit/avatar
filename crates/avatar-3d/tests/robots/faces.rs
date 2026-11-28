@@ -138,7 +138,7 @@ fn every_face_target_is_seen_first_from_the_stage_camera() {
         let layout = Layout::new(&decode(&genome));
         let robot = build_with(&genome, BuildOptions::untextured());
         for (name, part, target) in targets(&robot, &layout, &label) {
-            let (hit_part, tri, at) = first_hit(&robot, robot.camera.eye, target)
+            let (hit_part, tri, at) = first_hit(&robot, robot.camera().eye, target)
                 .unwrap_or_else(|| panic!("{label}: the ray to {name} meets nothing"));
             assert_eq!(
                 robot.parts[hit_part].name, robot.parts[part].name,

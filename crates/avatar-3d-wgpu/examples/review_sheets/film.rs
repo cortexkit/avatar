@@ -113,7 +113,7 @@ fn find_ffmpeg() -> Result<PathBuf, String> {
 
 /// A robot alone on a stage-film frame, from its stage camera.
 fn alone<'a>(actor: Actor<'a>, gpu: &'a GpuRobot) -> Stage<'a> {
-    let view = View::from(&actor.robot().camera);
+    let view = View::from(&actor.robot().camera());
     Stage {
         actors: vec![actor],
         gpus: vec![gpu],

@@ -93,7 +93,7 @@ fn a_camera_on_the_z_axis_gives_the_hand_matrices_and_pixels() {
 #[test]
 fn the_stage_camera_gives_the_hand_basis_and_focal_length() {
     let robot = build_with(&genomes::corpus()[0], BuildOptions::untextured());
-    let camera = robot.camera;
+    let camera = robot.camera();
     assert_eq!(
         (camera.fov_y_degrees, camera.aspect, camera.height_px),
         (FOV_Y, 1.0, FRAME_PX)
@@ -195,11 +195,11 @@ fn anchors_follow_their_bones_to_the_screen() {
 
     // On screen: the stage camera centres its target, and the anchor lands
     // where its projection says, above the frame's middle.
-    let view = View::from(&robot.camera);
+    let view = View::from(&robot.camera());
     let px = view
         .to_screen(at_rest, 288, 288)
         .expect("in front of the camera");
-    let ndc = robot.camera.project(at_rest);
+    let ndc = robot.camera().project(at_rest);
     assert_all_close(
         &px,
         &[(ndc[0] + 1.0) * 144.0, (1.0 - ndc[1]) * 144.0],

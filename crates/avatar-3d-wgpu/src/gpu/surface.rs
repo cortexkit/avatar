@@ -311,7 +311,7 @@ mod tests {
             offset: [0.0; 3],
         }];
         let scene = Scene {
-            view: View::from(&robot.camera).with_aspect(f64::from(width) / f64::from(height)),
+            view: View::from(&robot.camera()).with_aspect(f64::from(width) / f64::from(height)),
             width,
             height,
             background: Rgb {

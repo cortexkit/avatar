@@ -66,7 +66,7 @@
 #![deny(missing_docs)]
 
 mod build;
-mod camera;
+pub mod camera;
 mod depth;
 mod digest;
 mod fittings;
@@ -80,10 +80,14 @@ mod skeleton;
 mod solids;
 mod textures;
 
-pub use camera::{Camera, AZIMUTH, ELEVATION, FILL, FOV_Y, FRAME_PX, REACH_SAMPLES_PER_SECOND};
+pub use camera::{
+    Bounds, Camera, AZIMUTH, ELEVATION, FILL, FOV_Y, FRAME_PX, REACH_SAMPLES_PER_SECOND,
+};
 pub use depth::{Depth, BACK_KINDS, FIRST_BYTE as FIRST_DEPTH_BYTE, LAST_BYTE as LAST_DEPTH_BYTE};
 pub use digest::mesh_bytes;
 pub use materials::{Emission, Finish, LightKind, Material, StatusLight, StatusTable, FINISHES};
+
+use std::sync::OnceLock;
 
 use avatar_small_robots::layout::Frame;
 use avatar_small_robots::{Mood, GENOME_LEN, MOODS};
@@ -148,9 +152,6 @@ pub struct Robot {
     /// [`BuildOptions::moods`], unless the robot was built with
     /// [`BuildOptions::textures`] off.
     pub textures: Vec<Texture>,
-    /// The three-quarter stage camera that frames this robot at rest and
-    /// through every reaction and status loop.
-    pub camera: Camera,
     /// Mood postures, idle, reactions and status loops, for
     /// [`crate::motion::Actor`] to pose the robot with.
     pub motion: Motion,
@@ -159,9 +160,39 @@ pub struct Robot {
     /// by a simpler stand-in so that building never fails. Empty for every
     /// genome the tests build.
     pub stand_ins: Vec<&'static str>,
+    /// The reach box and the stage camera, worked out on first use.
+    framing: OnceLock<(Bounds, Camera)>,
 }
 
 impl Robot {
+    /// The box the stage camera is fitted to: it holds every vertex at rest
+    /// and in each pose sampled [`REACH_SAMPLES_PER_SECOND`] times a second,
+    /// with the idle layer off, through everything the robot does from
+    /// rest in each mood: its posture, every reaction, every status loop,
+    /// every reaction played over every status loop once the loop has faded
+    /// in, and the blend to each other mood.
+    ///
+    /// Building a robot does not work it out: sampling those poses takes
+    /// longer than the rest of the build, and only a robot shown alone on
+    /// the stage needs it. The first call to this or [`Self::camera`]
+    /// works out both and keeps them, so later calls, and clones made
+    /// after it, return at once.
+    pub fn reach(&self) -> Bounds {
+        self.framing().0
+    }
+
+    /// The three-quarter stage camera that frames this robot through
+    /// everything it does: [`camera::frame_box`] of [`Self::reach`] from
+    /// [`AZIMUTH`] and [`ELEVATION`] on a square frame, unzoomed, bit for
+    /// bit. Worked out on first use, as [`Self::reach`] is.
+    pub fn camera(&self) -> Camera {
+        self.framing().1
+    }
+
+    fn framing(&self) -> &(Bounds, Camera) {
+        self.framing.get_or_init(|| camera::stage(self))
+    }
+
     /// The number of triangles over every part.
     pub fn triangle_count(&self) -> usize {
         self.parts.iter().map(|p| p.mesh.triangles.len()).sum()

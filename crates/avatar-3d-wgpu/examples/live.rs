@@ -479,7 +479,7 @@ impl Live {
             ),
             (_, _, Some(s)) => (
                 self.orbit
-                    .view(View::from(&s.robot.camera), AZIMUTH, ELEVATION, aspect),
+                    .view(View::from(&s.robot.camera()), AZIMUTH, ELEVATION, aspect),
                 vec![(&s.robot, &s.gpu, [0.0; 3], 0.0)],
             ),
             _ => return,

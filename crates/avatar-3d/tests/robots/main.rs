@@ -7,6 +7,8 @@ mod scripts;
 
 mod actor_state;
 mod builder;
+mod cameras;
+mod containment;
 mod faces;
 mod ground;
 mod mapping;

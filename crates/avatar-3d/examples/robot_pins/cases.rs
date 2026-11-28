@@ -278,7 +278,7 @@ pub fn camera_lines(count: u64) -> Vec<String> {
         .into_iter()
         .map(|(label, genome)| {
             let robot = build_with(&genome, BuildOptions::untextured());
-            camera_line(&camera_label(&label), &robot.camera)
+            camera_line(&camera_label(&label), &robot.camera())
         })
         .collect()
 }

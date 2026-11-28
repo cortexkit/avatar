@@ -1,10 +1,10 @@
 //! Posing from the exported data alone: rigid and skinned points, anchors,
-//! and the stage camera, which holds the robot through every reaction and
-//! status loop.
+//! and the stage camera, which holds the robot through everything it does
+//! from rest in each mood.
 
-use avatar_3d::motion::{Actor, LOOP_BLEND, REACTIONS, STATUS_LOOPS};
+use avatar_3d::motion::{Actor, LOOP_BLEND, MOOD_BLEND, REACTIONS, STATUS_LOOPS};
 use avatar_3d::robot::{build_with, BuildOptions, Robot, Skin, FILL, REACH_SAMPLES_PER_SECOND};
-use avatar_small_robots::Mood;
+use avatar_small_robots::MOODS;
 
 use crate::cases;
 
@@ -148,7 +148,7 @@ fn rigid_and_skinned_points_and_anchors_follow_a_pose() {
 fn the_stage_camera_is_the_three_quarter_view() {
     let (_, genome) = cases::corpus().into_iter().next().unwrap();
     let robot = build_with(&genome, BuildOptions::untextured());
-    let c = robot.camera;
+    let c = robot.camera();
     assert_eq!(
         (c.up, c.fov_y_degrees, c.aspect, c.height_px),
         ([0.0, 1.0, 0.0], 20.0, 1.0, 288)
@@ -175,8 +175,8 @@ fn the_stage_camera_is_the_three_quarter_view() {
 
 /// The stage camera of the first corpus genome, wild-port-0005 in
 /// `vectors/small-robots/corpus.tsv`.
-const PINNED_EYE: V3 = [1.7941724449515872, 3.2345367603992283, 9.204325157627393];
-const PINNED_TARGET: V3 = [0.005032875407895765, 1.2414789671881963, 0.0];
+const PINNED_EYE: V3 = [1.8849265912048008, 3.4131230571087903, 9.78639321055582];
+const PINNED_TARGET: V3 = [-0.017355546406308653, 1.2940272057890838, 0.0];
 
 /// Every vertex of a robot in a pose, posed from the exported data alone.
 fn posed_vertices(robot: &Robot, joints: &[M4]) -> Vec<V3> {
@@ -198,9 +198,11 @@ fn posed_vertices(robot: &Robot, joints: &[M4]) -> Vec<V3> {
     out
 }
 
-/// Every pose the stage must hold: each reaction played from rest in
-/// neutral to its end, and each status loop through its fade-in and one
-/// period, sampled `REACH_SAMPLES_PER_SECOND` times a second with idle off.
+/// Every pose the stage must hold, from rest in each mood with idle off,
+/// sampled `REACH_SAMPLES_PER_SECOND` times a second: the mood's posture,
+/// each reaction to its end, each status loop through its fade-in and one
+/// period, each reaction played over each status loop once the loop has
+/// faded in, and the blend to each other mood.
 fn stage_poses(robot: &Robot) -> Vec<Vec<M4>> {
     let mut poses = Vec::new();
     let mut sample = |actor: &Actor, end: f64| {
@@ -213,37 +215,64 @@ fn stage_poses(robot: &Robot) -> Vec<Vec<M4>> {
             );
         }
     };
-    for r in REACTIONS {
-        let mut actor = Actor::new(robot, Mood::Neutral).without_idle();
-        actor.play(0.0, r);
-        sample(&actor, robot.motion.reaction(r).duration);
-    }
-    for l in STATUS_LOOPS {
-        let mut actor = Actor::new(robot, Mood::Neutral).without_idle();
-        actor.set_loop(0.0, Some(l));
-        sample(&actor, LOOP_BLEND + robot.motion.status_loop(l).duration);
+    let motion = &robot.motion;
+    for mood in MOODS {
+        let still = || Actor::new(robot, mood).without_idle();
+        sample(&still(), 0.0);
+        for r in REACTIONS {
+            let mut actor = still();
+            actor.play(0.0, r);
+            sample(&actor, motion.reaction(r).duration);
+        }
+        for l in STATUS_LOOPS {
+            let mut actor = still();
+            actor.set_loop(0.0, Some(l));
+            sample(&actor, LOOP_BLEND + motion.status_loop(l).duration);
+            for r in REACTIONS {
+                let mut actor = still();
+                actor.set_loop(0.0, Some(l));
+                actor.play(LOOP_BLEND, r);
+                sample(&actor, LOOP_BLEND + motion.reaction(r).duration);
+            }
+        }
+        for other in MOODS.into_iter().filter(|m| *m != mood) {
+            let mut actor = still();
+            actor.set_mood(0.0, other);
+            sample(&actor, MOOD_BLEND);
+        }
     }
     poses
 }
 
 #[test]
-fn the_stage_holds_every_reaction_and_status_loop() {
+fn the_stage_holds_every_pose_its_reach_samples() {
     for (label, genome) in cases::corpus() {
         let robot = build_with(&genome, BuildOptions::untextured());
-        let c = robot.camera;
-        // The target is the centre, in x and y, of the box holding the rest
-        // pose and every stage pose.
+        let c = robot.camera();
+        // Every vertex, at rest and in every stage pose, lies in the frame;
+        // the box round them all is the robot's reach, and the camera
+        // looks at its centre in x and y.
         let rest: Vec<M4> = robot.bones.iter().map(|b| b.rest).collect();
         let poses = stage_poses(&robot);
         let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-        for joints in std::iter::once(&rest).chain(&poses) {
+        for (n, joints) in std::iter::once(&rest).chain(&poses).enumerate() {
             for p in posed_vertices(&robot, joints) {
                 for k in 0..3 {
                     lo[k] = lo[k].min(p[k]);
                     hi[k] = hi[k].max(p[k]);
                 }
+                let q = c.project(p);
+                assert!(
+                    q[0].abs() <= FILL && q[1].abs() <= FILL && q[2] > 0.0,
+                    "{label}: sample {n} puts {p:?} at {q:?}, outside the frame"
+                );
             }
         }
+        let reach = robot.reach();
+        assert!(
+            close(reach.lo, lo) && close(reach.hi, hi),
+            "{label}: reach {reach:?} is not the box {lo:?} to {hi:?}"
+        );
         assert!(
             close(
                 c.target,
@@ -252,15 +281,5 @@ fn the_stage_holds_every_reaction_and_status_loop() {
             "{label}: target {:?}",
             c.target
         );
-        // No vertex leaves the frame, at rest or in any stage pose.
-        for (n, joints) in std::iter::once(&rest).chain(&poses).enumerate() {
-            for p in posed_vertices(&robot, joints) {
-                let q = c.project(p);
-                assert!(
-                    q[0].abs() <= FILL && q[1].abs() <= FILL && q[2] > 0.0,
-                    "{label}: sample {n} puts {p:?} at {q:?}, outside the frame"
-                );
-            }
-        }
     }
 }

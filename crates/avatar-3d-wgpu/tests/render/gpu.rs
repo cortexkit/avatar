@@ -28,7 +28,7 @@ fn a_render_returns_rgba8_of_the_requested_size_with_the_robot_on_it() {
     };
     let image = renderer
         .render(&Scene {
-            view: View::from(&robot.camera).with_aspect(f64::from(width) / f64::from(height)),
+            view: View::from(&robot.camera()).with_aspect(f64::from(width) / f64::from(height)),
             width,
             height,
             background,
@@ -77,7 +77,7 @@ fn every_drawn_frame_is_timed_on_the_gpu_when_the_device_has_timestamps() {
     for frame in 0..8 {
         let pose = actor.evaluate(f64::from(frame) / 30.0);
         let scene = Scene {
-            view: View::from(&robot.camera),
+            view: View::from(&robot.camera()),
             width: 288,
             height: 288,
             background,
