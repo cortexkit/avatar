@@ -38,7 +38,9 @@ mod idle;
 pub mod math;
 mod rig;
 
-pub use actor::{mood_index, Actor, IDLE_BLEND, LOOP_BLEND, MOOD_BLEND, REACT_CUT};
+pub use actor::{
+    mood_index, Actor, ActorState, IDLE_BLEND, LOOP_BLEND, MOOD_BLEND, REACT_CUT, SWAP_TAIL,
+};
 pub use clip::{sample_keys, Channel, Clip, Keys, Mode, Track, TrackPath};
 pub use floor::HAND_CLEARANCE;
 pub use idle::{

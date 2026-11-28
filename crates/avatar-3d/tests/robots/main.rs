@@ -5,6 +5,7 @@ mod cases;
 #[path = "../../examples/robot_pins/scripts.rs"]
 mod scripts;
 
+mod actor_state;
 mod builder;
 mod faces;
 mod ground;

@@ -1,5 +1,7 @@
 //! The actor: one robot's events, and the pose they give at any time.
 
+use std::collections::BTreeSet;
+
 use avatar_small_robots::{Mood, MOODS};
 
 use super::clip::{sample_keys, Clip, Mode, TrackPath};
@@ -20,9 +22,15 @@ pub const LOOP_BLEND: f64 = 0.5;
 pub const IDLE_BLEND: f64 = 0.3;
 /// Seconds a reaction fades out when another replaces it.
 pub const REACT_CUT: f64 = 0.15;
+/// Seconds a face swap stays in effect after it: its blink has opened
+/// 0.09 s after the swap ([`swap_blink`]), and the blink of a later swap
+/// looks 1e-6 s before that swap to see whether the face really changes
+/// there. [`ActorState::forget_before`] keeps a swap until this long after
+/// it.
+pub const SWAP_TAIL: f64 = 0.1;
 
 /// One robot's events, each with its start time in seconds, and the pose
-/// they give at any time.
+/// they give at any time: a robot reference plus an [`ActorState`].
 ///
 /// A pose depends only on the robot, the events and the time asked for:
 /// the actor keeps no history, so times may be evaluated in any order and
@@ -32,13 +40,59 @@ pub const REACT_CUT: f64 = 0.15;
 #[derive(Clone, Debug)]
 pub struct Actor<'a> {
     robot: &'a Robot,
+    state: ActorState,
+}
+
+/// Everything an [`Actor`] holds but the robot: its events and the floor
+/// data measured from the robot. It owns all of it, so it can live beside
+/// a shared robot; each call that reads the robot takes it as an argument,
+/// and that must be the robot the state was made for.
+///
+/// The calls behave as [`Actor`]'s do. [`ActorState::forget_before`]
+/// drops the events whose effects are over, so a state that lives as long
+/// as its robot stays small.
+#[derive(Clone, Debug)]
+pub struct ActorState {
     base: Mood,
     idle_base: bool,
     moods: Vec<(f64, Mood)>,
     loops: Vec<(f64, Option<StatusLoop>)>,
-    reactions: Vec<(f64, Reaction)>,
+    reactions: Vec<Played>,
     idles: Vec<(f64, bool)>,
+    latest: Latest,
     floor: Floor,
+}
+
+/// A reaction played at a time.
+#[derive(Clone, Copy, Debug)]
+struct Played {
+    at: f64,
+    reaction: Reaction,
+    /// The reaction played next, with its start time, once
+    /// [`ActorState::forget_before`] has dropped it from the list: it still
+    /// decides when this one fades out and when this one's face span ends.
+    /// `None` while that reaction is the next entry of the list, or there
+    /// is none.
+    next: Option<(f64, Reaction)>,
+}
+
+/// The start time of the latest event of each kind the state took. Events
+/// of a kind are checked against it, so the time-order check still holds
+/// after the events it names are forgotten.
+#[derive(Clone, Copy, Debug, Default)]
+struct Latest {
+    mood: Option<f64>,
+    status_loop: Option<f64>,
+    reaction: Option<f64>,
+    idle: Option<f64>,
+}
+
+/// Panics unless `t` comes no earlier than `latest`, the latest event of
+/// its kind.
+fn in_order(latest: Option<f64>, t: f64) {
+    if let Some(at) = latest {
+        assert!(t >= at, "events of one kind are given in time order");
+    }
 }
 
 /// A clip playing at a time: how far in, and its weight.
@@ -245,19 +299,19 @@ impl<'a> Actor<'a> {
     pub fn new(robot: &'a Robot, mood: Mood) -> Self {
         Self {
             robot,
-            base: mood,
-            idle_base: true,
-            moods: Vec::new(),
-            loops: Vec::new(),
-            reactions: Vec::new(),
-            idles: Vec::new(),
-            floor: Floor::new(robot),
+            state: ActorState::new(robot, mood),
         }
+    }
+
+    /// An actor for `robot` holding `state`, which must have been made for
+    /// `robot`.
+    pub fn from_state(robot: &'a Robot, state: ActorState) -> Self {
+        Self { robot, state }
     }
 
     /// The same actor with the idle layer off from the start.
     pub fn without_idle(mut self) -> Self {
-        self.idle_base = false;
+        self.state = self.state.without_idle();
         self
     }
 
@@ -266,44 +320,154 @@ impl<'a> Actor<'a> {
         self.robot
     }
 
-    fn last<T>(events: &[(f64, T)], t: f64) {
-        if let Some(e) = events.last() {
-            assert!(t >= e.0, "events of one kind are given in time order");
+    /// The actor's events and floor data.
+    pub fn state(&self) -> &ActorState {
+        &self.state
+    }
+
+    /// The actor's events and floor data, without the robot.
+    pub fn into_state(self) -> ActorState {
+        self.state
+    }
+
+    /// Changes the mood at `t`, as [`ActorState::set_mood`] does.
+    pub fn set_mood(&mut self, t: f64, mood: Mood) {
+        self.state.set_mood(t, mood);
+    }
+
+    /// Starts or stops a status loop at `t`, as [`ActorState::set_loop`]
+    /// does.
+    pub fn set_loop(&mut self, t: f64, status: Option<StatusLoop>) {
+        self.state.set_loop(t, status);
+    }
+
+    /// Plays a reaction from `t`, as [`ActorState::play`] does.
+    pub fn play(&mut self, t: f64, reaction: Reaction) {
+        self.state.play(t, reaction);
+    }
+
+    /// Pauses or resumes the idle layer at `t`, as [`ActorState::set_idle`]
+    /// does.
+    pub fn set_idle(&mut self, t: f64, on: bool) {
+        self.state.set_idle(t, on);
+    }
+
+    /// The mood weights at `t` ([`ActorState::mood_weights`]).
+    pub fn mood_weights(&self, t: f64) -> [f64; 7] {
+        self.state.mood_weights(t)
+    }
+
+    /// The face set shown at `t`.
+    pub fn face(&self, t: f64) -> Mood {
+        self.state.face(self.robot, t)
+    }
+
+    /// Every time after `from` at which [`Actor::face`] changes, with the
+    /// new face set ([`ActorState::face_moments`]).
+    pub fn face_moments(&self, from: f64) -> Vec<(f64, Mood)> {
+        self.state.face_moments(self.robot, from)
+    }
+
+    /// Forgets the events whose effects are over by `t`
+    /// ([`ActorState::forget_before`]).
+    pub fn forget_before(&mut self, t: f64) {
+        self.state.forget_before(self.robot, t);
+    }
+
+    /// The pose at `t` seconds ([`ActorState::evaluate`]).
+    pub fn evaluate(&self, t: f64) -> Pose {
+        self.state.evaluate(self.robot, t)
+    }
+}
+
+impl ActorState {
+    /// The state of an actor for `robot`, in `mood` from the start, with
+    /// the idle layer on.
+    pub fn new(robot: &Robot, mood: Mood) -> Self {
+        Self {
+            base: mood,
+            idle_base: true,
+            moods: Vec::new(),
+            loops: Vec::new(),
+            reactions: Vec::new(),
+            idles: Vec::new(),
+            latest: Latest::default(),
+            floor: Floor::new(robot),
         }
+    }
+
+    /// The same state with the idle layer off from the start.
+    pub fn without_idle(mut self) -> Self {
+        self.idle_base = false;
+        self
+    }
+
+    /// The mood the moods blend from: the one the actor started in, or the
+    /// latest one [`ActorState::forget_before`] found settled.
+    pub fn base(&self) -> Mood {
+        self.base
+    }
+
+    /// The mood changes held, in time order.
+    pub fn mood_changes(&self) -> &[(f64, Mood)] {
+        &self.moods
+    }
+
+    /// The status loop starts and stops held, in time order.
+    pub fn loop_changes(&self) -> &[(f64, Option<StatusLoop>)] {
+        &self.loops
+    }
+
+    /// The reactions held, in time order.
+    pub fn reactions(&self) -> impl Iterator<Item = (f64, Reaction)> + '_ {
+        self.reactions.iter().map(|p| (p.at, p.reaction))
+    }
+
+    /// The idle layer's pauses and resumes held, in time order.
+    pub fn idle_changes(&self) -> &[(f64, bool)] {
+        &self.idles
     }
 
     /// Changes the mood at `t`; the posture blends over [`MOOD_BLEND`]
     /// and the face swaps on a blink [`SWAP_LEAD`] later. A change to the
     /// mood already requested is ignored.
     pub fn set_mood(&mut self, t: f64, mood: Mood) {
-        Self::last(&self.moods, t);
+        in_order(self.latest.mood, t);
         let last = self.moods.last().map_or(self.base, |e| e.1);
         if last != mood {
             self.moods.push((t, mood));
+            self.latest.mood = Some(t);
         }
     }
 
     /// Starts a status loop at `t`, or stops the current one with `None`;
     /// each fades over [`LOOP_BLEND`].
     pub fn set_loop(&mut self, t: f64, status: Option<StatusLoop>) {
-        Self::last(&self.loops, t);
+        in_order(self.latest.status_loop, t);
         let current = self.loops.last().and_then(|e| e.1);
         if current != status {
             self.loops.push((t, status));
+            self.latest.status_loop = Some(t);
         }
     }
 
     /// Plays a reaction from `t`. One already playing fades out over
     /// [`REACT_CUT`].
     pub fn play(&mut self, t: f64, reaction: Reaction) {
-        Self::last(&self.reactions, t);
-        self.reactions.push((t, reaction));
+        in_order(self.latest.reaction, t);
+        self.reactions.push(Played {
+            at: t,
+            reaction,
+            next: None,
+        });
+        self.latest.reaction = Some(t);
     }
 
     /// Pauses or resumes the idle layer at `t`, blending over [`IDLE_BLEND`].
     pub fn set_idle(&mut self, t: f64, on: bool) {
-        Self::last(&self.idles, t);
+        in_order(self.latest.idle, t);
         self.idles.push((t, on));
+        self.latest.idle = Some(t);
     }
 
     /// The mood weights at `t`, in `MOODS` order: start from the base mood,
@@ -337,17 +501,24 @@ impl<'a> Actor<'a> {
         w
     }
 
-    fn playing_reactions(&self, t: f64) -> Vec<Playing<'a>> {
-        let motion = &self.robot.motion;
+    /// The reaction played after reaction `i`, with its start time.
+    fn next_reaction(&self, i: usize) -> Option<(f64, Reaction)> {
+        self.reactions[i]
+            .next
+            .or_else(|| self.reactions.get(i + 1).map(|n| (n.at, n.reaction)))
+    }
+
+    fn playing_reactions<'r>(&self, robot: &'r Robot, t: f64) -> Vec<Playing<'r>> {
+        let motion = &robot.motion;
         let mut out = Vec::new();
-        for (i, &(at, r)) in self.reactions.iter().enumerate() {
-            let clip = motion.reaction(r);
-            let tt = t - at;
+        for (i, p) in self.reactions.iter().enumerate() {
+            let clip = motion.reaction(p.reaction);
+            let tt = t - p.at;
             if tt < 0.0 || tt > clip.duration {
                 continue;
             }
             let mut w = 1.0;
-            if let Some(&(next, _)) = self.reactions.get(i + 1) {
+            if let Some((next, _)) = self.next_reaction(i) {
                 if t >= next {
                     w = 1.0 - smooth((t - next) / REACT_CUT);
                 }
@@ -359,8 +530,8 @@ impl<'a> Actor<'a> {
         out
     }
 
-    fn playing_loops(&self, t: f64) -> Vec<Playing<'a>> {
-        let motion = &self.robot.motion;
+    fn playing_loops<'r>(&self, robot: &'r Robot, t: f64) -> Vec<Playing<'r>> {
+        let motion = &robot.motion;
         let mut out = Vec::new();
         for (i, &(at, l)) in self.loops.iter().enumerate() {
             let Some(l) = l else { continue };
@@ -385,33 +556,37 @@ impl<'a> Actor<'a> {
         out
     }
 
-    /// The spans over which reactions' faces replace the mood's. A face
-    /// swaps in at the envelope's rising midpoint (at least [`SWAP_LEAD`]
-    /// after the start) and out at its falling midpoint; when the next
-    /// reaction starts first, the span ends when that one swaps its own
-    /// face in, or [`SWAP_LEAD`] after it starts if it has none.
-    fn face_spans(&self) -> Vec<Span> {
-        let motion = &self.robot.motion;
+    /// The span over which reaction `i`'s face replaces the mood's, if it
+    /// has a face and the span is not empty. The face swaps in at the
+    /// envelope's rising midpoint (at least [`SWAP_LEAD`] after the start)
+    /// and out at its falling midpoint; when the next reaction starts
+    /// first, the span ends when that one swaps its own face in, or
+    /// [`SWAP_LEAD`] after it starts if it has none.
+    fn span(&self, robot: &Robot, i: usize) -> Option<Span> {
+        let motion = &robot.motion;
         let swap_in = |c: &Clip, at: f64| at + SWAP_LEAD.max(c.envelope[0] / 2.0);
-        let mut spans = Vec::new();
-        for (i, &(at, r)) in self.reactions.iter().enumerate() {
-            let c = motion.reaction(r);
-            let Some(face) = c.face else { continue };
-            let start = swap_in(c, at);
-            let mut end = at + c.duration - c.envelope[1] / 2.0;
-            if let Some(&(next, nr)) = self.reactions.get(i + 1) {
-                let nc = motion.reaction(nr);
-                end = end.min(if nc.face.is_some() {
-                    swap_in(nc, next)
-                } else {
-                    next + SWAP_LEAD
-                });
-            }
-            if end > start {
-                spans.push(Span { start, end, face });
-            }
+        let p = self.reactions[i];
+        let c = motion.reaction(p.reaction);
+        let face = c.face?;
+        let start = swap_in(c, p.at);
+        let mut end = p.at + c.duration - c.envelope[1] / 2.0;
+        if let Some((next, nr)) = self.next_reaction(i) {
+            let nc = motion.reaction(nr);
+            end = end.min(if nc.face.is_some() {
+                swap_in(nc, next)
+            } else {
+                next + SWAP_LEAD
+            });
         }
-        spans
+        (end > start).then_some(Span { start, end, face })
+    }
+
+    /// The spans over which reactions' faces replace the mood's, in
+    /// reaction order.
+    fn face_spans(&self, robot: &Robot) -> Vec<Span> {
+        (0..self.reactions.len())
+            .filter_map(|i| self.span(robot, i))
+            .collect()
     }
 
     /// The face shown at `t`: the latest reaction span holding `t`, else
@@ -451,8 +626,166 @@ impl<'a> Actor<'a> {
     }
 
     /// The face set shown at `t`.
-    pub fn face(&self, t: f64) -> Mood {
-        self.face_shown(t, &self.face_spans())
+    pub fn face(&self, robot: &Robot, t: f64) -> Mood {
+        self.face_shown(t, &self.face_spans(robot))
+    }
+
+    /// Every time after `from` at which [`ActorState::face`] changes, with
+    /// the face set shown from then on, in time order.
+    ///
+    /// A mood's swap and a reaction's face swapping in and out are listed
+    /// wherever the face shown really changes: a reaction without a face,
+    /// or whose face is the one already shown, lists nothing, and a swap
+    /// hidden under a reaction's face or cut short by the next reaction
+    /// lists only the changes that remain. The times are exact, not rounded
+    /// to any sampling grid: the face is the listed one from each time
+    /// until the next, and before the first it is the face at `from`.
+    pub fn face_moments(&self, robot: &Robot, from: f64) -> Vec<(f64, Mood)> {
+        /// What happens at a time the face may change.
+        enum Edge {
+            Start(usize),
+            End(usize),
+            Swap(usize),
+        }
+        let spans = self.face_spans(robot);
+        let mut edges = Vec::new();
+        // The spans holding the time reached, by index: the latest one
+        // shows its face.
+        let mut open = BTreeSet::new();
+        for (i, s) in spans.iter().enumerate() {
+            if s.start > from {
+                edges.push((s.start, Edge::Start(i)));
+            } else if s.end > from {
+                open.insert(i);
+            }
+            if s.end > from {
+                edges.push((s.end, Edge::End(i)));
+            }
+        }
+        // The latest mood change whose face has swapped in by the time
+        // reached.
+        let mut swapped = None;
+        for (k, &(at, _)) in self.moods.iter().enumerate() {
+            let c = at + SWAP_LEAD;
+            if c > from {
+                edges.push((c, Edge::Swap(k)));
+            } else if from >= c {
+                swapped = Some(k);
+            }
+        }
+        edges.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let shown = |open: &BTreeSet<usize>, swapped: Option<usize>| match open.last() {
+            Some(&i) => spans[i].face,
+            None => swapped.map_or(self.base, |k| self.moods[k].1),
+        };
+        let mut face = shown(&open, swapped);
+        let mut out = Vec::new();
+        for (k, (at, edge)) in edges.iter().enumerate() {
+            match *edge {
+                Edge::Start(i) => {
+                    open.insert(i);
+                }
+                Edge::End(i) => {
+                    open.remove(&i);
+                }
+                Edge::Swap(m) => swapped = swapped.max(Some(m)),
+            }
+            // Read the face once every edge at this time is applied.
+            if edges.get(k + 1).is_some_and(|n| n.0 == *at) {
+                continue;
+            }
+            let now = shown(&open, swapped);
+            if now != face {
+                out.push((*at, now));
+                face = now;
+            }
+        }
+        out
+    }
+
+    /// Forgets the events whose effects are over by `t`, so a state that
+    /// lives long holds only what still matters at `t` and later:
+    ///
+    /// - the latest mood change whose posture blend is done and whose face
+    ///   swapped in at least [`SWAP_TAIL`] before `t` becomes the base mood,
+    ///   and it and every change before it are dropped;
+    /// - a status loop is dropped once it has faded out under the change
+    ///   after it, and a stop once the loop it stopped is dropped;
+    /// - every idle change before the latest one whose blend is done is
+    ///   dropped; that one stays as the idle setting;
+    /// - a reaction is dropped once its clip has ended, or faded out under
+    ///   the next reaction, and its face span, if it has one, ended at least
+    ///   [`SWAP_TAIL`] before `t`. The reaction after a kept one is
+    ///   remembered by it even when dropped, as it decides when the kept
+    ///   one fades out and ends its face.
+    ///
+    /// Every event still in effect at `t` (a playing status loop, an
+    /// unfinished blend, swap or reaction, the idle setting) is kept with
+    /// its original time, so loops keep their phase. Afterwards
+    /// [`ActorState::evaluate`], [`ActorState::face`] and
+    /// [`ActorState::face_moments`] at any time at or after `t` give what
+    /// they gave before, and so do they once later events are added; times
+    /// before `t` are no longer posed as they were. A NaN `t` forgets
+    /// nothing.
+    pub fn forget_before(&mut self, robot: &Robot, t: f64) {
+        // Once a change's blend weight has reached 1, the weights are
+        // exactly its mood whatever came before, so that mood can be the
+        // base the later changes blend from.
+        let settled = |at: f64| (t - at) / MOOD_BLEND >= 1.0 && t - (at + SWAP_LEAD) >= SWAP_TAIL;
+        if let Some(k) = self.moods.iter().rposition(|&(at, _)| settled(at)) {
+            self.base = self.moods[k].1;
+            self.moods.drain(..=k);
+        }
+
+        // A change whose blend is done sets the idle weight to exactly its
+        // own, whatever came before, so the earlier changes can go.
+        if let Some(k) = self
+            .idles
+            .iter()
+            .rposition(|&(at, _)| (t - at) / IDLE_BLEND >= 1.0)
+        {
+            self.idles.drain(..k);
+        }
+
+        // A loop's fade-out is decided by the change after it, so loops go
+        // from the front only; the current loop has no change after it and
+        // stays.
+        let gone = self
+            .loops
+            .iter()
+            .enumerate()
+            .take_while(|&(i, &(_, l))| match l {
+                None => true,
+                Some(_) => self
+                    .loops
+                    .get(i + 1)
+                    .is_some_and(|&(next, _)| (t - next) / LOOP_BLEND >= 1.0),
+            })
+            .count();
+        self.loops.drain(..gone);
+
+        let mut kept: Vec<Played> = Vec::with_capacity(self.reactions.len());
+        // Whether the entry just looked at was kept.
+        let mut after_kept = false;
+        for (i, &p) in self.reactions.iter().enumerate() {
+            let clip = robot.motion.reaction(p.reaction);
+            let posing = !(t - p.at > clip.duration
+                || self
+                    .next_reaction(i)
+                    .is_some_and(|(next, _)| (t - next) / REACT_CUT >= 1.0));
+            let facing = self.span(robot, i).is_some_and(|s| t - s.end < SWAP_TAIL);
+            if posing || facing {
+                kept.push(p);
+                after_kept = true;
+                continue;
+            }
+            if after_kept {
+                let before = kept.last_mut().expect("an entry was kept");
+                before.next.get_or_insert((p.at, p.reaction));
+            }
+            after_kept = false;
+        }
+        self.reactions = kept;
     }
 
     /// The pose at `t` seconds.
@@ -466,8 +799,7 @@ impl<'a> Actor<'a> {
     /// turns the arm forward about the shoulder; the hover exhaust shrinks
     /// toward its nozzle with thrust and above the floor; and if any vertex
     /// would still go below the floor, the root rises by the depth.
-    pub fn evaluate(&self, t: f64) -> Pose {
-        let robot = self.robot;
+    pub fn evaluate(&self, robot: &Robot, t: f64) -> Pose {
         let motion = &robot.motion;
         let n = robot.bones.len();
         let mut b = Build {
@@ -481,11 +813,11 @@ impl<'a> Actor<'a> {
                 b.add_static(mood, w[i]);
             }
         }
-        let loops = self.playing_loops(t);
+        let loops = self.playing_loops(robot, t);
         for l in &loops {
             b.add_clip(l.clip, l.tt, l.w, Mode::Add);
         }
-        let reacts = self.playing_reactions(t);
+        let reacts = self.playing_reactions(robot, t);
         let rw = reacts
             .iter()
             .map(|r| r.w * r.clip.envelope_at(r.tt))
@@ -514,7 +846,7 @@ impl<'a> Actor<'a> {
             .sum();
         self.floor.constrain(&mut b, thrust);
 
-        let spans = self.face_spans();
+        let spans = self.face_spans(robot);
         let face = self.face_shown(t, &spans);
         let mut blink = self.swap_blink_at(t, &spans);
         if iw > 0.0 {
