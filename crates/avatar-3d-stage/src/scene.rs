@@ -60,7 +60,8 @@ pub(crate) enum SceneCommand {
 }
 
 /// What the latest successful frame published, which reads load without a
-/// lock. The anchors and hit data join it with the stage camera.
+/// lock. With the stage camera it also carries the frame's creature
+/// positions on screen and the shapes a tap is tested against.
 #[derive(Debug, Default)]
 pub(crate) struct Snapshot {
     pub stats: FrameStats,

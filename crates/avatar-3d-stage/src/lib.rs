@@ -53,7 +53,9 @@
 //! mood at the time of its build, until drawn moods and face sets loaded
 //! on demand are added. Every robot stands at the origin until the plaza
 //! is laid out, and frames carry no camera until the stage camera is
-//! added; those bring the anchors and the hit data too.
+//! added. With the camera come the reads that depend on it: each drawn
+//! creature's head, face and ground positions on screen, and the shapes
+//! a tap is tested against.
 
 pub mod fake;
 
